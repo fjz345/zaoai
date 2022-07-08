@@ -1,0 +1,15 @@
+[package]
+name = "zaoai"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+soloud = { git = "https://github.com/moalyousef/soloud-rs" }
+wav = "1.0.0"
+symphonia = {version = "0.5.0", features = ["mp3"]}
+symphonia-bundle-mp3 = "0.5.0"
+plotlib = "0.5.1"
+# tensorflow = { version = "0.18.0", features = ["tensorflow_gpu"] }
+sonogram = "0.6.2"
