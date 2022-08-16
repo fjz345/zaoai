@@ -6,10 +6,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rand = "0.8.5"
 soloud = { git = "https://github.com/moalyousef/soloud-rs" }
 wav = "1.0.0"
-symphonia = {version = "0.5.0", features = ["mp3"]}
+symphonia = {version = "0.5.0", features = ["mp3", "mkv", "pcm", "aac"]}
 symphonia-bundle-mp3 = "0.5.0"
+symphonia-format-mkv = "0.5.0"
+symphonia-codec-aac = "0.5.0"
+symphonia-codec-pcm = "0.5.0"
 plotlib = "0.5.1"
 # tensorflow = { version = "0.18.0", features = ["tensorflow_gpu"] }
 sonogram = "0.6.2"
