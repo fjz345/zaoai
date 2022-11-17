@@ -38,21 +38,21 @@ impl Layer {
         // Weight
         let mut weights: Vec<Vec<f32>> = Vec::new();
         weights.reserve(num_out_nodes);
-        for weight in weights.iter_mut() {
-            weight.resize(num_in_nodes, 0.0);
+        for i in 0..num_out_nodes {
+            weights.push(vec![0.0; num_in_nodes]);
         }
         let mut weights_cost_grads: Vec<Vec<f32>> = Vec::new();
         weights_cost_grads.reserve(num_out_nodes);
-        for weights_cost_grad in weights_cost_grads.iter_mut() {
-            weights_cost_grad.resize(num_in_nodes, 0.0);
+        for i in 0..num_out_nodes {
+            weights_cost_grads.push(vec![0.0; num_in_nodes]);
         }
 
         // Initialize weights & biases
-        for i in 0..(num_out_nodes - 1) {
+        for i in 0..num_out_nodes {
             let rand_bias: f32 = random();
             biases[i] = rand_bias;
 
-            for j in 0..(num_in_nodes - 1) {
+            for j in 0..num_in_nodes {
                 let rand_weight: f32 = random();
                 weights[i][j] = rand_weight;
             }
@@ -78,23 +78,24 @@ impl Layer {
         error * error
     }
 
-    fn calculate_outputs(&self, activation_inputs: &[f32]) -> Vec<f32> {
-        let mut activation_outputs: Vec<f32> = Vec::new();
-        activation_outputs.resize(self.num_out_nodes, 0.0);
+    fn calculate_outputs(&self, activation_inputs: &mut [f32]) -> Vec<f32>{
+        let mut activation_outputs =  vec![0.0; self.num_out_nodes];
+
+        assert_eq!(activation_inputs.len(), self.num_in_nodes, "Num Inputs: {}, NN Num Inputs {}", activation_inputs.len(), self.num_in_nodes);
 
         for (output_node, output) in activation_outputs.iter_mut().enumerate() {
             // First apply bias for the output node
             let mut weighted_input = self.biases[output_node];
 
             // Then apply input node weights
-            for j in 0..self.num_in_nodes {
+            for j in 0..activation_inputs.len() {
                 weighted_input += activation_inputs[j] * self.weights[output_node][j];
             }
 
             *output = weighted_input;
         }
 
-        activation_outputs
+       activation_outputs
     }
 
     fn apply_cost_gradient(&mut self, learn_rate: f32) {
@@ -152,6 +153,10 @@ impl GraphStructure {
         } else if self.output_nodes < 1 {
             is_valid = false;
         }
+        else if self.input_nodes != self.output_nodes
+        {
+            is_valid = false;
+        }
 
         is_valid
     }
@@ -164,22 +169,26 @@ impl GraphStructure {
         for hidden_layer in &self.hidden_layers[..] {
             layer_sizes.push(*hidden_layer);
         }
+
         layer_sizes.push(self.output_nodes);
 
         // Print
+
+
+
         println!("{:?}", layer_sizes);
     }
 }
 
 #[derive(Copy, Clone)]
 pub struct DataPoint {
-    inputs: [f32; 2],
-    expected_outputs: [f32; 2],
+    pub inputs: [f32; 2],
+    pub expected_outputs: [f32; 2],
 }
 
 pub struct NeuralNetwork {
     graph_structure: GraphStructure,
-    layers: Vec<Layer>,
+    pub layers: Vec<Layer>,
 }
 
 impl NeuralNetwork {
@@ -192,6 +201,7 @@ impl NeuralNetwork {
         // Create Hidden layers
         for i in &graph_structure.hidden_layers[..] {
             layers.push(Layer::new(prev_out_size, *i));
+            prev_out_size = *i;
         }
 
         // Create Output layer
@@ -241,10 +251,15 @@ impl NeuralNetwork {
         }
     }
 
-    pub fn calculate_outputs(layers: &[Layer], inputs: &mut &[f32]) {
-        for layer in layers.iter() {
-            layer.calculate_outputs(inputs);
+    pub fn calculate_outputs(layers: &[Layer], inputs: &mut [f32]) {
+        let mut current_inputs = vec![0.0; inputs.len()];
+        current_inputs.clone_from_slice(inputs);
+        for (i, layer) in layers.iter().enumerate()
+        {
+            current_inputs = layer.calculate_outputs(&mut current_inputs);
         }
+
+        inputs.copy_from_slice(&current_inputs[..]);
     }
 
     fn calculate_cost_data_point(layers: &[Layer], data_point: DataPoint) -> f32 {
@@ -252,7 +267,7 @@ impl NeuralNetwork {
 
         // Calculate the output of the neural network
         let mut data_point_output = data_point.inputs.clone();
-        NeuralNetwork::calculate_outputs(layers, &mut &data_point_output[..]);
+        NeuralNetwork::calculate_outputs(layers, &mut data_point_output[..]);
 
         // Calculate cost by comparing difference between output and expected output
         let output_layer = layers.last().unwrap();
@@ -311,6 +326,16 @@ impl NeuralNetwork {
         println!("----------NEURAL NETWORK----------");
         println!("Graph Structure: ");
         self.graph_structure.print();
+
+        // Print Actual layer sizes
+        println!("Layer Nodes: ");
+        print!("[{:?}", self.graph_structure.input_nodes);
+        for layer in &self.layers[..]
+        {
+            print!(", ");
+            print!("{:?}", layer.num_out_nodes);
+        }
+        print!("]\n");
         println!("----------------------------------");
     }
 }

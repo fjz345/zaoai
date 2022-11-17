@@ -47,6 +47,7 @@ ML Steps:
 mod zneural_network;
 use crate::zneural_network::GraphStructure;
 use crate::zneural_network::NeuralNetwork;
+use crate::zneural_network::DataPoint;
 
 use soloud::*;
 //use symphonia::core::sample;
@@ -65,12 +66,19 @@ use symphonia::core::meta::{MetadataOptions, MetadataRevision};
 use symphonia::core::probe::Hint;
 
 fn main() -> Result<(), SoloudError> {
-    let nn_structure: GraphStructure = GraphStructure::new(&[1, 2, 1]);
+    let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2]);
     let mut nn: NeuralNetwork = NeuralNetwork::new(nn_structure);
 
     nn.validate();
 
     nn.print();
+    
+    //nn.learn();
+
+    let mut datapoint = DataPoint{inputs: [2.0, 3.0], expected_outputs: [2.0, 3.0]};
+    println!("Before: {:?}", datapoint.inputs);
+    NeuralNetwork::calculate_outputs(&nn.layers[..], &mut datapoint.inputs[..]);
+    println!("After: {:?}", datapoint.inputs);
 
     return Ok(());
 
@@ -326,7 +334,7 @@ use plotlib::page::Page;
 use plotlib::repr::{Histogram, HistogramBins};
 use plotlib::view::ContinuousView;
 
-static S_HISTOGRAM_MAX_X: f64 = 1.0;
+static S_HISTOGRAM_MAX_X: f64 = 0.5;
 static S_HISTOGRAM_MAX_Y: f64 = 160.0;
 fn sl_debug(sl: &Soloud) {
     let fft = sl.calc_fft();

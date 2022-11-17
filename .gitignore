@@ -1,6 +1,8 @@
 /target
 /test_files
 /training_data
+/.vscode
+/.vs
 
 *.png
 *.svg
