@@ -60,16 +60,14 @@ pub fn TestNN()
 
     
 
-    let num_datapoints: usize = 1000000;
+    let num_datapoints: usize = 10000000;
     let mut datapoints = CreateDataPoints(0, num_datapoints as i32);
     //println!("DataPoints:\n {:#?}", datapoints);
 
-    // use 50/50 as traning data
-    nn.learn(&datapoints[0..num_datapoints/2], 100, 0.1, Some(true));
-
+    // use 50/50 as traning data10
+    nn.learn(&datapoints[0..num_datapoints/2], 10, 0.1, Some(true));
 
     let test_result = nn.test(&datapoints[num_datapoints/2..num_datapoints]);
-
 
     nn.print();
 }

@@ -225,18 +225,47 @@ impl NeuralNetwork {
         }
     }
 
-    pub fn learn(&mut self, training_data: &[DataPoint], num_epochs: usize, learn_rate: f32, print_cost: Option<bool>) {
+    pub fn learn(&mut self, training_data: &[DataPoint], mut num_epochs: usize, learn_rate: f32, print: Option<bool>) {
+        if(training_data.len() <= 0)
+        {
+            panic!("Learn DataPoints length was 0");
+        }
+        
+        let print_enabled = print == Some(true);
+
+        num_epochs = num_epochs.min((training_data.len() / num_epochs)+1);
+
+        if print_enabled
+        {
+            println!("Training...Learn Started [{}, {}]", training_data.len(), num_epochs);
+        }
+
         let h: f32 = 0.0001;
 
         let mut cur_index: usize = 0;
-        let epoch_step = training_data.len() / num_epochs;
+        let mut epoch_step = (training_data.len() / num_epochs) + 1;
+        if epoch_step > training_data.len()
+        {
+            epoch_step = training_data.len(); 
+        }
+
         for i in 0..num_epochs
         {
+            if(cur_index + epoch_step >= (training_data.len()))
+            {
+                break;
+            }
+
+            if print_enabled
+            {
+                println!("Training...Epoch [{}/{}] @({} - {})", i, num_epochs, cur_index, cur_index + epoch_step);
+            }
+
             let epoch_data = &training_data[cur_index..(cur_index + epoch_step)];
 
             let original_cost = NeuralNetwork::calculate_cost(&self.layers, epoch_data);
 
-            if print_cost == Some(true)
+            if print_enabled
             {
                 println!("Cost: {}", original_cost);
             }
