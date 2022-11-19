@@ -896,6 +896,7 @@ version = "0.1.0"
 dependencies = [
  "plotlib",
  "rand",
+ "rand_chacha",
  "soloud",
  "sonogram",
  "symphonia",

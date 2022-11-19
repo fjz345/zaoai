@@ -180,15 +180,25 @@ impl GraphStructure {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct DataPoint {
     pub inputs: [f32; 2],
     pub expected_outputs: [f32; 2],
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct TestResults
+{
+    pub num_datapoints: i32,
+    pub num_correct: i32,
+    pub accuracy: f32,
+    pub cost: f32,
+}
+
 pub struct NeuralNetwork {
-    graph_structure: GraphStructure,
+    pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
+    pub last_results: TestResults,
 }
 
 impl NeuralNetwork {
@@ -207,42 +217,84 @@ impl NeuralNetwork {
         // Create Output layer
         layers.push(Layer::new(prev_out_size, graph_structure.output_nodes));
 
+        let last_results = TestResults {num_datapoints: 0, num_correct: 0, accuracy: 0.0, cost: 0.0};
         NeuralNetwork {
             graph_structure,
             layers,
+            last_results
         }
     }
 
-    pub fn learn(&mut self, training_data: &[DataPoint], learn_rate: f32) {
+    pub fn learn(&mut self, training_data: &[DataPoint], num_epochs: usize, learn_rate: f32, print_cost: Option<bool>) {
         let h: f32 = 0.0001;
 
-        let original_cost = NeuralNetwork::calculate_cost(&self.layers, training_data);
+        let mut cur_index: usize = 0;
+        let epoch_step = training_data.len() / num_epochs;
+        for i in 0..num_epochs
+        {
+            let epoch_data = &training_data[cur_index..(cur_index + epoch_step)];
 
-        let mut calc_cost_layers = self.layers.to_vec();
+            let original_cost = NeuralNetwork::calculate_cost(&self.layers, epoch_data);
 
-        // Calculate cost gradients for layers
-        for layer in self.layers.iter_mut() {
-            for node in 0..layer.num_out_nodes {
-                // Biases
-                layer.biases[node] += h;
-                let dcost =
-                    NeuralNetwork::calculate_cost(&calc_cost_layers, training_data) - original_cost;
-                layer.biases[node] -= h;
-                layer.biases_cost_grads[node] = dcost / h;
+            if print_cost == Some(true)
+            {
+                println!("Cost: {}", original_cost);
+            }
 
-                // Weightsimage.png
-                for weight in 0..layer.num_in_nodes {
-                    layer.weights[node][weight] += h;
-                    let dcost = NeuralNetwork::calculate_cost(&calc_cost_layers, training_data)
-                        - original_cost;
-                    layer.weights[node][weight] -= h;
-                    layer.weights_cost_grads[node][weight] = dcost / h;
+            // Calculate cost gradients for layers
+            for i in 0..self.layers.len() {
+                // Weights
+                for in_node in 0..self.layers[i].num_in_nodes {
+                    for out_node in 0..self.layers[i].num_out_nodes {
+                        self.layers[i].weights[out_node][in_node] += h;
+                        let dcost = NeuralNetwork::calculate_cost(&self.layers[..], epoch_data) - original_cost;
+                        self.layers[i].weights[out_node][in_node] -= h;
+                        self.layers[i].weights_cost_grads[out_node][in_node] = dcost / h;
+                    }
                 }
+
+                // Biases
+                for bias_index in 0..self.layers[i].biases.len() {
+                    self.layers[i].biases[bias_index] += h;
+                    let dcost =
+                    NeuralNetwork::calculate_cost(&&self.layers[..], epoch_data) - original_cost;
+                    self.layers[i].biases[bias_index] -= h;
+                    self.layers[i].biases_cost_grads[bias_index] = dcost / h;
+                }
+            }
+
+            // Adjust weights & biases
+            self.apply_cost_gradients(learn_rate);
+
+            cur_index += epoch_step;
+        }
+    }
+
+    // Returns (num correct Datapoints)
+    pub fn test(&mut self, test_data: &[DataPoint]) -> TestResults
+    {
+        let num_datapoints = test_data.len();
+        let mut num_correct = 0;
+
+        for i in 0..num_datapoints
+        {
+            let mut datapoint = test_data[i];
+            NeuralNetwork::calculate_outputs(&self.layers[..], &mut datapoint.inputs[..]);
+            let result = NeuralNetwork::determine_output_result(&datapoint.inputs);
+            let result_expected = NeuralNetwork::determine_output_result(&datapoint.expected_outputs);
+
+            let is_correct = result.0 == result_expected.0;
+            if(is_correct)
+            {
+                num_correct += 1;
             }
         }
 
-        // Adjust weights & biases
-        self.apply_cost_gradients(learn_rate);
+        let avg_cost = NeuralNetwork::calculate_cost(&self.layers[..], test_data);
+        let test_result = TestResults {num_datapoints: num_datapoints as i32, num_correct: num_correct, accuracy: (num_correct as f32) / (num_datapoints as f32), cost: avg_cost};
+
+        self.last_results = test_result;
+        test_result
     }
 
     fn apply_cost_gradients(&mut self, learn_rate: f32) {
@@ -260,6 +312,24 @@ impl NeuralNetwork {
         }
 
         inputs.copy_from_slice(&current_inputs[..]);
+    }
+
+    // returns index of max value, max value
+    pub fn determine_output_result(inputs: &[f32]) -> (usize, f32)
+    {
+        let mut max = -99999999999.0;
+        let mut max_index = 0;
+        // Choose the greatest value
+        for (i, input) in inputs.iter().enumerate()
+        {
+            if(*input > max)
+            {
+                max = *input;
+                max_index = i;
+            }
+        }
+
+        (max_index, max)
     }
 
     fn calculate_cost_data_point(layers: &[Layer], data_point: DataPoint) -> f32 {
@@ -336,6 +406,11 @@ impl NeuralNetwork {
             print!("{:?}", layer.num_out_nodes);
         }
         print!("]\n");
+
+        ///////////////////////////////////////////////////
+
+        println!("Last Test Results: ");
+        println!("{:#?}", self.last_results);
         println!("----------------------------------");
     }
 }

@@ -45,9 +45,10 @@ ML Steps:
 6. Final Model evaluation
 */
 mod zneural_network;
-use crate::zneural_network::GraphStructure;
-use crate::zneural_network::NeuralNetwork;
-use crate::zneural_network::DataPoint;
+mod simpletest;
+
+use crate::zneural_network::*;
+use crate::simpletest::*;
 
 use soloud::*;
 //use symphonia::core::sample;
@@ -66,14 +67,17 @@ use symphonia::core::meta::{MetadataOptions, MetadataRevision};
 use symphonia::core::probe::Hint;
 
 fn main() -> Result<(), SoloudError> {
+
+    TestNN();
+
+    return Ok(());
+
+
     let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2]);
     let mut nn: NeuralNetwork = NeuralNetwork::new(nn_structure);
-
     nn.validate();
 
     nn.print();
-    
-    //nn.learn();
 
     let mut datapoint = DataPoint{inputs: [2.0, 3.0], expected_outputs: [2.0, 3.0]};
     println!("Before: {:?}", datapoint.inputs);
