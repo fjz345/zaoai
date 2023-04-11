@@ -45,10 +45,16 @@ ML Steps:
 6. Final Model evaluation
 */
 mod zneural_network;
+mod filesystem;
 mod simpletest;
+mod graphviz;
+mod graphviz_examples;
 
+use crate::filesystem::save_string_to_file;
 use crate::zneural_network::*;
 use crate::simpletest::*;
+use crate::graphviz::*;
+use crate::graphviz_examples::*;
 
 use soloud::*;
 //use symphonia::core::sample;
@@ -66,9 +72,23 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, MetadataRevision};
 use symphonia::core::probe::Hint;
 
-fn main() -> Result<(), SoloudError> {
+static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 
-    TestNN();
+fn main() -> Result<(), SoloudError> {
+    let nn_structure: GraphStructure = GraphStructure::new(&[2, 5, 5, 2]);
+    let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
+    nntest.validate();
+
+    // parse_test();
+    // print_test();
+    // output_test();
+    // graph_test();
+    //output_exec_from_test();
+    let graph_layout = generate_nn_graph_string();
+    save_string_to_file(&graph_layout, NN_GRAPH_LAYOUT_FILEPATH);
+
+    // TestNN(&mut nntest);
+    // TestNNOld(&mut nntest);
 
     return Ok(());
 
@@ -81,7 +101,7 @@ fn main() -> Result<(), SoloudError> {
 
     let mut datapoint = DataPoint{inputs: [2.0, 3.0], expected_outputs: [2.0, 3.0]};
     println!("Before: {:?}", datapoint.inputs);
-    NeuralNetwork::calculate_outputs(&nn.layers[..], &mut datapoint.inputs[..]);
+    nn.calculate_outputs(&mut datapoint.inputs[..]);
     println!("After: {:?}", datapoint.inputs);
 
     return Ok(());
