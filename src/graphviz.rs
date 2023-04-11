@@ -26,7 +26,7 @@ fn header_generate_nn_graph_string() -> String
         {
             node [shape=circle, color="#ffcc00", style=filled, fillcolor="#ffcc00"];
         }
-        
+
         "##;
         header.to_string()
 }
@@ -143,10 +143,11 @@ fn body_generate_nn_graph_string() -> String
 {
     let mut body: String = body_input_generate_nn_graph_string();
     body.push_str(body_hidden_generate_nn_graph_string().as_str());
+    body.push_str(body_output_generate_nn_graph_string().as_str());
     body.push_str(body_rank_generate_nn_graph_string().as_str());
     body.push_str(body_text_generate_nn_graph_string().as_str());
     body.push_str(body_arrows_generate_nn_graph_string().as_str());
-    body.push_str(body_output_generate_nn_graph_string().as_str());
+    
     body
 }
 
