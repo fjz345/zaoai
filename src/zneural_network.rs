@@ -207,9 +207,9 @@ impl Layer {
 }
 
 pub struct GraphStructure {
-    input_nodes: usize,
-    hidden_layers: Vec<usize>, // contais nodes
-    output_nodes: usize,
+    pub input_nodes: usize,
+    pub hidden_layers: Vec<usize>, // contais nodes
+    pub output_nodes: usize,
 }
 
 impl GraphStructure {

@@ -1,4 +1,5 @@
 use crate::filesystem::*;
+use crate::zneural_network::GraphStructure;
 
 use graphviz_rust::dot_generator::*;
 use graphviz_rust::dot_structures::*;
@@ -13,8 +14,6 @@ use std::fmt;
 
 // Sets general style
 fn header_generate_nn_graph_string(layer_spacing: f32) -> String {
-    // TODO: Can not format string literals???
-
     let header0: &str = r##"
     digraph NNGraph {
         bgcolor="#222222"
@@ -44,113 +43,302 @@ fn header_generate_nn_graph_string(layer_spacing: f32) -> String {
 
 // body code
 fn body_input_generate_nn_graph_string(num_input_nodes: i32) -> String {
-    let string: &str = r##"
+    let string_start: &str = r##"
     {
         node [shape=circle, color="#00b300", style=filled, fillcolor="#00b300"];
         // 1
-        x0 [label=<x<sub>0</sub>>];
-        x1 [label=<x<sub>1</sub>>];
-        x2 [label=<x<sub>2</sub>>]; 
-        x3 [label=<x<sub>3</sub>>];
+    "##;
+
+    let mut string_middle: String = String::new();
+    for i in 0..num_input_nodes {
+        string_middle += "x";
+        string_middle += i.to_string().as_str();
+        string_middle += " [label=<x<sub>";
+        string_middle += i.to_string().as_str();
+        string_middle += " </sub>>];\n"
+    }
+
+    let string_end: &str = r##"
     }
     "##;
-    string.to_string()
+
+    let result_string: String = string_start.to_owned() + &string_middle + string_end;
+
+    result_string
 }
 
-fn body_hidden_generate_nn_graph_string() -> String {
-    let string: &str = r##"
+fn body_hidden_generate_nn_graph_string(num_hidden_nodes: &[i32]) -> String {
+    let string_start = r##"
     {
         node [shape=circle, color=dodgerblue, style=filled, fillcolor=dodgerblue];
-        // 2
-        a02 [label=<a<sub>0</sub><sup>(2)</sup>>];
-        a12 [label=<a<sub>1</sub><sup>(2)</sup>>];
-        a22 [label=<a<sub>2</sub><sup>(2)</sup>>];
-        a32 [label=<a<sub>3</sub><sup>(2)</sup>>];
-        a42 [label=<a<sub>4</sub><sup>(2)</sup>>];
-        a52 [label=<a<sub>5</sub><sup>(2)</sup>>];
-        // 3
-        a03 [label=<a<sub>0</sub><sup>(3)</sup>>];
-        a13 [label=<a<sub>1</sub><sup>(3)</sup>>];
-        a23 [label=<a<sub>2</sub><sup>(3)</sup>>];
-        a33 [label=<a<sub>3</sub><sup>(3)</sup>>];
-        a43 [label=<a<sub>4</sub><sup>(3)</sup>>];
-        a53 [label=<a<sub>5</sub><sup>(3)</sup>>];
-    }
-    a02->a03;  // prevent tilting
     "##;
-    string.to_string()
+
+    let mut string_middle = String::new();
+
+    for i in (0 + 2)..(num_hidden_nodes.len() + 2) {
+        // Comment
+        string_middle += "//";
+        string_middle += &i.to_string();
+        string_middle += "\n";
+
+        // each node in layer i
+        for n in (0)..(num_hidden_nodes[i - 2] as usize) {
+            string_middle += "a";
+            string_middle += &n.to_string();
+            string_middle += &i.to_string();
+            string_middle += " [label=<a<sub>";
+            string_middle += &n.to_string();
+            string_middle += "</sub><sup>(";
+            string_middle += &i.to_string();
+            string_middle += ")</sup>>];\n"
+        }
+    }
+
+    // Prevent tilting
+    const prevent_tiling: bool = false;
+    if (prevent_tiling) {
+        string_middle += "// Prevent tilting\n";
+        for i in (0 + 2)..(num_hidden_nodes.len() - 1 + 2) {
+            string_middle += "a0";
+            string_middle += &i.to_string();
+            string_middle += "->";
+            string_middle += "a0";
+            string_middle += &(i + 1).to_string();
+            string_middle += "\n";
+        }
+    }
+    let string_end = r##"
+    }
+    "##;
+
+    let result_string: String = string_start.to_owned() + &string_middle + string_end;
+    result_string
 }
 
-fn body_output_generate_nn_graph_string() -> String {
-    let string: &str = r##"
+fn body_output_generate_nn_graph_string(output_layer_index: i32, num_output_nodes: i32) -> String {
+    let string_start: &str = r##"
     {
         node [shape=circle, color=coral1, style=filled, fillcolor=coral1];
-        // 4
-        y1 [label=<y<sub>1</sub><sup>(4)</sup>>];
-        y2 [label=<y<sub>2</sub><sup>(4)</sup>>]; 
-        y3 [label=<y<sub>3</sub><sup>(4)</sup>>]; 
-        y4 [label=<y<sub>4</sub><sup>(4)</sup>>];
+    "##;
+
+    let mut string_middle: String = String::new();
+
+    // Comment
+    string_middle += "//";
+    string_middle += &output_layer_index.to_string();
+    string_middle += "\n";
+
+    // Output layer
+    for i in 0..num_output_nodes {
+        string_middle += "y";
+        string_middle += &i.to_string();
+        string_middle += " [label=<y<sub>";
+        string_middle += &i.to_string();
+        string_middle += "</sub><sup>(";
+        string_middle += &output_layer_index.to_string();
+        string_middle += ")</sup>>];";
+        string_middle += "\n";
+    }
+
+    let string_end: &str = r##"
     }
     "##;
-    string.to_string()
+
+    let result_string: String = string_start.to_owned() + &string_middle + string_end;
+    result_string
 }
 
-fn body_rank_generate_nn_graph_string() -> String {
-    let string: &str = r##"
-    {
-        rank=same;
-        x0->x1->x2->x3;
+fn body_rank_generate_nn_graph_string(
+    num_input_nodes: i32,
+    num_hidden_nodes: &[i32],
+    num_output_nodes: i32,
+) -> String {
+    let mut string_middle: String = String::new();
+
+    // Input layer
+    string_middle += "{\n";
+    string_middle += "rank=same;\n";
+    for i in 0..num_input_nodes - 1 {
+        string_middle += "x";
+        string_middle += &i.to_string();
+        string_middle += "->";
     }
-    {
-        rank=same;
-        a02->a12->a22->a32->a42->a52;
+    // last manual without adding arrow
+    string_middle += "x";
+    string_middle += &(num_input_nodes - 1).to_string();
+    string_middle += ";\n}\n";
+
+    // Hidden layer
+    for l in (0 + 2)..(num_hidden_nodes.len() + 2) {
+        string_middle += "{\n";
+        string_middle += "rank=same;\n";
+        for i in 0..num_hidden_nodes[l - 2] - 1 {
+            string_middle += "a";
+            string_middle += &i.to_string();
+            string_middle += &l.to_string();
+            string_middle += "->";
+        }
+        // last manual without adding arrow
+        string_middle += "a";
+        string_middle += &(num_hidden_nodes[l - 2] - 1).to_string();
+        string_middle += &l.to_string();
+        string_middle += ";\n}\n";
     }
-    {
-        rank=same;
-        a03->a13->a23->a33->a43->a53;
+
+    // Output layer
+    string_middle += "{\n";
+    string_middle += "rank=same;\n";
+    for i in 0..num_output_nodes - 1 {
+        string_middle += "y";
+        string_middle += &i.to_string();
+        string_middle += "->";
     }
-    {
-        rank=same;
-        y1->y2->y3->y4;
-    }
-    "##;
-    string.to_string()
+    // last manual without adding arrow
+    string_middle += "y";
+    string_middle += &(num_output_nodes - 1).to_string();
+    string_middle += ";\n}\n";
+
+    string_middle
 }
 
-fn body_text_generate_nn_graph_string() -> String {
-    let string: &str = r##"
+fn body_text_generate_nn_graph_string(num_hidden_nodes: &[i32]) -> String {
+    let string_l0_start = r##"
     l0 [shape=plaintext, label="Input Layer [1]"];
     l0->x0;
     {rank=same; l0;x0};
-    l1 [shape=plaintext, label="Hidden Layer [2]"];
-    l1->a02;
-    {rank=same; l1;a02};
-    l2 [shape=plaintext, label="Hidden Layer [3]"];
-    l2->a03;
-    {rank=same; l2;a03};
-    l3 [shape=plaintext, label="Output Layer [4]"];
-    l3->y1;
-    {rank=same; l3;y1};
     "##;
-    string.to_string()
+
+    let mut string_middle = String::new();
+
+    for i in (0 + 2)..(num_hidden_nodes.len() + 2) {
+        string_middle += "l";
+        string_middle += &(i - 1).to_string();
+        string_middle += " [shape=plaintext, label=\"Hidden Layer [";
+        string_middle += &(i).to_string();
+        string_middle += "]\"];\n";
+        string_middle += "l";
+        string_middle += &(i - 1).to_string();
+        string_middle += "->a0";
+        string_middle += &i.to_string();
+        string_middle += "\n";
+        string_middle += "{rank=same; ";
+        string_middle += "l";
+        string_middle += &(i - 1).to_string();
+        string_middle += ";";
+        string_middle += "a0";
+        string_middle += &i.to_string();
+        string_middle += "}";
+        string_middle += "\n";
+    }
+
+    let mut string_end: String = String::new();
+    let l_output = num_hidden_nodes.len() + 1;
+    string_end += "l";
+    string_end += &l_output.to_string();
+    string_end += " [shape=plaintext, label=\"Output Layer [";
+    string_end += &(l_output + 1).to_string();
+    string_end += "]\"];\n";
+    string_end += "l";
+    string_end += &l_output.to_string();
+    string_end += "->y0\n";
+    string_end += "{rank=same; l";
+    string_end += &l_output.to_string();
+    string_end += ";y0};\n";
+
+    let result_string = string_l0_start.to_owned() + &string_middle + &string_end;
+    result_string
 }
-fn body_arrows_generate_nn_graph_string() -> String {
-    let string: &str = r##"
-    edge[style=solid, tailport=e, headport=w];
-    {x0; x1; x2; x3} -> {a02;a12;a22;a32;a42;a52};
-    {a02;a12;a22;a32;a42;a52} -> {a03;a13;a23;a33;a43;a53};
-    {a03;a13;a23;a33;a43;a53} -> {y1,y2,y3,y4};
-    "##;
-    string.to_string()
+fn body_arrows_generate_nn_graph_string(
+    num_input_nodes: i32,
+    num_hidden_nodes: &[i32],
+    num_output_nodes: i32,
+) -> String {
+    let mut string_start: String = String::new();
+    string_start += "edge[style=solid, tailport=e, headport=w];\n";
+
+    // Input
+    {
+        string_start += "{";
+
+        for i in 0..(num_input_nodes - 1) {
+            string_start += "x";
+            string_start += &i.to_string();
+            string_start += "; "
+        }
+        // Last manual
+        string_start += "x";
+        string_start += &(num_input_nodes - 1).to_string();
+        string_start += "}";
+    }
+
+    // Hidden
+    {
+        for l in (0 + 2)..(num_hidden_nodes.len() + 2) {
+            // Create layer {} thingy
+            let mut string_layer: String = String::new();
+            {
+                string_layer += "{";
+                for i in 0..num_hidden_nodes[l - 2] - 1 {
+                    string_layer += "a";
+                    string_layer += &i.to_string();
+                    string_layer += &l.to_string();
+                    string_layer += ";"
+                }
+                // Last manual
+                string_layer += "a";
+                string_layer += &(num_hidden_nodes[l - 2] - 1).to_string();
+                string_layer += &l.to_string();
+                string_layer += "}";
+            }
+
+            string_start += "->";
+            string_start += &string_layer;
+            string_start += ";\n";
+            string_start += &string_layer;
+        }
+    }
+
+    // Output
+    {
+        string_start += "->";
+        string_start += "{";
+
+        for i in 0..(num_output_nodes - 1) {
+            string_start += "y";
+            string_start += &i.to_string();
+            string_start += ", ";
+        }
+        // Last manual
+        string_start += "y";
+        string_start += &(num_output_nodes - 1).to_string();
+        string_start += "}";
+    }
+
+    let result_string: String = string_start.to_owned();
+    result_string
 }
 
-fn body_generate_nn_graph_string() -> String {
-    let mut body: String = body_input_generate_nn_graph_string();
-    body.push_str(body_hidden_generate_nn_graph_string().as_str());
-    body.push_str(body_output_generate_nn_graph_string().as_str());
-    body.push_str(body_rank_generate_nn_graph_string().as_str());
-    body.push_str(body_text_generate_nn_graph_string().as_str());
-    body.push_str(body_arrows_generate_nn_graph_string().as_str());
+fn body_generate_nn_graph_string(
+    num_input_nodes: i32,
+    num_hidden_nodes: &[i32],
+    num_output_nodes: i32,
+) -> String {
+    let output_layer_index: i32 = num_hidden_nodes.len() as i32 + 2;
+
+    let mut body: String = body_input_generate_nn_graph_string(num_input_nodes);
+    body.push_str(body_hidden_generate_nn_graph_string(&num_hidden_nodes).as_str());
+    body.push_str(
+        body_output_generate_nn_graph_string(output_layer_index, num_output_nodes).as_str(),
+    );
+    body.push_str(
+        body_rank_generate_nn_graph_string(num_input_nodes, &num_hidden_nodes, num_output_nodes)
+            .as_str(),
+    );
+    body.push_str(body_text_generate_nn_graph_string(&num_hidden_nodes).as_str());
+    body.push_str(
+        body_arrows_generate_nn_graph_string(num_input_nodes, &num_hidden_nodes, num_output_nodes)
+            .as_str(),
+    );
 
     body
 }
@@ -161,12 +349,26 @@ fn footer_generate_nn_graph_string() -> String {
     footer
 }
 
-pub fn generate_nn_graph_string() -> String {
+pub fn generate_nn_graph_string(graph_structure: &GraphStructure) -> String {
+    // TODO: Fix prettier string formating
+    // TODO: Use some kind of string format which did not work with r##""##
+
     let mut result_string: String = String::new();
     // result_string.reserve();
+    let num_input_nodes = graph_structure.input_nodes as i32;
+    // Lazy convert
+    let num_hidden_nodes: Vec<i32> = graph_structure
+        .hidden_layers
+        .iter()
+        .map(|&e| e as i32)
+        .collect();
+    let num_output_nodes = graph_structure.output_nodes as i32;
 
     result_string.push_str(header_generate_nn_graph_string(2.2).as_str());
-    result_string.push_str(body_generate_nn_graph_string().as_str());
+    result_string.push_str(
+        body_generate_nn_graph_string(num_input_nodes, &num_hidden_nodes, num_output_nodes)
+            .as_str(),
+    );
     result_string.push_str(footer_generate_nn_graph_string().as_str());
 
     result_string

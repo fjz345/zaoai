@@ -75,7 +75,7 @@ use symphonia::core::probe::Hint;
 static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 
 fn main() -> Result<(), SoloudError> {
-    let nn_structure: GraphStructure = GraphStructure::new(&[2, 5, 5, 2]);
+    let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2]);
     let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
     nntest.validate();
 
@@ -84,7 +84,7 @@ fn main() -> Result<(), SoloudError> {
     // output_test();
     // graph_test();
     //output_exec_from_test();
-    let graph_layout = generate_nn_graph_string();
+    let graph_layout = generate_nn_graph_string(&nntest.graph_structure);
     save_string_to_file(&graph_layout, NN_GRAPH_LAYOUT_FILEPATH);
 
     // TestNN(&mut nntest);
