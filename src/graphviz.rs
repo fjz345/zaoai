@@ -9,10 +9,13 @@ use graphviz_rust::{
     printer::{DotPrinter, PrinterContext},
 };
 
+use std::fmt;
+
 // Sets general style
-fn header_generate_nn_graph_string() -> String
-{
-    let header: &str = r##"
+fn header_generate_nn_graph_string(layer_spacing: f32) -> String {
+    // TODO: Can not format string literals???
+
+    let header0: &str = r##"
     digraph NNGraph {
         bgcolor="#222222"
         node [style=filled, fillcolor="#444444", fontcolor="#FFFFFFF", color = "#FFFFFF", shape="circle"]
@@ -22,18 +25,25 @@ fn header_generate_nn_graph_string() -> String
         rankdir = LR;
         splines=false;
         edge[style=invis];
-        ranksep= 2.2;
+        ranksep=
+        "##;
+
+    let header1 = format!("{}", layer_spacing);
+
+    let header2: &str = r##"
+        ;
         {
             node [shape=circle, color="#ffcc00", style=filled, fillcolor="#ffcc00"];
         }
 
         "##;
-        header.to_string()
+
+    let ReturnString: String = header0.to_owned() + &header1 + header2;
+    ReturnString
 }
 
 // body code
-fn body_input_generate_nn_graph_string() -> String
-{
+fn body_input_generate_nn_graph_string(num_input_nodes: i32) -> String {
     let string: &str = r##"
     {
         node [shape=circle, color="#00b300", style=filled, fillcolor="#00b300"];
@@ -44,11 +54,10 @@ fn body_input_generate_nn_graph_string() -> String
         x3 [label=<x<sub>3</sub>>];
     }
     "##;
-        string.to_string()
+    string.to_string()
 }
 
-fn body_hidden_generate_nn_graph_string() -> String
-{
+fn body_hidden_generate_nn_graph_string() -> String {
     let string: &str = r##"
     {
         node [shape=circle, color=dodgerblue, style=filled, fillcolor=dodgerblue];
@@ -69,11 +78,10 @@ fn body_hidden_generate_nn_graph_string() -> String
     }
     a02->a03;  // prevent tilting
     "##;
-        string.to_string()
+    string.to_string()
 }
 
-fn body_output_generate_nn_graph_string() -> String
-{
+fn body_output_generate_nn_graph_string() -> String {
     let string: &str = r##"
     {
         node [shape=circle, color=coral1, style=filled, fillcolor=coral1];
@@ -84,11 +92,10 @@ fn body_output_generate_nn_graph_string() -> String
         y4 [label=<y<sub>4</sub><sup>(4)</sup>>];
     }
     "##;
-        string.to_string()
+    string.to_string()
 }
 
-fn body_rank_generate_nn_graph_string() -> String
-{
+fn body_rank_generate_nn_graph_string() -> String {
     let string: &str = r##"
     {
         rank=same;
@@ -107,11 +114,10 @@ fn body_rank_generate_nn_graph_string() -> String
         y1->y2->y3->y4;
     }
     "##;
-        string.to_string()
+    string.to_string()
 }
 
-fn body_text_generate_nn_graph_string() -> String
-{
+fn body_text_generate_nn_graph_string() -> String {
     let string: &str = r##"
     l0 [shape=plaintext, label="Input Layer [1]"];
     l0->x0;
@@ -126,44 +132,40 @@ fn body_text_generate_nn_graph_string() -> String
     l3->y1;
     {rank=same; l3;y1};
     "##;
-        string.to_string()
+    string.to_string()
 }
-fn body_arrows_generate_nn_graph_string() -> String
-{
+fn body_arrows_generate_nn_graph_string() -> String {
     let string: &str = r##"
     edge[style=solid, tailport=e, headport=w];
     {x0; x1; x2; x3} -> {a02;a12;a22;a32;a42;a52};
     {a02;a12;a22;a32;a42;a52} -> {a03;a13;a23;a33;a43;a53};
     {a03;a13;a23;a33;a43;a53} -> {y1,y2,y3,y4};
     "##;
-        string.to_string()
+    string.to_string()
 }
 
-fn body_generate_nn_graph_string() -> String
-{
+fn body_generate_nn_graph_string() -> String {
     let mut body: String = body_input_generate_nn_graph_string();
     body.push_str(body_hidden_generate_nn_graph_string().as_str());
     body.push_str(body_output_generate_nn_graph_string().as_str());
     body.push_str(body_rank_generate_nn_graph_string().as_str());
     body.push_str(body_text_generate_nn_graph_string().as_str());
     body.push_str(body_arrows_generate_nn_graph_string().as_str());
-    
+
     body
 }
 
 // Finishes and close brackets
-fn footer_generate_nn_graph_string() -> String
-{
+fn footer_generate_nn_graph_string() -> String {
     let footer: String = "\n}".to_string();
     footer
 }
 
-pub fn generate_nn_graph_string() -> String
-{
+pub fn generate_nn_graph_string() -> String {
     let mut result_string: String = String::new();
     // result_string.reserve();
 
-    result_string.push_str(header_generate_nn_graph_string().as_str());
+    result_string.push_str(header_generate_nn_graph_string(2.2).as_str());
     result_string.push_str(body_generate_nn_graph_string().as_str());
     result_string.push_str(footer_generate_nn_graph_string().as_str());
 
