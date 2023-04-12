@@ -44,17 +44,17 @@ ML Steps:
 5. Model selection
 6. Final Model evaluation
 */
-mod zneural_network;
 mod filesystem;
-mod simpletest;
 mod graphviz;
 mod graphviz_examples;
+mod simpletest;
+mod zneural_network;
 
 use crate::filesystem::save_string_to_file;
-use crate::zneural_network::*;
-use crate::simpletest::*;
 use crate::graphviz::*;
 use crate::graphviz_examples::*;
+use crate::simpletest::*;
+use crate::zneural_network::*;
 
 use soloud::*;
 //use symphonia::core::sample;
@@ -92,14 +92,16 @@ fn main() -> Result<(), SoloudError> {
 
     return Ok(());
 
-
     let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2]);
     let mut nn: NeuralNetwork = NeuralNetwork::new(nn_structure);
     nn.validate();
 
     nn.print();
 
-    let mut datapoint = DataPoint{inputs: [2.0, 3.0], expected_outputs: [2.0, 3.0]};
+    let mut datapoint = DataPoint {
+        inputs: [2.0, 3.0],
+        expected_outputs: [2.0, 3.0],
+    };
     println!("Before: {:?}", datapoint.inputs);
     nn.calculate_outputs(&mut datapoint.inputs[..]);
     println!("After: {:?}", datapoint.inputs);

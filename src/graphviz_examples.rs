@@ -10,12 +10,8 @@ use graphviz_rust::{
     printer::{DotPrinter, PrinterContext},
 };
 
-
 unsafe fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-    ::core::slice::from_raw_parts(
-        (p as *const T) as *const u8,
-        ::core::mem::size_of::<T>(),
-    )
+    ::core::slice::from_raw_parts((p as *const T) as *const u8, ::core::mem::size_of::<T>())
 }
 
 pub fn parse_test() {
@@ -73,12 +69,7 @@ pub fn output_test() {
         ),
         edge!(node_id!("a1") => node_id!(esc "a2"))
     );
-    let graph_svg = exec(
-        g,
-        &mut PrinterContext::default(),
-        vec![Format::Svg.into()],
-    )
-    .unwrap();
+    let graph_svg = exec(g, &mut PrinterContext::default(), vec![Format::Svg.into()]).unwrap();
 }
 
 pub fn output_exec_from_test() {
@@ -102,7 +93,6 @@ pub fn output_exec_from_test() {
 }
 
 pub fn graph_test() {
-
     let g = r#"
             strict digraph t {
                 aa[color=green]
@@ -116,7 +106,6 @@ pub fn graph_test() {
                 aa -> aaa -> v
             }
             "#;
-
 
     let mut file = File::create("test.dot").expect("Failed to write to file");
     file.write_all(unsafe { g.as_bytes() });
