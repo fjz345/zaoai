@@ -321,6 +321,10 @@ impl NeuralNetwork {
         }
     }
 
+    pub fn GetLayers(&self) -> &Vec<Layer> {
+        &self.layers
+    }
+
     pub fn learn_epoch(&mut self, epoch_data: &[DataPoint], learn_rate: f32, print: Option<bool>) {
         if (epoch_data.len() <= 0) {
             panic!("LearnEpoch DataPoints length was 0");

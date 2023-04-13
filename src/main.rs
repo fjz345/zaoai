@@ -46,6 +46,7 @@ ML Steps:
 */
 mod filesystem;
 mod graphviz;
+mod graphviz_concat;
 mod graphviz_examples;
 mod simpletest;
 mod zneural_network;
@@ -84,7 +85,12 @@ fn main() -> Result<(), SoloudError> {
     // output_test();
     // graph_test();
     //output_exec_from_test();
-    let graph_layout = generate_nn_graph_string(&nntest.graph_structure);
+    let graph_params: GenerateGraphParams = GenerateGraphParams { layer_spacing: 2.2 };
+    let graph_layout = generate_nn_graph_weight_bias_string(
+        &nntest.graph_structure,
+        &graph_params,
+        &nntest.GetLayers(),
+    );
     save_string_to_file(&graph_layout, NN_GRAPH_LAYOUT_FILEPATH);
 
     // TestNN(&mut nntest);

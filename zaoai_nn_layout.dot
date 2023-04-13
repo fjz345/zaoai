@@ -1,32 +1,29 @@
-
-    digraph NNGraph {
+digraph NNGraph {
         bgcolor="#222222"
         node [style=filled, fillcolor="#444444", fontcolor="#FFFFFFF", color = "#FFFFFF", shape="circle"]
         edge [fontcolor="#FFFFFFF", color = "#FFFFFF"]
         graph [fontcolor="#FFFFFFF", color = "#FFFFFF"]
-    
+
         rankdir = LR;
         splines=false;
-        edge[style=invis];
-        ranksep=
-        2.2
-        ;
+        edge[style=invis dir=none];
+        ranksep= 2.2;
         {
             node [shape=circle, color="#ffcc00", style=filled, fillcolor="#ffcc00"];
         }
-
         
-    {
-        node [shape=circle, color="#00b300", style=filled, fillcolor="#00b300"];
-        // 1
-    x0 [label=<x<sub>0 </sub>>];
+        
+        {
+            node [shape=circle, color="#00b300", style=filled, fillcolor="#00b300"];
+            // 1
+            x0 [label=<x<sub>0 </sub>>];
 x1 [label=<x<sub>1 </sub>>];
 
-    }
-    
+        }
+        
     {
         node [shape=circle, color=dodgerblue, style=filled, fillcolor=dodgerblue];
-    //2
+        //2
 a02 [label=<a<sub>0</sub><sup>(2)</sup>>];
 a12 [label=<a<sub>1</sub><sup>(2)</sup>>];
 a22 [label=<a<sub>2</sub><sup>(2)</sup>>];
@@ -35,7 +32,8 @@ a22 [label=<a<sub>2</sub><sup>(2)</sup>>];
     
     {
         node [shape=circle, color=coral1, style=filled, fillcolor=coral1];
-    //3
+
+        //3
 y0 [label=<y<sub>0</sub><sup>(3)</sup>>];
 y1 [label=<y<sub>1</sub><sup>(3)</sup>>];
 
@@ -59,10 +57,25 @@ y0->y1;
     l1 [shape=plaintext, label="Hidden Layer [2]"];
 l1->a02
 {rank=same; l1;a02}
-l2 [shape=plaintext, label="Output Layer [3]"];
+
+    l2 [shape=plaintext, label="Output Layer [3]"];
 l2->y0
 {rank=same; l2;y0};
-edge[style=solid, tailport=e, headport=w];
-{x0; x1}->{a02;a12;a22};
-{a02;a12;a22}->{y0, y1}
-}
+
+    
+    edge[style=solid, tailport=e, headport=w];
+
+    edge[labelangle=0, labelfloat = false, labeldistance = 6];
+    edge[color="white;0.2:#222222;0.25:white"]
+
+    a02->y0[taillabel="0.020"];
+    a12->y0[taillabel="0.021"];
+    a22->y0[taillabel="0.022"];
+
+    a02->y1[taillabel="0.030"];
+    a12->y1[taillabel="0.031"];
+    a22->y1[taillabel="0.032"];
+
+    y1[label = 20]
+
+    }
