@@ -1,4 +1,6 @@
 use rand::prelude::*;
+use rand::rngs::StdRng;
+use rand_chacha;
 use symphonia::core::util::clamp;
 
 fn sigmoid(in_value: f32) -> f32 {
@@ -78,22 +80,10 @@ impl Layer {
             weights_cost_grads.push(vec![0.0; num_in_nodes]);
         }
 
-        // Initialize weights & biases
-        for i in 0..num_out_nodes {
-            let rand_bias: f32 = random();
-            biases[i] = rand_bias;
-
-            for j in 0..num_in_nodes {
-                let rand_weight: f32 = random();
-                weights[i][j] = rand_weight;
-            }
-        }
-
         let mut activation_values: Vec<f32> = vec![0.0; num_in_nodes];
-
         let mut weighted_inputs: Vec<f32> = vec![0.0; num_out_nodes];
 
-        Layer {
+        let mut new_layer = Layer {
             num_in_nodes,
             num_out_nodes,
             weights,
@@ -102,6 +92,30 @@ impl Layer {
             biases_cost_grads,
             activation_values,
             weighted_inputs,
+        };
+
+        new_layer.init_weights_and_biases(0);
+
+        new_layer
+    }
+
+    fn init_weights_and_biases(&mut self, seed: u64) {
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+
+        let min_weight = 0.0;
+        let max_weight = 1.0;
+        let min_bias = min_weight;
+        let max_bias = max_weight;
+
+        // Initialize weights & biases
+        for i in 0..self.num_out_nodes {
+            let rand_bias: f32 = rng.gen_range(min_weight..max_weight);
+            self.biases[i] = rand_bias;
+
+            for j in 0..self.num_in_nodes {
+                let rand_weight: f32 = rng.gen_range(min_bias..max_bias);
+                self.weights[i][j] = rand_weight;
+            }
         }
     }
 
@@ -116,22 +130,14 @@ impl Layer {
             self.num_in_nodes
         );
 
-        self.activation_values = activation_inputs.to_vec();
-
         for (output_node, output) in activation_outputs.iter_mut().enumerate() {
-            // First apply bias for the output node
-            self.weighted_inputs[output_node] = 0.0;
-
-            // Then apply input node weights
-            for j in 0..activation_inputs.len() {
+            self.weighted_inputs[output_node] = self.biases[output_node];
+            for input in 0..activation_inputs.len() {
                 self.weighted_inputs[output_node] +=
-                    activation_inputs[j] * self.weights[output_node][j];
+                    activation_inputs[input] * self.weights[output_node][input];
             }
 
-            // First apply bias for the output node
-            self.weighted_inputs[output_node] += self.biases[output_node];
-
-            *output = self.weighted_inputs[output_node];
+            *output = self.weighted_inputs[output_node] + self.biases[output_node];
         }
 
         activation_outputs
@@ -325,101 +331,134 @@ impl NeuralNetwork {
         &self.layers
     }
 
-    pub fn learn_epoch(&mut self, epoch_data: &[DataPoint], learn_rate: f32, print: Option<bool>) {
-        if (epoch_data.len() <= 0) {
+    pub fn learn_batch(&mut self, batch_data: &[DataPoint], learn_rate: f32, print: Option<bool>) {
+        if (batch_data.len() <= 0) {
             panic!("LearnEpoch DataPoints length was 0");
         }
 
         let print_enabled = print == Some(true);
 
-        for data_point in epoch_data {
+        for data_point in batch_data {
             self.update_all_cost_gradients(data_point);
         }
-
         // Adjust weights & biases
-        self.apply_all_cost_gradients(learn_rate / (epoch_data.len() as f32));
-
+        self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
         self.clear_all_cost_gradients();
+
+        // let original_cost = self.calculate_cost(&batch_data[..]);
+        // let h: f32 = 0.00001;
+        // // Calculate cost gradients for layers
+        // for i in 0..self.layers.len() {
+        //     // Weights
+        //     for in_node in 0..self.layers[i].num_in_nodes {
+        //         for out_node in 0..self.layers[i].num_out_nodes {
+        //             self.layers[i].weights[out_node][in_node] += h;
+        //             let dcost = self.calculate_cost(&batch_data[..]) - original_cost;
+        //             self.layers[i].weights[out_node][in_node] -= h;
+        //             self.layers[i].weights_cost_grads[out_node][in_node] = dcost / h;
+        //         }
+        //     }
+
+        //     // Biases
+        //     for bias_index in 0..self.layers[i].biases.len() {
+        //         self.layers[i].biases[bias_index] += h;
+        //         let dcost = self.calculate_cost(&batch_data[..]) - original_cost;
+        //         self.layers[i].biases[bias_index] -= h;
+        //         self.layers[i].biases_cost_grads[bias_index] = dcost / h;
+        //     }
+        // }
+        // // Adjust weights & biases
+        // self.apply_all_cost_gradients(learn_rate as f32);
+        // self.clear_all_cost_gradients();
 
         // Print cost
         if (print_enabled) {
-            let cost = self.calculate_cost(&epoch_data[..]);
+            let cost = self.calculate_cost(&batch_data[..]);
             println!("Cost: {}", cost);
+        }
+    }
+
+    pub fn learn_epoch(
+        &mut self,
+        training_data: &[DataPoint],
+        batch_size: usize,
+        learn_rate: f32,
+        print: Option<bool>,
+    ) {
+        let num_batches = training_data.len() / batch_size;
+        let last_batch_size = training_data.len() % batch_size;
+
+        let print_enabled = print == Some(true);
+
+        let mut cur_index: usize = 0;
+        let mut batch_step = batch_size;
+        if batch_step > training_data.len() {
+            batch_step = training_data.len();
+        }
+
+        for i in 0..num_batches {
+            let epoch_data = &training_data[cur_index..(cur_index + batch_step)];
+
+            if print_enabled {
+                println!(
+                    "Training...Epoch [{}/{}] (#{} - #{})",
+                    i + 1,
+                    num_batches,
+                    cur_index,
+                    cur_index + batch_step,
+                );
+            }
+            self.learn_batch(epoch_data, learn_rate, print);
+
+            cur_index += batch_step;
+        }
+
+        if (last_batch_size >= 1) {
+            batch_step = last_batch_size;
+            // Last epoch
+            let epoch_data = &training_data[cur_index..(cur_index + batch_step)];
+
+            if print_enabled {
+                println!(
+                    "Training...Epoch [{}/{}] (#{} - #{})",
+                    num_batches - 1,
+                    num_batches - 1,
+                    cur_index,
+                    cur_index + batch_step,
+                );
+            }
+            self.learn_batch(epoch_data, learn_rate, print);
         }
     }
 
     pub fn learn(
         &mut self,
         training_data: &[DataPoint],
-        epochs_size: usize,
+        num_epochs: usize,
+        batch_size: usize,
         learn_rate: f32,
         print: Option<bool>,
     ) {
-        if (training_data.len() <= 0) {
-            panic!("Learn DataPoints length was 0");
-        }
-
-        if (epochs_size <= 0) {
-            panic!("Learn Num Epochs was 0");
-        }
+        assert!(learn_rate > 0.0);
+        assert!(training_data.len() > 0);
+        assert!(batch_size > 0);
 
         let print_enabled = print == Some(true);
 
-        let num_epochs = training_data.len() / epochs_size;
-        let last_epoch_size = training_data.len() % epochs_size;
-
-        if print_enabled {
-            println!(
-                "Training...Learn Started [{}, {}]",
-                training_data.len(),
-                num_epochs
-            );
-        }
-
-        let mut cur_index: usize = 0;
-        let mut epoch_step = epochs_size;
-        if epoch_step > training_data.len() {
-            epoch_step = training_data.len();
-        }
-
-        for i in 0..num_epochs {
-            let epoch_data = &training_data[cur_index..(cur_index + epoch_step)];
-
+        for e in 0..num_epochs {
             if print_enabled {
                 println!(
-                    "Training...Epoch [{}/{}] @{} (#{} - #{})",
-                    i,
-                    num_epochs,
-                    epoch_step,
-                    cur_index,
-                    cur_index + epoch_step
+                    "Training...Learn Epoch Started [@{}/@{}]",
+                    e + 1,
+                    num_epochs
                 );
             }
-            self.learn_epoch(epoch_data, learn_rate, print);
 
-            cur_index += epoch_step;
-        }
-
-        if (last_epoch_size >= 1) {
-            epoch_step = last_epoch_size;
-            // Last epoch
-            let epoch_data = &training_data[cur_index..(cur_index + epoch_step)];
-
-            if print_enabled {
-                println!(
-                    "Training...Epoch [{}/{}] @{} (#{} - #{})",
-                    num_epochs,
-                    num_epochs,
-                    epoch_step,
-                    cur_index,
-                    cur_index + epoch_step
-                );
-            }
-            self.learn_epoch(epoch_data, learn_rate, print);
+            self.learn_epoch(&training_data, batch_size, learn_rate, print);
         }
 
         if print_enabled {
-            println!("Training...Complete! [{}/{}]", num_epochs, num_epochs);
+            println!("Training...Complete! [@{} Epochs]", num_epochs);
         }
     }
 
@@ -508,10 +547,9 @@ impl NeuralNetwork {
 
     // Returns a TestResult
     pub fn test(&mut self, test_data: &[DataPoint]) -> TestResults {
-        let num_datapoints = test_data.len();
         let mut num_correct = 0;
 
-        for i in 0..num_datapoints {
+        for i in 0..test_data.len() {
             let mut datapoint = test_data[i];
             let outputs = self.calculate_outputs(&mut datapoint.inputs[..]);
             let result = NeuralNetwork::determine_output_result(&outputs);
@@ -526,9 +564,9 @@ impl NeuralNetwork {
 
         let avg_cost = self.calculate_cost(test_data);
         let test_result = TestResults {
-            num_datapoints: num_datapoints as i32,
+            num_datapoints: test_data.len() as i32,
             num_correct: num_correct,
-            accuracy: (num_correct as f32) / (num_datapoints as f32),
+            accuracy: (num_correct as f32) / (test_data.len() as f32),
             cost: avg_cost,
         };
 
@@ -538,7 +576,7 @@ impl NeuralNetwork {
 
     fn update_all_cost_gradients(&mut self, data_point: &DataPoint) {
         // Calculate node values (populate layers::activation_values, weighted_inputs)
-        let o = self.calculate_outputs(&data_point.inputs);
+        self.calculate_outputs(&data_point.inputs);
 
         // Update for ouput layer
         let layer_len = self.layers.len();
@@ -549,6 +587,7 @@ impl NeuralNetwork {
 
         // Update for hidden layers
         for i in (0..(self.layers.len() - 1)).rev() {
+            println!("{:?} Hidden", i);
             let hidden_layer = &self.layers[i];
             let prev_layer = &self.layers[i + 1];
             node_cost_values =

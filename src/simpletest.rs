@@ -49,6 +49,33 @@ pub fn CreateDataPoints(seed: u64, num_datapoints: i32) -> Vec<DataPoint> {
     result
 }
 
+pub fn SplitDataPoints(
+    datapoints: Vec<DataPoint>,
+    thresholds: [f32; 2],
+    out_training_datapoints: &mut Vec<DataPoint>,
+    out_validation_datapoints: &mut Vec<DataPoint>,
+    out_test_datapoints: &mut Vec<DataPoint>,
+) {
+    /* Layout
+         threshold[0]     ...[1]
+    --------------------------------
+    | Training | Validation | Test |
+    --------------------------------
+    */
+
+    assert!(0.0 <= thresholds[0], "Invalid Threshold");
+    assert!(thresholds[0] <= thresholds[1], "Invalid Threshold");
+    assert!(thresholds[1] <= 1.0, "Invalid Threshold");
+
+    let traning_data_end: usize = (thresholds[0] * (datapoints.len() as f32)).floor() as usize;
+    let validadtion_data_end: usize = (thresholds[1] * (datapoints.len() as f32)).floor() as usize;
+    let test_data_end: usize = datapoints.len();
+
+    datapoints[0..traning_data_end].clone_into(out_training_datapoints);
+    datapoints[traning_data_end..validadtion_data_end].clone_into(out_validation_datapoints);
+    datapoints[validadtion_data_end..test_data_end].clone_into(out_test_datapoints);
+}
+
 pub fn TestNNOld(nn: &mut NeuralNetwork) {
     let num_datapoints: usize = 1000000;
     let mut datapoints = CreateDataPoints(0, num_datapoints as i32);
@@ -63,14 +90,23 @@ pub fn TestNNOld(nn: &mut NeuralNetwork) {
 }
 
 pub fn TestNN(nn: &mut NeuralNetwork) {
-    let num_datapoints: usize = 1000000;
-    let mut datapoints = CreateDataPoints(0, num_datapoints as i32);
-    //println!("DataPoints:\n {:#?}", datapoints);
+    let num_datapoints: usize = 1;
+    let mut dataset = CreateDataPoints(0, num_datapoints as i32);
+    let mut training_data: Vec<DataPoint> = Vec::new();
+    let mut validation_data: Vec<DataPoint> = Vec::new();
+    let mut test_data: Vec<DataPoint> = Vec::new();
+    SplitDataPoints(
+        dataset,
+        [1.0, 1.0],
+        &mut training_data,
+        &mut validation_data,
+        &mut test_data,
+    );
 
     // use 50/50 as traning data10
-    nn.learn(&datapoints[0..num_datapoints / 2], 1000, 0.1, Some(true));
+    nn.learn(&training_data, 1, 1, 0.1, Some(true));
 
-    let test_result = nn.test(&datapoints[num_datapoints / 2..num_datapoints]);
+    let test_result = nn.test(&training_data);
 
     nn.print();
 }

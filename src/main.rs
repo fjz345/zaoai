@@ -28,9 +28,21 @@ Support Audio Formats
     Create ML AI
         * General Code
         * Save/load weights
+        * Dropout neurons
+        * Cross-validation
+        * Fix Epoch termonology
+        * Propper Data splitting
+        * MNIST
+        * Softmax output
+        * Eigen vectors?
+        * Gradient dedcent momentum & decay
+        * Add noise
+        * Visualize output over time
     Add chapters to video file
     Gather training data
     Figure out how to train AI
+
+
 
     If more than 4 chapter points, assume that OP start/end & ED start/end are there. (Not for traning data ofc)
 */
@@ -93,7 +105,7 @@ fn main() -> Result<(), SoloudError> {
     );
     save_string_to_file(&graph_layout, NN_GRAPH_LAYOUT_FILEPATH);
 
-    // TestNN(&mut nntest);
+    TestNN(&mut nntest);
     // TestNNOld(&mut nntest);
 
     return Ok(());
