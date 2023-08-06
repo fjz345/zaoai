@@ -82,7 +82,7 @@ pub fn TestNNOld(nn: &mut NeuralNetwork) {
     //println!("DataPoints:\n {:#?}", datapoints);
 
     // use 50/50 as traning data10
-    nn.learn_old(&datapoints[0..num_datapoints / 2], 1000, 0.1, Some(true));
+    nn.learn_slow(&datapoints[0..num_datapoints / 2], 1000, 0.1, Some(true));
 
     let test_result = nn.test(&datapoints[num_datapoints / 2..num_datapoints]);
 
@@ -90,21 +90,21 @@ pub fn TestNNOld(nn: &mut NeuralNetwork) {
 }
 
 pub fn TestNN(nn: &mut NeuralNetwork) {
-    let num_datapoints: usize = 1;
+    let num_datapoints: usize = 1000000;
     let mut dataset = CreateDataPoints(0, num_datapoints as i32);
     let mut training_data: Vec<DataPoint> = Vec::new();
     let mut validation_data: Vec<DataPoint> = Vec::new();
     let mut test_data: Vec<DataPoint> = Vec::new();
     SplitDataPoints(
         dataset,
-        [1.0, 1.0],
+        [0.5, 0.5],
         &mut training_data,
         &mut validation_data,
         &mut test_data,
     );
 
     // use 50/50 as traning data10
-    nn.learn(&training_data, 1, 1, 0.1, Some(true));
+    nn.learn(&training_data, 10, 1000, 1.0, Some(true));
 
     let test_result = nn.test(&training_data);
 

@@ -32,11 +32,11 @@ fn activation_function_d(in_value: f32) -> f32 {
 
 fn node_cost(output_activation: f32, expected_activation: f32) -> f32 {
     let error = output_activation - expected_activation;
-    error * error
+    0.5 * error * error
 }
 
 fn node_cost_d(output_activation: f32, expected_activation: f32) -> f32 {
-    2.0 * (output_activation - expected_activation)
+    (output_activation - expected_activation)
 }
 
 #[derive(Clone)]
@@ -47,8 +47,16 @@ pub struct Layer {
     biases: Vec<f32>,
     weights_cost_grads: Vec<Vec<f32>>,
     biases_cost_grads: Vec<f32>,
-    activation_values: Vec<f32>,
+}
+
+#[derive(Clone)]
+pub struct LayerLearnData {
+    inputs: Vec<f32>,
     weighted_inputs: Vec<f32>,
+    activation_values: Vec<f32>,
+    //"node values" for the output layer. This is an array containing for each node:
+    // the partial derivative of the cost with respect to the weighted input
+    node_values: Vec<f32>,
 }
 
 impl Layer {
@@ -90,8 +98,6 @@ impl Layer {
             biases,
             weights_cost_grads,
             biases_cost_grads,
-            activation_values,
-            weighted_inputs,
         };
 
         new_layer.init_weights_and_biases(0);
@@ -120,7 +126,7 @@ impl Layer {
     }
 
     fn calculate_outputs(&mut self, activation_inputs: &[f32]) -> Vec<f32> {
-        let mut activation_outputs = vec![0.0; self.num_out_nodes];
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
 
         assert_eq!(
             activation_inputs.len(),
@@ -130,17 +136,51 @@ impl Layer {
             self.num_in_nodes
         );
 
-        for (output_node, output) in activation_outputs.iter_mut().enumerate() {
-            self.weighted_inputs[output_node] = self.biases[output_node];
+        for output_node in 0..self.num_out_nodes {
+            let mut weighted_input = self.biases[output_node];
             for input in 0..activation_inputs.len() {
-                self.weighted_inputs[output_node] +=
-                    activation_inputs[input] * self.weights[output_node][input];
+                weighted_input += activation_inputs[input] * self.weights[output_node][input];
             }
+            weighted_inputs[output_node] = weighted_input;
+        }
 
-            *output = self.weighted_inputs[output_node] + self.biases[output_node];
+        let mut activation_outputs = vec![0.0; self.num_out_nodes];
+        for output_node in 0..self.num_out_nodes {
+            activation_outputs[output_node] = activation_function(weighted_inputs[output_node]);
         }
 
         activation_outputs
+    }
+
+    fn calculate_outputs_2(
+        &mut self,
+        learn_data: &mut LayerLearnData,
+        activation_inputs: &[f32],
+    ) -> Vec<f32> {
+        assert_eq!(
+            activation_inputs.len(),
+            self.num_in_nodes,
+            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
+            activation_inputs.len(),
+            self.num_in_nodes
+        );
+
+        learn_data.inputs.clone_from_slice(activation_inputs);
+
+        for output_node in 0..self.num_out_nodes {
+            let mut weighted_input = self.biases[output_node];
+            for input_node in 0..self.num_in_nodes {
+                weighted_input +=
+                    activation_inputs[input_node] * self.weights[output_node][input_node];
+            }
+            learn_data.weighted_inputs[output_node] = weighted_input;
+        }
+
+        for i in 0..learn_data.activation_values.len() {
+            learn_data.activation_values[i] = activation_function(learn_data.weighted_inputs[i]);
+        }
+
+        learn_data.activation_values.clone()
     }
 
     fn apply_cost_gradient(&mut self, learn_rate: f32) {
@@ -154,17 +194,17 @@ impl Layer {
         }
     }
 
-    fn update_cost_gradients(&mut self, node_cost_values: &[f32]) {
+    fn update_cost_gradients(&mut self, learn_data: LayerLearnData) {
         for node_out in 0..self.num_out_nodes {
             // Weight costs
             for node_in in 0..self.num_in_nodes {
                 let derivative_cost_weight =
-                    self.activation_values[node_in] * node_cost_values[node_out];
+                    learn_data.inputs[node_in] * learn_data.node_values[node_out];
                 self.weights_cost_grads[node_out][node_in] += derivative_cost_weight;
             }
 
             // Bias costs
-            let derivative_cost_bias = 1.0 * node_cost_values[node_out];
+            let derivative_cost_bias = 1.0 * learn_data.node_values[node_out];
             self.biases_cost_grads[node_out] += derivative_cost_bias;
         }
     }
@@ -179,36 +219,44 @@ impl Layer {
         }
     }
 
-    fn calculate_output_layer_node_cost_values(&self, expected_outputs: &[f32]) -> Vec<f32> {
-        let mut node_cost_values: Vec<f32> = vec![0.0; expected_outputs.len()];
-
-        for i in 0..node_cost_values.len() {
-            let dcost = node_cost_d(self.activation_values[i], expected_outputs[i]);
-            let dactivation = activation_function_d(self.weighted_inputs[i]);
-            node_cost_values[i] = dactivation * dcost;
+    fn calculate_output_layer_node_cost_values(
+        &self,
+        learn_data: &mut LayerLearnData,
+        expected_outputs: &[f32],
+    ) {
+        for i in 0..learn_data.node_values.len() {
+            let dcost = node_cost_d(learn_data.activation_values[i], expected_outputs[i]);
+            let dactivation = activation_function_d(learn_data.weighted_inputs[i]);
+            learn_data.node_values[i] = dactivation * dcost;
         }
-
-        node_cost_values
     }
 
     fn calculate_hidden_layer_node_cost_values(
         &self,
+        learn_data: &mut LayerLearnData,
         prev_layer: &Layer,
         prev_node_cost_values: &[f32],
-    ) -> Vec<f32> {
-        let mut new_node_cost_values: Vec<f32> = vec![0.0; self.num_out_nodes];
-
-        for new_node_index in 0..new_node_cost_values.len() {
-            let mut new_node_cost_value: f32 = 0.0;
+    ) {
+        for new_node_index in 0..self.num_out_nodes {
+            let mut new_node_value: f32 = 0.0;
             for prev_node_index in 0..prev_node_cost_values.len() {
                 let weighted_input_d = prev_layer.weights[prev_node_index][new_node_index];
-                new_node_cost_value += weighted_input_d * prev_node_cost_values[prev_node_index];
+                new_node_value += weighted_input_d * prev_node_cost_values[prev_node_index];
             }
-            new_node_cost_value *= activation_function_d(self.weighted_inputs[new_node_index]);
-            new_node_cost_values[new_node_index] = new_node_cost_value;
+            new_node_value *= activation_function_d(learn_data.weighted_inputs[new_node_index]);
+            learn_data.node_values[new_node_index] = new_node_value;
         }
+    }
+}
 
-        new_node_cost_values
+impl LayerLearnData {
+    fn new(layer: &Layer) -> LayerLearnData {
+        LayerLearnData {
+            inputs: vec![0.0; layer.num_in_nodes],
+            weighted_inputs: vec![0.0; layer.num_out_nodes],
+            activation_values: vec![0.0; layer.num_out_nodes],
+            node_values: vec![0.0; layer.num_out_nodes],
+        }
     }
 }
 
@@ -296,6 +344,7 @@ pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
     pub last_results: TestResults,
+    layer_learn_data: Vec<LayerLearnData>,
 }
 
 impl NeuralNetwork {
@@ -320,10 +369,18 @@ impl NeuralNetwork {
             accuracy: 0.0,
             cost: 0.0,
         };
+
+        let mut layer_learn_data: Vec<LayerLearnData> = Vec::new();
+        for i in 0..layers.len() {
+            let layer: &Layer = &layers[i];
+            layer_learn_data.push(LayerLearnData::new(&layer));
+        }
+
         NeuralNetwork {
             graph_structure,
             layers,
             last_results,
+            layer_learn_data,
         }
     }
 
@@ -345,32 +402,6 @@ impl NeuralNetwork {
         self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
         self.clear_all_cost_gradients();
 
-        // let original_cost = self.calculate_cost(&batch_data[..]);
-        // let h: f32 = 0.00001;
-        // // Calculate cost gradients for layers
-        // for i in 0..self.layers.len() {
-        //     // Weights
-        //     for in_node in 0..self.layers[i].num_in_nodes {
-        //         for out_node in 0..self.layers[i].num_out_nodes {
-        //             self.layers[i].weights[out_node][in_node] += h;
-        //             let dcost = self.calculate_cost(&batch_data[..]) - original_cost;
-        //             self.layers[i].weights[out_node][in_node] -= h;
-        //             self.layers[i].weights_cost_grads[out_node][in_node] = dcost / h;
-        //         }
-        //     }
-
-        //     // Biases
-        //     for bias_index in 0..self.layers[i].biases.len() {
-        //         self.layers[i].biases[bias_index] += h;
-        //         let dcost = self.calculate_cost(&batch_data[..]) - original_cost;
-        //         self.layers[i].biases[bias_index] -= h;
-        //         self.layers[i].biases_cost_grads[bias_index] = dcost / h;
-        //     }
-        // }
-        // // Adjust weights & biases
-        // self.apply_all_cost_gradients(learn_rate as f32);
-        // self.clear_all_cost_gradients();
-
         // Print cost
         if (print_enabled) {
             let cost = self.calculate_cost(&batch_data[..]);
@@ -380,6 +411,7 @@ impl NeuralNetwork {
 
     pub fn learn_epoch(
         &mut self,
+        epoch_index: usize,
         training_data: &[DataPoint],
         batch_size: usize,
         learn_rate: f32,
@@ -401,7 +433,8 @@ impl NeuralNetwork {
 
             if print_enabled {
                 println!(
-                    "Training...Epoch [{}/{}] (#{} - #{})",
+                    "Training... @{} #[{}/{}] (#{} - #{})",
+                    epoch_index + 1,
                     i + 1,
                     num_batches,
                     cur_index,
@@ -420,9 +453,10 @@ impl NeuralNetwork {
 
             if print_enabled {
                 println!(
-                    "Training...Epoch [{}/{}] (#{} - #{})",
-                    num_batches - 1,
-                    num_batches - 1,
+                    "Training... @{} #[{}/{}] (#{} - #{})",
+                    epoch_index + 1,
+                    num_batches,
+                    num_batches,
                     cur_index,
                     cur_index + batch_step,
                 );
@@ -454,7 +488,7 @@ impl NeuralNetwork {
                 );
             }
 
-            self.learn_epoch(&training_data, batch_size, learn_rate, print);
+            self.learn_epoch(e, &training_data, batch_size, learn_rate, print);
         }
 
         if print_enabled {
@@ -462,7 +496,7 @@ impl NeuralNetwork {
         }
     }
 
-    pub fn learn_old(
+    pub fn learn_slow(
         &mut self,
         training_data: &[DataPoint],
         mut num_epochs: usize,
@@ -574,27 +608,41 @@ impl NeuralNetwork {
         test_result
     }
 
+    // Backpropegation
     fn update_all_cost_gradients(&mut self, data_point: &DataPoint) {
-        // Calculate node values (populate layers::activation_values, weighted_inputs)
-        self.calculate_outputs(&data_point.inputs);
+        let mut current_inputs = data_point.inputs.to_vec();
+        for (i, layer) in self.layers.iter_mut().enumerate() {
+            current_inputs =
+                layer.calculate_outputs_2(&mut self.layer_learn_data[i], &mut current_inputs);
+        }
 
         // Update for ouput layer
         let layer_len = self.layers.len();
         let mut output_layer = &mut self.layers[layer_len - 1];
-        let mut node_cost_values =
-            output_layer.calculate_output_layer_node_cost_values(&data_point.expected_outputs[..]);
-        output_layer.update_cost_gradients(&node_cost_values);
+        let mut learn_data_output: &mut LayerLearnData = &mut self.layer_learn_data[layer_len - 1];
+
+        output_layer.calculate_output_layer_node_cost_values(
+            &mut learn_data_output,
+            &data_point.expected_outputs[..],
+        );
+        output_layer.update_cost_gradients(learn_data_output.clone());
 
         // Update for hidden layers
         for i in (0..(self.layers.len() - 1)).rev() {
-            println!("{:?} Hidden", i);
-            let hidden_layer = &self.layers[i];
+            let hidden_layer: &Layer = &self.layers[i];
+
+            let learn_data_hidden_prev_values = self.layer_learn_data[i + 1].node_values.clone();
+            let mut learn_data_hidden: &mut LayerLearnData = &mut self.layer_learn_data[i];
+
             let prev_layer = &self.layers[i + 1];
-            node_cost_values =
-                hidden_layer.calculate_hidden_layer_node_cost_values(prev_layer, &node_cost_values);
+            hidden_layer.calculate_hidden_layer_node_cost_values(
+                &mut learn_data_hidden,
+                prev_layer,
+                &learn_data_hidden_prev_values,
+            );
 
             let mut_hidden_layer = &mut self.layers[i];
-            mut_hidden_layer.update_cost_gradients(&node_cost_values);
+            mut_hidden_layer.update_cost_gradients(learn_data_hidden.clone());
         }
     }
 
@@ -611,10 +659,9 @@ impl NeuralNetwork {
     }
 
     pub fn calculate_outputs(&mut self, inputs: &[f32]) -> Vec<f32> {
-        let mut current_inputs = vec![0.0; inputs.len()];
-        current_inputs.clone_from_slice(inputs);
+        let mut current_inputs = inputs.to_vec();
         for (i, layer) in self.layers.iter_mut().enumerate() {
-            current_inputs = layer.calculate_outputs(&mut current_inputs);
+            current_inputs = layer.calculate_outputs(&current_inputs);
         }
 
         current_inputs
@@ -659,7 +706,6 @@ impl NeuralNetwork {
         }
 
         let mut cost: f32 = 0.0;
-
         for data_point in &data[..] {
             cost += self.calculate_cost_data_point(*data_point);
         }
