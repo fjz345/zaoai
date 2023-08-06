@@ -1,3 +1,5 @@
+use crate::layer::*;
+use crate::neuralnetwork::*;
 use crate::zneural_network::*;
 
 use rand::prelude::*;

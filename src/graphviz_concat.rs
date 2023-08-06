@@ -1,5 +1,5 @@
 use crate::filesystem::*;
-use crate::zneural_network::GraphStructure;
+use crate::GraphStructure;
 
 use graphviz_rust::dot_generator::*;
 use graphviz_rust::dot_structures::*;

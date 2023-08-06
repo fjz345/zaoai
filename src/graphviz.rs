@@ -1,7 +1,8 @@
 use crate::filesystem::*;
 use crate::graphviz_concat;
-use crate::zneural_network::GraphStructure;
-use crate::zneural_network::Layer;
+
+use crate::GraphStructure;
+use crate::Layer;
 
 use graphviz_rust::dot_generator::*;
 use graphviz_rust::dot_structures::*;

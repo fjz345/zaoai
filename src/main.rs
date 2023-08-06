@@ -66,6 +66,8 @@ mod zneural_network;
 use crate::filesystem::save_string_to_file;
 use crate::graphviz::*;
 use crate::graphviz_examples::*;
+use crate::layer::*;
+use crate::neuralnetwork::*;
 use crate::simpletest::*;
 use crate::zneural_network::*;
 
