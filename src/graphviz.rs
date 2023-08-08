@@ -1,5 +1,4 @@
 use crate::filesystem::*;
-use crate::graphviz_concat;
 
 use crate::GraphStructure;
 use crate::Layer;
