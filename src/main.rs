@@ -26,15 +26,12 @@ Support Audio Formats
     Open mkv/mp4 file
         * Output debug picture of audio file.
     Create ML AI
-        * General Code
         * Save/load weights
         * Dropout neurons
         * Cross-validation
-        * Fix Epoch termonology
-        * Propper Data splitting
         * MNIST
         * Softmax output
-        * Eigen vectors?
+        * Eigen vectors? (reduce amount of input tensors)
         * Gradient dedcent momentum & decay
         * Add noise
         * Visualize output over time
@@ -69,6 +66,7 @@ use crate::graphviz_examples::*;
 use crate::layer::*;
 use crate::neuralnetwork::*;
 use crate::simpletest::*;
+use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::*;
 
 use soloud::*;
@@ -103,11 +101,11 @@ fn main() -> Result<(), SoloudError> {
     let graph_layout = generate_nn_graph_weight_bias_string(
         &nntest.graph_structure,
         &graph_params,
-        &nntest.GetLayers(),
+        &nntest.get_layers(),
     );
     save_string_to_file(&graph_layout, NN_GRAPH_LAYOUT_FILEPATH);
 
-    TestNN(&mut nntest);
+    test_nn(&mut nntest);
     // TestNNOld(&mut nntest);
 
     return Ok(());

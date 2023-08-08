@@ -93,8 +93,8 @@ fn body_hidden_generate_nn_graph_string(num_hidden_nodes: &[i32]) -> String {
     }
 
     // Prevent tilting
-    const prevent_tiling: bool = false;
-    if (prevent_tiling) {
+    const PREVENT_TILING: bool = false;
+    if (PREVENT_TILING) {
         string_hidden += "// Prevent tilting\n";
         for i in (0 + 2)..(num_hidden_nodes.len() - 1 + 2) {
             string_hidden += "a0";

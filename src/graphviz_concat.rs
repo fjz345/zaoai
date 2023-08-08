@@ -12,6 +12,10 @@ use graphviz_rust::{
 
 use std::fmt;
 
+/*
+This file has some functions to generate graphviz strings
+*/
+
 // Sets general style
 fn header_generate_nn_graph_string_concat(layer_spacing: f32) -> String {
     let header0: &str = r##"
@@ -37,8 +41,8 @@ fn header_generate_nn_graph_string_concat(layer_spacing: f32) -> String {
 
         "##;
 
-    let ReturnString: String = header0.to_owned() + &header1 + header2;
-    ReturnString
+    let return_string: String = header0.to_owned() + &header1 + header2;
+    return_string
 }
 
 // body code
@@ -95,8 +99,8 @@ fn body_hidden_generate_nn_graph_string_concat(num_hidden_nodes: &[i32]) -> Stri
     }
 
     // Prevent tilting
-    const prevent_tiling: bool = false;
-    if (prevent_tiling) {
+    const PREVENT_TILING: bool = false;
+    if (PREVENT_TILING) {
         string_middle += "// Prevent tilting\n";
         for i in (0 + 2)..(num_hidden_nodes.len() - 1 + 2) {
             string_middle += "a0";

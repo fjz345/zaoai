@@ -5,6 +5,8 @@ use rand::rngs::StdRng;
 use rand_chacha;
 use symphonia::core::util::clamp;
 
+use super::datapoint::DataPoint;
+
 impl LayerLearnData {
     fn new(layer: &Layer) -> LayerLearnData {
         LayerLearnData {
@@ -83,12 +85,6 @@ impl GraphStructure {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct DataPoint {
-    pub inputs: [f32; 2],
-    pub expected_outputs: [f32; 2],
-}
-
-#[derive(Copy, Clone, Debug)]
 pub struct TestResults {
     pub num_datapoints: i32,
     pub num_correct: i32,
@@ -99,7 +95,7 @@ pub struct TestResults {
 pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
-    pub last_results: TestResults,
+    pub last_test_results: TestResults,
     layer_learn_data: Vec<LayerLearnData>,
 }
 
@@ -135,24 +131,24 @@ impl NeuralNetwork {
         NeuralNetwork {
             graph_structure,
             layers,
-            last_results,
+            last_test_results: last_results,
             layer_learn_data,
         }
     }
 
-    pub fn GetLayers(&self) -> &Vec<Layer> {
+    pub fn get_layers(&self) -> &Vec<Layer> {
         &self.layers
     }
 
     pub fn learn_batch(&mut self, batch_data: &[DataPoint], learn_rate: f32, print: Option<bool>) {
         if (batch_data.len() <= 0) {
-            panic!("LearnEpoch DataPoints length was 0");
+            panic!("DataPoints length was 0");
         }
 
         let print_enabled = print == Some(true);
 
-        for data_point in batch_data {
-            self.update_all_cost_gradients(data_point);
+        for datapoint in batch_data {
+            self.update_all_cost_gradients(datapoint);
         }
         // Adjust weights & biases
         self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
@@ -252,6 +248,7 @@ impl NeuralNetwork {
         }
     }
 
+    // Not recommended for use
     pub fn learn_slow(
         &mut self,
         training_data: &[DataPoint],
@@ -360,13 +357,13 @@ impl NeuralNetwork {
             cost: avg_cost,
         };
 
-        self.last_results = test_result;
+        self.last_test_results = test_result;
         test_result
     }
 
     // Backpropegation
-    fn update_all_cost_gradients(&mut self, data_point: &DataPoint) {
-        let mut current_inputs = data_point.inputs.to_vec();
+    fn update_all_cost_gradients(&mut self, datapoint: &DataPoint) {
+        let mut current_inputs = datapoint.inputs.to_vec();
         for (i, layer) in self.layers.iter_mut().enumerate() {
             current_inputs =
                 layer.calculate_outputs_2(&mut self.layer_learn_data[i], &mut current_inputs);
@@ -379,7 +376,7 @@ impl NeuralNetwork {
 
         output_layer.calculate_output_layer_node_cost_values(
             &mut learn_data_output,
-            &data_point.expected_outputs[..],
+            &datapoint.expected_outputs[..],
         );
         output_layer.update_cost_gradients(learn_data_output.clone());
 
@@ -438,18 +435,18 @@ impl NeuralNetwork {
         (max_index, max)
     }
 
-    fn calculate_cost_data_point(&mut self, data_point: DataPoint) -> f32 {
+    fn calculate_cost_datapoint(&mut self, datapoint: DataPoint) -> f32 {
         let mut cost: f32 = 0.0;
 
         // Calculate the output of the neural network
-        let data_point_output = self.calculate_outputs(&data_point.inputs[..]);
+        let datapoint_output = self.calculate_outputs(&datapoint.inputs[..]);
 
         // Calculate cost by comparing difference between output and expected output
         let output_layer = self.layers.last().unwrap();
         for output_node in 0..output_layer.num_out_nodes {
             cost += node_cost(
-                data_point_output[output_node],
-                data_point.expected_outputs[output_node],
+                datapoint_output[output_node],
+                datapoint.expected_outputs[output_node],
             );
         }
 
@@ -462,14 +459,13 @@ impl NeuralNetwork {
         }
 
         let mut cost: f32 = 0.0;
-        for data_point in &data[..] {
-            cost += self.calculate_cost_data_point(*data_point);
+        for datapoint in &data[..] {
+            cost += self.calculate_cost_datapoint(*datapoint);
         }
 
         cost / (data.len() as f32)
     }
 
-    // Checks that the input size matches the output size between layers
     pub fn validate(&self) -> bool {
         let mut is_valid: bool = true;
 
@@ -512,7 +508,7 @@ impl NeuralNetwork {
         ///////////////////////////////////////////////////
 
         println!("Last Test Results: ");
-        println!("{:#?}", self.last_results);
+        println!("{:#?}", self.last_test_results);
         println!("----------------------------------");
     }
 }
