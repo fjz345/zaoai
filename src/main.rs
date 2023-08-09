@@ -23,8 +23,6 @@ Support Audio Formats
 
 /*
     TODO:
-    Open mkv/mp4 file
-        * Output debug picture of audio file.
     Create ML AI
         * Save/load weights
         * Dropout neurons
@@ -38,10 +36,6 @@ Support Audio Formats
     Add chapters to video file
     Gather training data
     Figure out how to train AI
-
-
-
-    If more than 4 chapter points, assume that OP start/end & ED start/end are there. (Not for traning data ofc)
 */
 
 /*
