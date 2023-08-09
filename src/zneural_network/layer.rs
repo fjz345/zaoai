@@ -3,6 +3,22 @@ use rand::rngs::StdRng;
 use rand_chacha;
 use symphonia::core::util::clamp;
 
+pub fn softmax(layer_values: &[f32]) -> Vec<f32> {
+    let mut sum: f64 = 0.0;
+    for value in layer_values {
+        sum += value.exp() as f64;
+    }
+
+    let mut softmax_values = layer_values.to_vec();
+    for softmax_value in &mut softmax_values {
+        *softmax_value = ((softmax_value.exp() as f64) / sum) as f32;
+    }
+    softmax_values
+}
+
+// ============================
+// Activation Functions
+// ============================
 fn sigmoid(in_value: f32) -> f32 {
     1.0 / (1.0 + (-in_value).exp())
 }
@@ -29,6 +45,11 @@ pub fn activation_function_d(in_value: f32) -> f32 {
     //relu_d(in_value)
     sigmoid_d(in_value)
 }
+// ============================
+
+// ============================
+// Cost Functions
+// ============================
 
 pub fn node_cost(output_activation: f32, expected_activation: f32) -> f32 {
     let error = output_activation - expected_activation;
@@ -38,6 +59,7 @@ pub fn node_cost(output_activation: f32, expected_activation: f32) -> f32 {
 pub fn node_cost_d(output_activation: f32, expected_activation: f32) -> f32 {
     (output_activation - expected_activation)
 }
+// ============================
 
 #[derive(Clone)]
 pub struct Layer {

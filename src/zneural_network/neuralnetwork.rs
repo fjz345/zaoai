@@ -22,10 +22,11 @@ pub struct GraphStructure {
     pub input_nodes: usize,
     pub hidden_layers: Vec<usize>, // contais nodes
     pub output_nodes: usize,
+    pub use_softmax_output: bool,
 }
 
 impl GraphStructure {
-    pub fn new(args: &[usize]) -> GraphStructure {
+    pub fn new(args: &[usize], use_softmax_output: bool) -> GraphStructure {
         if args.len() < 2 {
             // Format args to string
             let mut output_string: String = "".to_owned();
@@ -51,6 +52,7 @@ impl GraphStructure {
             input_nodes,
             hidden_layers: hidden_nodes.clone(),
             output_nodes,
+            use_softmax_output: use_softmax_output,
         }
     }
 
@@ -417,7 +419,17 @@ impl NeuralNetwork {
             current_inputs = layer.calculate_outputs(&current_inputs);
         }
 
+        // TODO: need to fix backpropegation
+        // if self.graph_structure.use_softmax_output {
+        //     current_inputs = softmax(&current_inputs);
+        // }
+
         current_inputs
+    }
+
+    pub fn calculate_outputs_softmax(&mut self, inputs: &[f32]) -> Vec<f32> {
+        let mut current_inputs = self.calculate_outputs(inputs);
+        softmax(&current_inputs)
     }
 
     // returns index of max value, max value
