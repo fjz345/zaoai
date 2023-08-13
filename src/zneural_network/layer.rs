@@ -85,10 +85,16 @@ impl Layer {
     pub fn new(num_in_nodes: usize, num_out_nodes: usize) -> Layer {
         // Validate Inputs
         if num_in_nodes <= 0 {
-            panic!("NumInNodes must be > 0, got {}", num_in_nodes);
+            panic!(
+                "NumInNodes must be > 0, got [{} {}]",
+                num_in_nodes, num_out_nodes
+            );
         }
         if num_out_nodes <= 0 {
-            panic!("NumOutNodes must be > 0, got {}", num_out_nodes);
+            panic!(
+                "NumOutNodes must be > 0, got [{} {}]",
+                num_in_nodes, num_out_nodes
+            );
         }
 
         // Allocate memory

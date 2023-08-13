@@ -117,15 +117,7 @@ fn main() -> Result<()> {
     //test_nn(&mut nntest);
     // TestNNOld(&mut nntest);
 
-    // Our application state:
-    let mut name = "Arthur".to_owned();
-    let mut age = 42;
-
-    eframe::run_native(
-        "My egui App",
-        options,
-        Box::new(|_cc| Box::<ZaoaiApp>::default()),
-    );
+    eframe::run_native("ZaoAI", options, Box::new(|_cc| Box::<ZaoaiApp>::default()));
 
     let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2], false);
     let mut nn: NeuralNetwork = NeuralNetwork::new(nn_structure);

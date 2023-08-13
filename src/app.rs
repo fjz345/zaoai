@@ -35,16 +35,16 @@ impl TrainingGraphVisualization {
             return ();
         }
 
-        let pos = egui::pos2(16.0, 128.0);
+        let pos = egui::pos2(999999.0, 999999.0);
         egui::Window::new(&self.title)
             .default_pos(pos)
             .show(ctx, |ui| {
-                ui.label(format!("Hello asd, age asd"));
-
                 let plot_clone: PlotPoints = Owned(self.plot_data.clone());
-                let line = Line::new(plot_clone);
+                let line: Line = Line::new(plot_clone);
                 Plot::new("my_plot")
                     .view_aspect(2.0)
+                    .width(500.0)
+                    .height(300.0)
                     .show(ui, |plot_ui| plot_ui.line(line));
             });
     }
@@ -68,7 +68,7 @@ impl Default for ZaoaiApp {
             state: AppState::Startup,
             ai: None,
             window_state: MenuWindowState {
-                nn_structure: "FjZ".to_owned(),
+                nn_structure: "2, 3, 2".to_owned(),
                 show_training_graph: true,
             },
             training_graph: TrainingGraphVisualization::new(),
@@ -104,7 +104,7 @@ impl ZaoaiApp {
             return;
         }
 
-        let pos = egui::pos2(500.0, 128.0);
+        let pos = egui::pos2(999999.0, 0.0);
         egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
             ui.label(self.ai.as_ref().unwrap().to_string());
         });
@@ -113,13 +113,12 @@ impl ZaoaiApp {
     fn draw_ui_menu(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
-                ui.heading("My egui Application");
                 ui.checkbox(
                     &mut self.window_state.show_training_graph,
                     "Show Training Graph",
                 );
 
-                let name_label = ui.label("Your name: ");
+                let name_label = ui.label("Create new NN with layers");
                 if (ui
                     .text_edit_singleline(&mut self.window_state.nn_structure)
                     .labelled_by(name_label.id)
@@ -156,7 +155,7 @@ impl eframe::App for ZaoaiApp {
                 let mut formatted_nn_structure = self
                     .window_state
                     .nn_structure
-                    .split(',')
+                    .split(|c| c == ',' || c == ' ')
                     .collect::<Vec<_>>()
                     .into_iter()
                     .map(|str| -> usize {
@@ -165,10 +164,11 @@ impl eframe::App for ZaoaiApp {
                     })
                     .collect::<Vec<_>>();
 
-                for i in formatted_nn_structure.len() - 1..0 {
+                for i in (0..formatted_nn_structure.len()).rev() {
                     let nr = formatted_nn_structure[i];
                     if nr == 0 {
-                        formatted_nn_structure.swap_remove(i);
+                        formatted_nn_structure.remove(i);
+                        println!("ASD");
                     }
                 }
 
