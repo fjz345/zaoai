@@ -56,22 +56,20 @@ impl GraphStructure {
         }
     }
 
-    fn validate(&self) -> bool {
+    pub fn validate(&self) -> bool {
         let mut is_valid = true;
 
         if self.input_nodes < 1 {
             is_valid = false;
         } else if self.output_nodes < 1 {
             is_valid = false;
-        } else if self.input_nodes != self.output_nodes {
-            is_valid = false;
         }
 
         is_valid
     }
 
-    fn print(&self) {
-        // Create a vec with the sizes (unwrap the hidden layer and combine)
+    fn to_string(&self) -> String {
+        let mut result_string: String = String::new();
         let mut layer_sizes: Vec<usize> = Vec::new();
 
         layer_sizes.push(self.input_nodes);
@@ -81,8 +79,20 @@ impl GraphStructure {
 
         layer_sizes.push(self.output_nodes);
 
+        for (i, layer) in layer_sizes.iter().enumerate() {
+            if (i >= 1) {
+                result_string += ", ";
+            }
+
+            result_string += layer.to_string().as_str();
+        }
+
+        result_string
+    }
+
+    fn print(&self) {
         // Print
-        println!("{:?}", layer_sizes);
+        println!("{}", self.to_string());
     }
 }
 
@@ -502,25 +512,21 @@ impl NeuralNetwork {
         is_valid
     }
 
-    // Prints each layer, showing the number of nodes in each layer
+    pub fn to_string(&self) -> String {
+        let print_string: String = format!(
+            "\
+        Graph Structure: {}\n\
+        Last Test Results: {:#?}\n",
+            self.graph_structure.to_string(),
+            self.last_test_results
+        );
+
+        print_string
+    }
+
     pub fn print(&self) {
-        println!("----------NEURAL NETWORK----------");
-        println!("Graph Structure: ");
-        self.graph_structure.print();
-
-        // Print Actual layer sizes
-        println!("Layer Nodes: ");
-        print!("[{:?}", self.graph_structure.input_nodes);
-        for layer in &self.layers[..] {
-            print!(", ");
-            print!("{:?}", layer.num_out_nodes);
-        }
-        print!("]\n");
-
-        ///////////////////////////////////////////////////
-
-        println!("Last Test Results: ");
-        println!("{:#?}", self.last_test_results);
-        println!("----------------------------------");
+        print!("----------NEURAL NETWORK----------\n");
+        print!("{}", self.to_string());
+        print!("----------------------------------\n");
     }
 }

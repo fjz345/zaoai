@@ -3,6 +3,7 @@
 #![allow(unused)]
 #![allow(unused_mut)]
 #![allow(clippy::redundant_closure)]
+
 /*
 Video -> Audio convert: ffmpeg
 Digial processing: https://crates.io&/crates/&bliss-audio
@@ -28,7 +29,6 @@ Support Audio Formats
         * Dropout neurons
         * Cross-validation
         * MNIST
-        * Softmax output
         * Eigen vectors? (reduce amount of input tensors)
         * Gradient dedcent momentum & decay
         * Add noise
@@ -47,12 +47,14 @@ ML Steps:
 5. Model selection
 6. Final Model evaluation
 */
+mod app;
 mod filesystem;
 mod graphviz;
 mod graphviz_examples;
 mod simpletest;
 mod zneural_network;
 
+use crate::app::*;
 use crate::filesystem::save_string_to_file;
 use crate::graphviz::*;
 use crate::graphviz_examples::*;
@@ -62,7 +64,9 @@ use crate::simpletest::*;
 use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::*;
 
+use eframe::egui;
 use soloud::*;
+use std::error;
 //use symphonia::core::sample;
 use symphonia::core::units::TimeBase;
 
@@ -80,7 +84,17 @@ use symphonia::core::probe::Hint;
 
 static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 
-fn main() -> Result<(), SoloudError> {
+// Change the alias to `Box<dyn error::Error>`.
+type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
+
+fn main() -> Result<()> {
+    env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+
+    let options = eframe::NativeOptions {
+        initial_window_size: Some(egui::vec2(1400.0, 1000.0)),
+        ..Default::default()
+    };
+
     let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2], true);
     let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
     nntest.validate();
@@ -100,10 +114,18 @@ fn main() -> Result<(), SoloudError> {
 
     save_string_to_file(&graph_layout, NN_GRAPH_LAYOUT_FILEPATH);
 
-    test_nn(&mut nntest);
+    //test_nn(&mut nntest);
     // TestNNOld(&mut nntest);
 
-    return Ok(());
+    // Our application state:
+    let mut name = "Arthur".to_owned();
+    let mut age = 42;
+
+    eframe::run_native(
+        "My egui App",
+        options,
+        Box::new(|_cc| Box::<ZaoaiApp>::default()),
+    );
 
     let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2], false);
     let mut nn: NeuralNetwork = NeuralNetwork::new(nn_structure);
