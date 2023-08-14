@@ -186,14 +186,6 @@ impl ZaoaiApp {
         egui::Window::new("Dataset")
             .default_pos(pos)
             .show(ctx, |ui: &mut egui::Ui| {
-                // ui.add(interval(
-                //     320.0,
-                //     100.0,
-                //     1.0,
-                //     &mut self.window_data.training_dataset_split_thresholds_0,
-                //     &mut self.window_data.training_dataset_split_thresholds_1,
-                // ));
-
                 ui.add(Interval::new(
                     &mut self.window_data.training_dataset_split_thresholds_0,
                     &mut self.window_data.training_dataset_split_thresholds_1,
@@ -303,15 +295,6 @@ impl ZaoaiApp {
 }
 
 impl eframe::App for ZaoaiApp {
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        // NOTE: a bright gray makes the shadows of the windows look weird.
-        // We use a bit of transparency so that if the user switches on the
-        // `transparent()` option they get immediate results.
-        egui::Color32::from_rgba_unmultiplied(12, 12, 12, 180).to_normalized_gamma_f32()
-
-        // _visuals.window_fill() would also be a natural choice
-    }
-
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         match self.state {
             AppState::Startup => {
