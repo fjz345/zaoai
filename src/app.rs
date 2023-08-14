@@ -128,8 +128,8 @@ impl Default for ZaoaiApp {
                 training_session_batch_size: 1000,
                 training_session_learn_rate: 0.2,
                 show_traning_dataset: true,
-                training_dataset_split_thresholds_0: 0.0,
-                training_dataset_split_thresholds_1: 1.0,
+                training_dataset_split_thresholds_0: 0.75,
+                training_dataset_split_thresholds_1: 0.9,
             },
             training_dataset: TrainingDataset::new(
                 &[DataPoint {
