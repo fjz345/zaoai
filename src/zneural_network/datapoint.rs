@@ -28,7 +28,7 @@ fn calculate_y_for_datapoint(x1: f32, x2: f32) -> (f32, f32) {
     (y1, y2)
 }
 
-pub fn create_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoint> {
+pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoint> {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
     let x1_min = 0.0;

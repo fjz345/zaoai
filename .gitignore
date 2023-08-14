@@ -3,6 +3,7 @@
 /training_data
 /.vscode
 /.vs
+/mnist
 
 *.png
 *.svg

@@ -1,4 +1,4 @@
-// #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use std::{ops::RangeInclusive, str::FromStr};
 
@@ -10,16 +10,16 @@ use eframe::{
     App,
 };
 use graphviz_rust::dot_structures::Graph;
+use ndarray::{ArrayBase, OwnedRepr, Dim, Array2};
 
 use crate::{
     egui_ext::Interval,
     zneural_network::{
-        datapoint::{split_datapoints, DataPoint},
+        datapoint::{split_datapoints, DataPoint, create_2x2_test_datapoints},
         neuralnetwork::{GraphStructure, NeuralNetwork, TrainingSession, TrainingState},
-    },
+    }, mnist::get_mnist,
 };
 
-/// State per thread.
 struct TrainingGraphVisualization {
     title: String,
     should_show: bool,
@@ -103,6 +103,17 @@ impl TrainingDataset {
             self.validation_split.as_mut(),
             self.test_split.as_mut(),
         )
+    }
+
+    // Returns the number of (in, out) nodes needed in layers
+    pub fn get_dimensions(&self) -> (usize, usize)
+    {
+        if(self.full_dataset.len() <= 0)
+        {
+            return (0,0);
+        }
+
+        (self.full_dataset[0].inputs.len(), self.full_dataset[0].expected_outputs.len())
     }
 }
 
@@ -191,6 +202,53 @@ impl ZaoaiApp {
                     &mut self.window_data.training_dataset_split_thresholds_1,
                     RangeInclusive::new(0.0, 1.0),
                 ));
+
+                if ui.button("Split").clicked() {
+                    self.training_dataset.split([
+                        self.window_data.training_dataset_split_thresholds_0,
+                        self.window_data.training_dataset_split_thresholds_1,
+                    ]);
+                }
+
+                ui.heading("Current Dataset");
+                ui.label(format!(
+                    "Training: {} ({:.2}%)\nValidation: {} ({:.2}%)\nTest: {} ({:.2}%)\nTotal: {} ({:.2}%)",
+                    self.training_dataset.training_split.len(),
+                    self.training_dataset.thresholds[0],
+                    self.training_dataset.validation_split.len(),
+                    self.training_dataset.thresholds[1] - self.training_dataset.thresholds[0],
+                    self.training_dataset.test_split.len(),
+                    1.0 - self.training_dataset.thresholds[1],
+                    self.training_dataset.training_split.len()
+                        + self.training_dataset.validation_split.len()
+                        + self.training_dataset.test_split.len(),
+                    (self.training_dataset.training_split.len()
+                        + self.training_dataset.validation_split.len()
+                        + self.training_dataset.test_split.len()) as f64
+                        / self.training_dataset.full_dataset.len().max(1) as f64,
+                ));
+
+                ui.label(format!("Dimensions: ({}, {})", self.training_dataset.get_dimensions().0, self.training_dataset.get_dimensions().1));
+
+                if ui.button("Load [2, 2] test dataset").clicked()
+                {
+                    let dataset = create_2x2_test_datapoints(0, 100000 as i32);
+                    self.training_dataset = TrainingDataset::new(&dataset);
+                    self.training_dataset.split([1.0, 1.0]);
+                }
+                if ui.button("Load [784, 10] MNIST dataset").clicked()
+                {
+                    get_mnist();
+
+                    // let mut dataset: Vec<DataPoint> = Vec::new();
+                    // for (i, data) in train_data.iter().enumerate()
+                    // {
+                    //     dataset.push(DataPoint { inputs: [*train_data.get((i,0,0)).unwrap(), *train_data.get((i,0,1)).unwrap()], expected_outputs: [*train_labels.get((i,0)).unwrap(), *train_labels.get((i,0)).unwrap()] });
+                    // }
+                    
+                    // self.training_dataset = TrainingDataset::new(&dataset);
+                }
+                
             });
     }
 

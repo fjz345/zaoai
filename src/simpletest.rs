@@ -8,7 +8,7 @@ use rand_chacha::ChaCha8Rng;
 
 pub fn test_nn(nn: &mut NeuralNetwork) {
     let num_datapoints: usize = 1000000;
-    let mut dataset = create_datapoints(0, num_datapoints as i32);
+    let mut dataset = create_2x2_test_datapoints(0, num_datapoints as i32);
     let mut training_data: Vec<DataPoint> = Vec::new();
     let mut validation_data: Vec<DataPoint> = Vec::new();
     let mut test_data: Vec<DataPoint> = Vec::new();

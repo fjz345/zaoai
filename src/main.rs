@@ -52,6 +52,7 @@ mod egui_ext;
 mod filesystem;
 mod graphviz;
 mod graphviz_examples;
+mod mnist;
 mod simpletest;
 mod zneural_network;
 
