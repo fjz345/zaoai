@@ -48,6 +48,7 @@ ML Steps:
 6. Final Model evaluation
 */
 mod app;
+mod egui_ext;
 mod filesystem;
 mod graphviz;
 mod graphviz_examples;
