@@ -289,12 +289,6 @@ impl ZaoaiApp {
                     self.state = AppState::SetupAi;
                 }
             });
-
-            ui.add(Interval::new(
-                &mut self.window_data.training_dataset_split_thresholds_0,
-                &mut self.window_data.training_dataset_split_thresholds_1,
-                RangeInclusive::new(0.0, 1.0),
-            ));
         });
 
         // Training Session
