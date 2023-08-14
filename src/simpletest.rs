@@ -13,7 +13,7 @@ pub fn test_nn(nn: &mut NeuralNetwork) {
     let mut validation_data: Vec<DataPoint> = Vec::new();
     let mut test_data: Vec<DataPoint> = Vec::new();
     split_datapoints(
-        dataset,
+        &dataset,
         [0.75, 0.9],
         &mut training_data,
         &mut validation_data,

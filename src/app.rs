@@ -1,17 +1,23 @@
 // #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::str::FromStr;
+use std::{ops::RangeInclusive, str::FromStr};
 
 use egui::plot::{Line, Plot, PlotPoints, PlotPoints::Owned};
 
 use eframe::{
-    egui::{self, plot::PlotPoint, style::Widgets, Response},
-    epaint::Color32,
+    egui::{self, plot::PlotPoint, style::Widgets, Response, Slider},
+    epaint::{Color32, Pos2, Rect},
     App,
 };
 use graphviz_rust::dot_structures::Graph;
 
-use crate::zneural_network::neuralnetwork::{GraphStructure, NeuralNetwork};
+use crate::{
+    egui_ext::Interval,
+    zneural_network::{
+        datapoint::{split_datapoints, DataPoint},
+        neuralnetwork::{GraphStructure, NeuralNetwork, TrainingSession, TrainingState},
+    },
+};
 
 /// State per thread.
 struct TrainingGraphVisualization {
@@ -50,15 +56,62 @@ impl TrainingGraphVisualization {
     }
 }
 
-struct MenuWindowState {
+struct MenuWindowData {
+    // Main Menu
     nn_structure: String,
+    // Training Graph
     show_training_graph: bool,
+    // Training Session
+    show_training_session: bool,
+    training_session_num_epochs: usize,
+    training_session_batch_size: usize,
+    training_session_learn_rate: f32,
+    // Training Dataset
+    show_traning_dataset: bool,
+    training_dataset_split_thresholds_0: f64,
+    training_dataset_split_thresholds_1: f64,
+}
+
+pub struct TrainingDataset {
+    full_dataset: Vec<DataPoint>,
+    is_split: bool,
+    thresholds: [f64; 2],
+    training_split: Vec<DataPoint>,
+    validation_split: Vec<DataPoint>,
+    test_split: Vec<DataPoint>,
+}
+
+impl TrainingDataset {
+    pub fn new(datapoints: &[DataPoint]) -> Self {
+        Self {
+            full_dataset: datapoints.to_vec(),
+            is_split: false,
+            thresholds: [0.0; 2],
+            training_split: Vec::new(),
+            validation_split: Vec::new(),
+            test_split: Vec::new(),
+        }
+    }
+
+    pub fn split(&mut self, thresholds: [f64; 2]) {
+        self.is_split = true;
+        self.thresholds = thresholds;
+        split_datapoints(
+            &self.full_dataset[..],
+            thresholds,
+            self.training_split.as_mut(),
+            self.validation_split.as_mut(),
+            self.test_split.as_mut(),
+        )
+    }
 }
 
 pub struct ZaoaiApp {
     state: AppState,
     ai: Option<NeuralNetwork>,
-    window_state: MenuWindowState,
+    window_data: MenuWindowData,
+    training_dataset: TrainingDataset,
+    training_session: Option<TrainingSession>,
     training_graph: TrainingGraphVisualization,
 }
 
@@ -67,10 +120,24 @@ impl Default for ZaoaiApp {
         Self {
             state: AppState::Startup,
             ai: None,
-            window_state: MenuWindowState {
+            window_data: MenuWindowData {
                 nn_structure: "2, 3, 2".to_owned(),
                 show_training_graph: true,
+                show_training_session: true,
+                training_session_num_epochs: 2,
+                training_session_batch_size: 1000,
+                training_session_learn_rate: 0.2,
+                show_traning_dataset: true,
+                training_dataset_split_thresholds_0: 0.0,
+                training_dataset_split_thresholds_1: 1.0,
             },
+            training_dataset: TrainingDataset::new(
+                &[DataPoint {
+                    inputs: [0.0; 2],
+                    expected_outputs: [0.0; 2],
+                }; 0],
+            ),
+            training_session: None,
             training_graph: TrainingGraphVisualization::new(),
         }
     }
@@ -110,24 +177,130 @@ impl ZaoaiApp {
         });
     }
 
+    fn draw_ui_training_dataset(&mut self, ctx: &egui::Context) {
+        if !self.window_data.show_traning_dataset {
+            return;
+        }
+
+        let pos = egui::pos2(0.0, 600.0);
+        egui::Window::new("Dataset")
+            .default_pos(pos)
+            .show(ctx, |ui: &mut egui::Ui| {
+                // ui.add(interval(
+                //     320.0,
+                //     100.0,
+                //     1.0,
+                //     &mut self.window_data.training_dataset_split_thresholds_0,
+                //     &mut self.window_data.training_dataset_split_thresholds_1,
+                // ));
+
+                ui.add(Interval::new(
+                    &mut self.window_data.training_dataset_split_thresholds_0,
+                    &mut self.window_data.training_dataset_split_thresholds_1,
+                    RangeInclusive::new(0.0, 1.0),
+                ));
+            });
+    }
+
+    fn draw_ui_training_session(&mut self, ctx: &egui::Context) {
+        if !self.window_data.show_training_session {
+            return;
+        }
+
+        let pos = egui::pos2(500.0, 0.0);
+        egui::Window::new("Training")
+            .default_pos(pos)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut self.window_data.training_session_num_epochs,
+                            RangeInclusive::new(1, 100),
+                        )
+                        .step_by(1.0),
+                    );
+                    ui.label("Num Epochs");
+                });
+
+                ui.horizontal(|ui| {
+                    add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut self.window_data.training_session_batch_size,
+                            RangeInclusive::new(10, 1000),
+                        )
+                        .step_by(10.0),
+                    );
+                    ui.label("Batch Size");
+                });
+
+                ui.horizontal(|ui| {
+                    add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut self.window_data.training_session_learn_rate,
+                            RangeInclusive::new(0.1, 0.5),
+                        )
+                        .step_by(0.1),
+                    );
+                    ui.label("Learn Rate");
+                });
+
+                if ui.button("Begin Training").clicked() {
+                    if (self.training_session.is_some()) {
+                        let mut training_session = self.training_session.as_mut().unwrap();
+
+                        // Try to load traning dataset
+                        if self.training_dataset.is_split {
+                            training_session
+                                .set_training_data(&self.training_dataset.training_split);
+                        } else {
+                            println!("Training with full dataset!");
+                            training_session.set_training_data(&self.training_dataset.full_dataset);
+                        }
+                        self.state = AppState::Training;
+                    }
+                }
+            });
+    }
+
     fn draw_ui_menu(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
+                ui.checkbox(&mut self.window_data.show_traning_dataset, "Show Dataset");
+
+                ui.checkbox(&mut self.window_data.show_training_session, "Show Training");
+
                 ui.checkbox(
-                    &mut self.window_state.show_training_graph,
+                    &mut self.window_data.show_training_graph,
                     "Show Training Graph",
                 );
 
                 let name_label = ui.label("Create new NN with layers");
                 if (ui
-                    .text_edit_singleline(&mut self.window_state.nn_structure)
+                    .text_edit_singleline(&mut self.window_data.nn_structure)
                     .labelled_by(name_label.id)
                     .lost_focus())
                 {
                     self.state = AppState::SetupAi;
                 }
             });
+
+            ui.add(Interval::new(
+                &mut self.window_data.training_dataset_split_thresholds_0,
+                &mut self.window_data.training_dataset_split_thresholds_1,
+                RangeInclusive::new(0.0, 1.0),
+            ));
         });
+
+        // Training Session
+        self.draw_ui_training_session(ctx);
+
+        self.draw_ui_training_dataset(ctx);
 
         self.draw_ui_ai(ctx);
 
@@ -153,7 +326,7 @@ impl eframe::App for ZaoaiApp {
             }
             AppState::SetupAi => {
                 let mut formatted_nn_structure = self
-                    .window_state
+                    .window_data
                     .nn_structure
                     .split(|c| c == ',' || c == ' ')
                     .collect::<Vec<_>>()
@@ -168,7 +341,6 @@ impl eframe::App for ZaoaiApp {
                     let nr = formatted_nn_structure[i];
                     if nr == 0 {
                         formatted_nn_structure.remove(i);
-                        println!("ASD");
                     }
                 }
 
@@ -181,12 +353,25 @@ impl eframe::App for ZaoaiApp {
                 self.draw_ui_menu(ctx, frame);
             }
             AppState::Training => {
-                self.draw_ui_menu(ctx, frame);
+                if self.ai.is_none() {
+                    self.state = AppState::Idle;
+                    return;
+                }
 
-                if let Some(ai) = &self.ai {
-                    let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2], true);
-                    let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
-                    nntest.validate();
+                let ai = self.ai.as_ref().unwrap();
+
+                // Start Training
+                if self.training_session.is_some() {
+                    if self.training_session.as_ref().unwrap().ready() {
+                        let mut training_session = self.training_session.as_ref().unwrap().clone();
+                        let training_thread = training_session.begin();
+
+                        while !training_thread.is_finished() {
+                            self.draw_ui_menu(ctx, frame);
+                        }
+
+                        training_thread.join();
+                    }
                 }
             }
             AppState::Exit => {
@@ -200,7 +385,7 @@ impl eframe::App for ZaoaiApp {
     }
 
     fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &eframe::Frame) {
-        self.training_graph.should_show = self.window_state.show_training_graph;
+        self.training_graph.should_show = self.window_data.show_training_graph;
     }
 }
 

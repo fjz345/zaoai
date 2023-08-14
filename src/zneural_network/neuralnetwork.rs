@@ -1,3 +1,5 @@
+use std::thread::JoinHandle;
+
 use crate::layer::*;
 
 use rand::prelude::*;
@@ -6,6 +8,71 @@ use rand_chacha;
 use symphonia::core::util::clamp;
 
 use super::datapoint::DataPoint;
+
+#[derive(Clone)]
+pub struct TrainingSession {
+    nn: Option<NeuralNetwork>,
+    state: TrainingState,
+    num_epochs: usize,
+    batch_size: usize,
+    learn_rate: f32,
+    training_data: Vec<DataPoint>,
+}
+
+impl TrainingSession {
+    pub fn new(
+        nn: &NeuralNetwork,
+        training_data: &[DataPoint],
+        num_epochs: usize,
+        batch_size: usize,
+        learn_rate: f32,
+    ) -> Self {
+        Self {
+            nn: Some(nn.clone()),
+            state: TrainingState::Idle,
+            num_epochs: num_epochs,
+            batch_size: batch_size,
+            learn_rate: learn_rate,
+            training_data: training_data.to_vec(),
+        }
+    }
+
+    pub fn set_training_data(&mut self, in_data: &[DataPoint]) {
+        self.training_data = in_data.to_vec();
+    }
+
+    pub fn ready(&self) -> bool {
+        self.nn.is_some()
+            && self.training_data.len() > 0
+            && self.num_epochs > 0
+            && self.batch_size > 0
+            && self.learn_rate > 0.0
+    }
+
+    // Spawns a new thread and begins learning the supplied NN
+    pub fn begin(&self) -> JoinHandle<()> {
+        let nn_option = self.nn.clone();
+        let training_data = self.training_data.clone();
+        let num_epochs = self.num_epochs;
+        let batch_size = self.batch_size;
+        let learn_rate = self.learn_rate;
+
+        let training_thread = std::thread::spawn(move || {
+            if nn_option.is_some() {
+                let mut nn: NeuralNetwork = nn_option.unwrap().clone();
+                nn.learn(
+                    &training_data[..],
+                    num_epochs,
+                    batch_size,
+                    learn_rate,
+                    Some(false),
+                );
+            }
+        });
+
+        return training_thread;
+    }
+}
 
 impl LayerLearnData {
     fn new(layer: &Layer) -> LayerLearnData {
@@ -18,6 +85,7 @@ impl LayerLearnData {
     }
 }
 
+#[derive(Clone)]
 pub struct GraphStructure {
     pub input_nodes: usize,
     pub hidden_layers: Vec<usize>, // contais nodes
@@ -104,6 +172,15 @@ pub struct TestResults {
     pub cost: f32,
 }
 
+#[derive(Clone)]
+pub enum TrainingState {
+    Idle,
+    Training,
+    Finish,
+    Abort,
+}
+
+#[derive(Clone)]
 pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,

@@ -56,8 +56,8 @@ pub fn create_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoint> {
 }
 
 pub fn split_datapoints(
-    datapoints: Vec<DataPoint>,
-    thresholds: [f32; 2],
+    datapoints: &[DataPoint],
+    thresholds: [f64; 2],
     out_training_datapoints: &mut Vec<DataPoint>,
     out_validation_datapoints: &mut Vec<DataPoint>,
     out_test_datapoints: &mut Vec<DataPoint>,
@@ -73,8 +73,8 @@ pub fn split_datapoints(
     assert!(thresholds[0] <= thresholds[1], "Invalid Threshold");
     assert!(thresholds[1] <= 1.0, "Invalid Threshold");
 
-    let traning_data_end: usize = (thresholds[0] * (datapoints.len() as f32)).floor() as usize;
-    let validadtion_data_end: usize = (thresholds[1] * (datapoints.len() as f32)).floor() as usize;
+    let traning_data_end: usize = (thresholds[0] * (datapoints.len() as f64)).floor() as usize;
+    let validadtion_data_end: usize = (thresholds[1] * (datapoints.len() as f64)).floor() as usize;
     let test_data_end: usize = datapoints.len();
 
     datapoints[0..traning_data_end].clone_into(out_training_datapoints);
