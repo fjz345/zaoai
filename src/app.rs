@@ -5,11 +5,11 @@ use std::{ops::RangeInclusive, str::FromStr, time::Duration};
 use egui::plot::{Line, Plot, PlotPoints, PlotPoints::Owned};
 
 use eframe::{
-    egui::{self, plot::PlotPoint, style::Widgets, Response, Slider},
+    egui::{self, plot::{PlotPoint, GridMark, GridInput}, style::Widgets, Response, Slider, RawInput},
     epaint::{Color32, Pos2, Rect},
     App,
 };
-use graphviz_rust::dot_structures::Graph;
+use graphviz_rust::{dot_structures::Graph, print};
 use ndarray::{ArrayBase, OwnedRepr, Dim, Array2};
 use symphonia::core::conv::IntoSample;
 
@@ -53,12 +53,54 @@ impl TrainingGraphVisualization {
             .show(ctx, |ui| {
                 let plot_clone: PlotPoints = Owned(self.plot_data.clone());
                 let line: Line = Line::new(plot_clone);
-                Plot::new("my_plot")
-                    .view_aspect(2.0)
-                    .width(500.0)
-                    .height(300.0)
-                    .show(ui, |plot_ui| plot_ui.line(line));
+                
+                Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line));
             });
+    }
+
+    fn create_plot_training() -> Plot
+    {
+        const INCLUDE_Y_PADDING: f64 = 0.06;
+        Plot::new("my_plot")
+            .allow_drag(false).allow_zoom(false).allow_scroll(false).allow_boxed_zoom(false).allow_double_click_reset(false)
+            .auto_bounds_x().center_x_axis(false).sharp_grid_lines(true)
+            .include_y(0.0-INCLUDE_Y_PADDING).include_y(1.0 + INCLUDE_Y_PADDING).include_x(0.0)
+            .y_grid_spacer(Self::create_plot_training_y_spacer_func)
+            .width(500.0).height(300.0)
+    }
+
+    fn create_plot_training_y_spacer_func(grid: GridInput) -> Vec<GridMark>
+    {
+        vec![
+        // 0.1
+        GridMark { value: 0.05, step_size:  0.05 },
+        GridMark { value: 0.1, step_size:  0.05 },
+        GridMark { value: 0.15, step_size:  0.05 },
+        GridMark { value: 0.2, step_size:  0.05 },
+        GridMark { value: 0.25, step_size:  0.05 },
+        GridMark { value: 0.3, step_size:  0.05 },
+        GridMark { value: 0.35, step_size:  0.05 },
+        GridMark { value: 0.4, step_size:  0.05 },
+        GridMark { value: 0.45, step_size:  0.05 },
+        GridMark { value: 0.6, step_size:  0.05 },
+        GridMark { value: 0.65, step_size:  0.05 },
+        GridMark { value: 0.7, step_size:  0.05 },
+        GridMark { value: 0.75, step_size:  0.05 },
+        GridMark { value: 0.8, step_size:  0.05 },
+        GridMark { value: 0.85, step_size:  0.05 },
+        GridMark { value: 0.9, step_size:  0.05 },
+        GridMark { value: 0.95, step_size:  0.05 },
+
+        // 0.25
+        GridMark { value: 0.0, step_size: 0.25 },
+        GridMark { value: 0.25, step_size: 0.25 },
+        GridMark { value: 0.50, step_size: 0.25 },
+        GridMark { value: 0.75, step_size: 0.25 },
+
+        // 1.0
+        GridMark { value: 0.0, step_size: 1.0 },
+        GridMark { value: 1.0, step_size: 1.0 },
+        ]
     }
 }
 
@@ -423,8 +465,8 @@ impl eframe::App for ZaoaiApp {
 
                     let mut training_thread_buffer: Vec<TrainingThreadPayload> = Vec::with_capacity(training_session.get_num_epochs());
                     while !training_thread.is_finished() {
-                        while training_thread_buffer.len() < training_session.get_num_epochs() {
-                            let result_metadata = rx_training_metadata.recv_timeout(Duration::from_millis(100));
+                         {
+                            let result_metadata = rx_training_metadata.recv_timeout(Duration::from_millis(1));
                             if(result_metadata.is_ok())
                             {
                                 training_thread_buffer.push(result_metadata.unwrap());
@@ -434,6 +476,7 @@ impl eframe::App for ZaoaiApp {
                             }
                             
                             self.draw_ui_menu(ctx, frame);
+                            ctx.request_repaint();
                         }
                     }
 
