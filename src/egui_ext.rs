@@ -9,6 +9,14 @@ use eframe::emath::NumExt;
 use eframe::epaint::{vec2, PathShape, Rect, Vec2};
 use eframe::{egui, emath};
 
+pub fn add_slider_sized(ui: &mut egui::Ui, size: f32, slider: egui::Slider) -> Response {
+    let saved_slider_width = ui.style_mut().spacing.slider_width;
+    ui.style_mut().spacing.slider_width = size;
+    let result: Response = ui.add(slider);
+    ui.style_mut().spacing.slider_width = saved_slider_width;
+    result
+}
+
 fn make_triangle(pos: Pos2, size: f64) -> Vec<Pos2> {
     vec![
         Pos2 {

@@ -21,7 +21,7 @@ pub fn test_nn(nn: &mut NeuralNetwork) {
     );
 
     // nn.learn_slow(&training_data, 10, 1000, 1.0, Some(true));
-    nn.learn(&training_data, 2, 10, 0.2, Some(false));
+    nn.learn(&training_data, 2, 10, 0.2, Some(false), None);
 
     let test_result = nn.test(&training_data);
 

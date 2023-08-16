@@ -1,3 +1,5 @@
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
 
 use crate::layer::*;
@@ -19,22 +21,140 @@ pub struct TrainingSession {
     training_data: Vec<DataPoint>,
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub enum DatasetUsage {
+    Training,
+    Validation,
+    Test,
+}
+
+#[derive(Clone)]
+pub struct TrainingThreadPayload {
+    pub payload_index: usize,
+    pub payload_max_index: usize,
+    pub training_metadata: AIResultMetadata,
+}
+
+#[derive(Clone)]
+pub struct AIResultMetadata {
+    pub true_positives: usize,
+    pub true_negatives: usize,
+    pub false_positives: usize,
+    pub false_negatives: usize,
+    pub positive_instances: usize,
+    pub negative_instances: usize,
+    pub cost: f64,
+    num_merged: usize,
+    dataset_usage: DatasetUsage,
+}
+
+impl AIResultMetadata {
+    pub fn new(dataset_usage: DatasetUsage) -> Self {
+        Self {
+            true_positives: 0,
+            true_negatives: 0,
+            false_positives: 0,
+            false_negatives: 0,
+            positive_instances: 0,
+            negative_instances: 0,
+            cost: 0.0,
+            num_merged: 0,
+            dataset_usage,
+        }
+    }
+
+    pub fn merge(&mut self, other: &AIResultMetadata) -> &mut Self {
+        assert_eq!(
+            self.dataset_usage, other.dataset_usage,
+            "DatasetUsage must match"
+        );
+
+        self.num_merged += 1;
+        self.true_positives += other.true_positives;
+        self.true_negatives += other.true_negatives;
+        self.false_positives += other.false_positives;
+        self.false_negatives += other.false_negatives;
+        self.positive_instances += other.positive_instances;
+        self.negative_instances += other.negative_instances;
+        self.cost = self.cost * (self.num_merged - 1) as f64 / self.num_merged as f64;
+        self
+    }
+
+    pub fn calc_accuracy(&self) -> f64 {
+        (self.true_positives + self.true_negatives) as f64
+            / (self.positive_instances + self.negative_instances) as f64
+    }
+
+    pub fn calc_error_rate(&self) -> f64 {
+        (self.false_positives + self.false_negatives) as f64
+            / (self.positive_instances + self.negative_instances) as f64
+    }
+
+    pub fn calc_true_positive_rate(&self) -> f64 {
+        self.true_positives as f64 / (self.true_positives + self.false_positives) as f64
+    }
+
+    pub fn calc_true_negative_rate(&self) -> f64 {
+        self.true_negatives as f64 / (self.false_positives + self.false_negatives) as f64
+    }
+
+    pub fn calc_positive_liklihood(&self) -> f64 {
+        self.calc_true_positive_rate() as f64 / (1.0 - self.calc_true_negative_rate()) as f64
+    }
+
+    pub fn calc_negative_liklihood(&self) -> f64 {
+        self.calc_true_positive_rate() as f64 / self.calc_true_negative_rate() as f64
+    }
+}
+
+impl Default for TrainingSession {
+    fn default() -> Self {
+        Self {
+            nn: None,
+            state: TrainingState::Idle,
+            num_epochs: 0,
+            batch_size: 0,
+            learn_rate: 0.0,
+            training_data: Vec::new(),
+        }
+    }
+}
+
 impl TrainingSession {
     pub fn new(
-        nn: &NeuralNetwork,
+        nn: Option<&NeuralNetwork>,
         training_data: &[DataPoint],
         num_epochs: usize,
         batch_size: usize,
         learn_rate: f32,
     ) -> Self {
+        if nn.is_some() {
+            return Self {
+                nn: Some(nn.unwrap().clone()),
+                state: TrainingState::Idle,
+                num_epochs: num_epochs,
+                batch_size: batch_size,
+                learn_rate: learn_rate,
+                training_data: training_data.to_vec(),
+            };
+        }
+
         Self {
-            nn: Some(nn.clone()),
+            nn: None,
             state: TrainingState::Idle,
             num_epochs: num_epochs,
             batch_size: batch_size,
             learn_rate: learn_rate,
             training_data: training_data.to_vec(),
         }
+    }
+
+    pub fn get_num_epochs(&self) -> usize {
+        self.num_epochs
+    }
+
+    pub fn get_batch_size(&self) -> usize {
+        self.batch_size
     }
 
     pub fn set_training_data(&mut self, in_data: &[DataPoint]) {
@@ -44,33 +164,47 @@ impl TrainingSession {
     pub fn ready(&self) -> bool {
         self.nn.is_some()
             && self.training_data.len() > 0
+            && self.state == TrainingState::Idle
             && self.num_epochs > 0
             && self.batch_size > 0
             && self.learn_rate > 0.0
     }
 
     // Spawns a new thread and begins learning the supplied NN
-    pub fn begin(&self) -> JoinHandle<()> {
+    pub fn begin(
+        &self,
+    ) -> (
+        JoinHandle<()>,
+        Receiver<NeuralNetwork>,
+        Receiver<TrainingThreadPayload>,
+    ) {
         let nn_option = self.nn.clone();
         let training_data = self.training_data.clone();
         let num_epochs = self.num_epochs;
         let batch_size = self.batch_size;
         let learn_rate = self.learn_rate;
 
+        let (tx_nn, rx_nn) = mpsc::channel();
+        let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
+
         let training_thread = std::thread::spawn(move || {
             if nn_option.is_some() {
-                let mut nn: NeuralNetwork = nn_option.unwrap().clone();
+                let mut nn: NeuralNetwork = nn_option.unwrap();
+
                 nn.learn(
                     &training_data[..],
                     num_epochs,
                     batch_size,
                     learn_rate,
                     Some(false),
+                    Some(&tx_training_metadata),
                 );
+
+                tx_nn.send(nn);
             }
         });
 
-        return training_thread;
+        return (training_thread, rx_nn, rx_training_metadata);
     }
 }
 
@@ -172,7 +306,7 @@ pub struct TestResults {
     pub cost: f32,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub enum TrainingState {
     Idle,
     Training,
@@ -230,6 +364,8 @@ impl NeuralNetwork {
     }
 
     pub fn learn_batch(&mut self, batch_data: &[DataPoint], learn_rate: f32, print: Option<bool>) {
+        let new_metadata = AIResultMetadata::new(DatasetUsage::Training);
+
         if (batch_data.len() <= 0) {
             panic!("DataPoints length was 0");
         }
@@ -257,6 +393,7 @@ impl NeuralNetwork {
         batch_size: usize,
         learn_rate: f32,
         print: Option<bool>,
+        mut epoch_metadata: Option<&mut AIResultMetadata>,
     ) {
         let num_batches = training_data.len() / batch_size;
         let last_batch_size = training_data.len() % batch_size;
@@ -282,7 +419,15 @@ impl NeuralNetwork {
                     cur_index + batch_step,
                 );
             }
+
             self.learn_batch(epoch_data, learn_rate, print);
+            if epoch_metadata.is_some() {
+                let mut new_metadata: AIResultMetadata =
+                    AIResultMetadata::new(DatasetUsage::Training);
+
+                self.learn_batch_metadata(epoch_data, &mut new_metadata);
+                epoch_metadata.as_mut().unwrap().merge(&new_metadata);
+            }
 
             cur_index += batch_step;
         }
@@ -303,6 +448,37 @@ impl NeuralNetwork {
                 );
             }
             self.learn_batch(epoch_data, learn_rate, print);
+            if epoch_metadata.is_some() {
+                let mut new_metadata: AIResultMetadata =
+                    AIResultMetadata::new(DatasetUsage::Training);
+
+                self.learn_batch_metadata(epoch_data, &mut new_metadata);
+                epoch_metadata.as_mut().unwrap().merge(&new_metadata);
+            }
+        }
+    }
+
+    fn learn_batch_metadata(&self, epoch_data: &[DataPoint], new_metadata: &mut AIResultMetadata) {
+        for data in epoch_data {
+            let output_result = self.calculate_outputs(&data.inputs);
+
+            let (determined_indedx, determined_value) =
+                Self::determine_output_result(&output_result[..]);
+
+            let (determined_expected_indedx, determined_expected_value) =
+                Self::determine_output_result(&data.expected_outputs);
+
+            match (determined_indedx == determined_expected_indedx, false) {
+                (true, false) => {
+                    new_metadata.true_positives += 1;
+                    new_metadata.positive_instances += 1;
+                }
+                (false, false) => {
+                    new_metadata.false_positives += 1;
+                    new_metadata.negative_instances += 1;
+                }
+                _ => panic!("Fix bug"),
+            }
         }
     }
 
@@ -313,6 +489,7 @@ impl NeuralNetwork {
         batch_size: usize,
         learn_rate: f32,
         print: Option<bool>,
+        tx_training_metadata: Option<&Sender<TrainingThreadPayload>>,
     ) {
         assert!(learn_rate > 0.0);
         assert!(training_data.len() > 0);
@@ -329,7 +506,24 @@ impl NeuralNetwork {
                 );
             }
 
-            self.learn_epoch(e, &training_data, batch_size, learn_rate, print);
+            let mut metadata: AIResultMetadata = AIResultMetadata::new(DatasetUsage::Training);
+            self.learn_epoch(
+                e,
+                &training_data,
+                batch_size,
+                learn_rate,
+                print,
+                Some(&mut metadata),
+            );
+
+            if tx_training_metadata.is_some() {
+                let payload = TrainingThreadPayload {
+                    payload_index: e,
+                    payload_max_index: num_epochs - 1,
+                    training_metadata: metadata,
+                };
+                tx_training_metadata.unwrap().send(payload);
+            }
         }
 
         if print_enabled {
@@ -500,9 +694,9 @@ impl NeuralNetwork {
         }
     }
 
-    pub fn calculate_outputs(&mut self, inputs: &[f32]) -> Vec<f32> {
+    pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
         let mut current_inputs = inputs.to_vec();
-        for (i, layer) in self.layers.iter_mut().enumerate() {
+        for (i, layer) in self.layers.iter().enumerate() {
             current_inputs = layer.calculate_outputs(&current_inputs);
         }
 

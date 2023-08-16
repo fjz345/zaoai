@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{ops::RangeInclusive, str::FromStr};
+use std::{ops::RangeInclusive, str::FromStr, time::Duration};
 
 use egui::plot::{Line, Plot, PlotPoints, PlotPoints::Owned};
 
@@ -11,12 +11,13 @@ use eframe::{
 };
 use graphviz_rust::dot_structures::Graph;
 use ndarray::{ArrayBase, OwnedRepr, Dim, Array2};
+use symphonia::core::conv::IntoSample;
 
 use crate::{
-    egui_ext::Interval,
+    egui_ext::{Interval, add_slider_sized},
     zneural_network::{
         datapoint::{split_datapoints, DataPoint, create_2x2_test_datapoints},
-        neuralnetwork::{GraphStructure, NeuralNetwork, TrainingSession, TrainingState},
+        neuralnetwork::{GraphStructure, NeuralNetwork, TrainingSession, TrainingState, AIResultMetadata, TrainingThreadPayload},
     }, mnist::get_mnist,
 };
 
@@ -34,6 +35,11 @@ impl TrainingGraphVisualization {
             should_show: false,
             plot_data: Vec::new(),
         }
+    }
+
+    fn update_plot_data(&mut self, new_data: &Vec<PlotPoint>)
+    {
+        self.plot_data = new_data.clone();
     }
 
     fn draw_ui(&mut self, ctx: &egui::Context) {
@@ -105,6 +111,15 @@ impl TrainingDataset {
         )
     }
 
+    pub fn get_training_data_slice(&self) -> &[DataPoint]
+    {
+        if self.is_split {
+            return &self.training_split[..];
+        } else {
+            return &self.full_dataset[..];
+        }
+    }
+
     // Returns the number of (in, out) nodes needed in layers
     pub fn get_dimensions(&self) -> (usize, usize)
     {
@@ -165,6 +180,16 @@ enum AppState {
 }
 
 impl ZaoaiApp {
+    fn update_training_session(&mut self)
+    {
+        let mut ai_ref: Option<&NeuralNetwork> = self.ai.as_ref();
+        self.training_session = Some(TrainingSession::new(ai_ref,
+             &self.training_dataset.get_training_data_slice(), 
+             self.window_data.training_session_num_epochs, 
+             self.window_data.training_session_batch_size, 
+             self.window_data.training_session_learn_rate));
+    }
+
     fn startup(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let mut visuals: egui::Visuals = egui::Visuals::dark();
         // visuals.panel_fill = Color32::from_rgba_unmultiplied(24, 36, 41, 255);
@@ -175,6 +200,7 @@ impl ZaoaiApp {
         if (nn_structure.validate()) {
             self.ai = Some(NeuralNetwork::new(nn_structure));
         }
+        self.training_session = None;
     }
 
     fn draw_ui_ai(&mut self, ctx: &egui::Context) {
@@ -185,6 +211,14 @@ impl ZaoaiApp {
         let pos = egui::pos2(999999.0, 0.0);
         egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
             ui.label(self.ai.as_ref().unwrap().to_string());
+
+            if ui.button("Test").clicked()
+            {
+                if self.ai.is_some()
+                {
+                    self.ai.as_mut().unwrap().test(&self.training_dataset.test_split[..]);
+                }
+            }
         });
     }
 
@@ -219,9 +253,7 @@ impl ZaoaiApp {
                     self.training_dataset.thresholds[1] - self.training_dataset.thresholds[0],
                     self.training_dataset.test_split.len(),
                     1.0 - self.training_dataset.thresholds[1],
-                    self.training_dataset.training_split.len()
-                        + self.training_dataset.validation_split.len()
-                        + self.training_dataset.test_split.len(),
+                    self.training_dataset.full_dataset.len(),
                     (self.training_dataset.training_split.len()
                         + self.training_dataset.validation_split.len()
                         + self.training_dataset.test_split.len()) as f64
@@ -300,18 +332,10 @@ impl ZaoaiApp {
                     ui.label("Learn Rate");
                 });
 
-                if ui.button("Begin Training").clicked() {
-                    if (self.training_session.is_some()) {
-                        let mut training_session = self.training_session.as_mut().unwrap();
+                self.update_training_session();
 
-                        // Try to load traning dataset
-                        if self.training_dataset.is_split {
-                            training_session
-                                .set_training_data(&self.training_dataset.training_split);
-                        } else {
-                            println!("Training with full dataset!");
-                            training_session.set_training_data(&self.training_dataset.full_dataset);
-                        }
+                if ui.button("Begin Training").clicked() {
+                    if (self.training_session.is_some() && self.training_session.as_ref().unwrap().ready()) {
                         self.state = AppState::Training;
                     }
                 }
@@ -388,26 +412,43 @@ impl eframe::App for ZaoaiApp {
                 self.draw_ui_menu(ctx, frame);
             }
             AppState::Training => {
-                if self.ai.is_none() {
+                if self.training_session.is_none() || !self.training_session.as_ref().unwrap().ready() {
                     self.state = AppState::Idle;
                     return;
                 }
 
-                let ai = self.ai.as_ref().unwrap();
+                if self.training_session.as_ref().unwrap().ready() {
+                    let mut training_session = self.training_session.as_ref().unwrap().clone();
+                    let (training_thread, rx, rx_training_metadata) = training_session.begin();
 
-                // Start Training
-                if self.training_session.is_some() {
-                    if self.training_session.as_ref().unwrap().ready() {
-                        let mut training_session = self.training_session.as_ref().unwrap().clone();
-                        let training_thread = training_session.begin();
+                    let mut training_thread_buffer: Vec<TrainingThreadPayload> = Vec::with_capacity(training_session.get_num_epochs());
+                    while !training_thread.is_finished() {
+                        while training_thread_buffer.len() < training_session.get_num_epochs() {
+                            let result_metadata = rx_training_metadata.recv_timeout(Duration::from_millis(100));
+                            if(result_metadata.is_ok())
+                            {
+                                training_thread_buffer.push(result_metadata.unwrap());
 
-                        while !training_thread.is_finished() {
+                                let training_plotpoints: Vec<PlotPoint> = generate_plotpoints_from_training_thread_payloads(&training_thread_buffer);
+                                self.training_graph.update_plot_data(&training_plotpoints);
+                            }
+                            
                             self.draw_ui_menu(ctx, frame);
                         }
-
-                        training_thread.join();
                     }
+
+                    training_thread.join();
+
+                    let result = rx.recv();
+                    if result.is_ok()
+                    {
+                        self.ai = Some(result.unwrap());
+                    }
+
+                    println!("Training Finished");
                 }
+                
+                self.state = AppState::Idle;
             }
             AppState::Exit => {
                 frame.close();
@@ -424,10 +465,15 @@ impl eframe::App for ZaoaiApp {
     }
 }
 
-fn add_slider_sized(ui: &mut egui::Ui, size: f32, slider: egui::Slider) -> Response {
-    let saved_slider_width = ui.style_mut().spacing.slider_width;
-    ui.style_mut().spacing.slider_width = size;
-    let result: Response = ui.add(slider);
-    ui.style_mut().spacing.slider_width = saved_slider_width;
+fn generate_plotpoints_from_training_thread_payloads(payloads: &Vec<TrainingThreadPayload>) -> Vec<PlotPoint>
+{
+    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+
+    for payload in payloads
+    {
+        let asd = payload.training_metadata.calc_accuracy();
+        let plotpoint = PlotPoint{ x: payload.payload_index as f64, y: asd };
+        result.push(plotpoint);
+    }
     result
 }

@@ -153,7 +153,7 @@ impl Layer {
         }
     }
 
-    pub fn calculate_outputs(&mut self, activation_inputs: &[f32]) -> Vec<f32> {
+    pub fn calculate_outputs(&self, activation_inputs: &[f32]) -> Vec<f32> {
         let mut weighted_inputs = vec![0.0; self.num_out_nodes];
 
         assert_eq!(
