@@ -1,13 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{ops::RangeInclusive, str::FromStr, time::Duration};
+use std::{ops::RangeInclusive, str::FromStr, time::Duration, thread::JoinHandle, sync::mpsc::Receiver};
 
 use egui::plot::{Line, Plot, PlotPoints, PlotPoints::Owned};
 
 use eframe::{
     egui::{self, plot::{PlotPoint, GridMark, GridInput}, style::Widgets, Response, Slider, RawInput},
     epaint::{Color32, Pos2, Rect},
-    App,
+    App, glow::TESS_EVALUATION_TEXTURE,
 };
 use graphviz_rust::{dot_structures::Graph, print};
 use ndarray::{ArrayBase, OwnedRepr, Dim, Array2};
@@ -17,7 +17,7 @@ use crate::{
     egui_ext::{Interval, add_slider_sized},
     zneural_network::{
         datapoint::{split_datapoints, DataPoint, create_2x2_test_datapoints},
-        neuralnetwork::{GraphStructure, NeuralNetwork, TrainingSession, TrainingState, AIResultMetadata, TrainingThreadPayload},
+        neuralnetwork::{GraphStructure, NeuralNetwork, TrainingSession, TrainingState, AIResultMetadata, TrainingThreadPayload, TrainingThread},
     }, mnist::get_mnist,
 };
 
@@ -179,8 +179,9 @@ pub struct ZaoaiApp {
     ai: Option<NeuralNetwork>,
     window_data: MenuWindowData,
     training_dataset: TrainingDataset,
-    training_session: Option<TrainingSession>,
+    training_session: TrainingSession,
     training_graph: TrainingGraphVisualization,
+    training_thread: Option<TrainingThread>,
 }
 
 impl Default for ZaoaiApp {
@@ -205,8 +206,9 @@ impl Default for ZaoaiApp {
                     expected_outputs: [0.0; 2],
                 }; 0],
             ),
-            training_session: None,
+            training_session: TrainingSession::default(),
             training_graph: TrainingGraphVisualization::new(),
+            training_thread: None,
         }
     }
 }
@@ -225,11 +227,11 @@ impl ZaoaiApp {
     fn update_training_session(&mut self)
     {
         let mut ai_ref: Option<&NeuralNetwork> = self.ai.as_ref();
-        self.training_session = Some(TrainingSession::new(ai_ref,
+        self.training_session = TrainingSession::new(ai_ref,
              &self.training_dataset.get_training_data_slice(), 
              self.window_data.training_session_num_epochs, 
              self.window_data.training_session_batch_size, 
-             self.window_data.training_session_learn_rate));
+             self.window_data.training_session_learn_rate);
     }
 
     fn startup(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -239,10 +241,15 @@ impl ZaoaiApp {
     }
 
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
+        self.training_session = TrainingSession::default();
         if (nn_structure.validate()) {
             self.ai = Some(NeuralNetwork::new(nn_structure));
+            self.training_session.set_nn(self.ai.as_ref().unwrap());
         }
-        self.training_session = None;
+        
+        self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
+        self.window_data.training_session_batch_size = self.training_session.get_batch_size();
+        self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
     }
 
     fn draw_ui_ai(&mut self, ctx: &egui::Context) {
@@ -335,8 +342,9 @@ impl ZaoaiApp {
         egui::Window::new("Training")
             .default_pos(pos)
             .show(ctx, |ui| {
+                let mut ui_dirty: bool = false;
                 ui.horizontal(|ui| {
-                    add_slider_sized(
+                    if add_slider_sized(
                         ui,
                         100.0,
                         Slider::new(
@@ -344,12 +352,14 @@ impl ZaoaiApp {
                             RangeInclusive::new(1, 100),
                         )
                         .step_by(1.0),
-                    );
+                    ).changed() {
+                        ui_dirty = true;
+                    };
                     ui.label("Num Epochs");
                 });
 
                 ui.horizontal(|ui| {
-                    add_slider_sized(
+                    if add_slider_sized(
                         ui,
                         100.0,
                         Slider::new(
@@ -357,12 +367,15 @@ impl ZaoaiApp {
                             RangeInclusive::new(10, 1000),
                         )
                         .step_by(10.0),
-                    );
+                    ).changed()
+                    {
+                        ui_dirty = true;
+                    };
                     ui.label("Batch Size");
                 });
 
                 ui.horizontal(|ui| {
-                    add_slider_sized(
+                    if add_slider_sized(
                         ui,
                         100.0,
                         Slider::new(
@@ -370,15 +383,21 @@ impl ZaoaiApp {
                             RangeInclusive::new(0.1, 0.5),
                         )
                         .step_by(0.1),
-                    );
+                    ).changed(){
+                        ui_dirty = true;
+                    };
                     ui.label("Learn Rate");
                 });
 
-                self.update_training_session();
+                if ui_dirty
+                {
+                    self.update_training_session();
+                }
 
                 if ui.button("Begin Training").clicked() {
-                    if (self.training_session.is_some() && self.training_session.as_ref().unwrap().ready()) {
+                    if self.training_session.ready() {
                         self.state = AppState::Training;
+                        self.training_session.set_state(TrainingState::StartTraining);
                     }
                 }
             });
@@ -450,48 +469,64 @@ impl eframe::App for ZaoaiApp {
                 }
                 self.state = AppState::Idle;
             }
-            AppState::Idle => {
-                self.draw_ui_menu(ctx, frame);
-            }
+            AppState::Idle => {self.draw_ui_menu(ctx, frame);}
             AppState::Training => {
-                if self.training_session.is_none() || !self.training_session.as_ref().unwrap().ready() {
-                    self.state = AppState::Idle;
-                    return;
-                }
-
-                if self.training_session.as_ref().unwrap().ready() {
-                    let mut training_session = self.training_session.as_ref().unwrap().clone();
-                    let (training_thread, rx, rx_training_metadata) = training_session.begin();
-
-                    let mut training_thread_buffer: Vec<TrainingThreadPayload> = Vec::with_capacity(training_session.get_num_epochs());
-                    while !training_thread.is_finished() {
-                         {
-                            let result_metadata = rx_training_metadata.recv_timeout(Duration::from_millis(1));
-                            if(result_metadata.is_ok())
-                            {
-                                training_thread_buffer.push(result_metadata.unwrap());
-
-                                let training_plotpoints: Vec<PlotPoint> = generate_plotpoints_from_training_thread_payloads(&training_thread_buffer);
-                                self.training_graph.update_plot_data(&training_plotpoints);
-                            }
-                            
-                            self.draw_ui_menu(ctx, frame);
-                            ctx.request_repaint();
+                let training_state = self.training_session.get_state();
+                match training_state
+                {
+                    TrainingState::Idle => {println!("TrainingState::Idle");}
+                    TrainingState::StartTraining => {
+                        if(self.training_thread.is_none())
+                        {
+                            // Copy the session for TrainingThread to take care of
+                            self.training_thread = Some(TrainingThread::new(self.training_session.clone()));
+                            self.training_session.set_state(TrainingState::Training);
+                        }
+                        else {
+                            println!("Cannot start training when another one is in progress...");
+                            self.training_session.set_state(TrainingState::Idle);
                         }
                     }
+                    TrainingState::Training => {
+                        let result_metadata = self.training_thread.as_ref().unwrap().rx_payload.try_recv();
+                        let payload_buffer = &mut self.training_thread.as_mut().unwrap().payload_buffer;
+                        if(result_metadata.is_ok())
+                        {
+                            payload_buffer.push(result_metadata.unwrap());
 
-                    training_thread.join();
+                            let training_plotpoints: Vec<PlotPoint> = generate_plotpoints_from_training_thread_payloads(&payload_buffer);
+                            self.training_graph.update_plot_data(&training_plotpoints);
+                        }
 
-                    let result = rx.recv();
-                    if result.is_ok()
-                    {
-                        self.ai = Some(result.unwrap());
+                        if payload_buffer.len() == payload_buffer.capacity()
+                        {
+                            self.training_session.set_state(TrainingState::Finish);
+                        }
                     }
+                    TrainingState::Finish => {
+                        println!("Training Finished");
 
-                    println!("Training Finished");
+                        let result = self.training_thread.as_mut().unwrap().rx_neuralnetwork.try_recv();
+                        if result.is_ok()
+                        {
+                            self.ai = Some(result.unwrap());
+                        }
+                        else {
+                            panic!("Unexpected error");
+                        }
+
+                        self.training_thread.take().unwrap().handle.join();
+                        self.training_thread = None;
+                        self.training_session.set_state(TrainingState::Idle);
+                        self.state = AppState::Idle;
+                    }
+                    TrainingState::Abort => {
+                        panic!("Not Implemented");
+                    }
                 }
-                
-                self.state = AppState::Idle;
+
+                self.draw_ui_menu(ctx, frame);
+                ctx.request_repaint();
             }
             AppState::Exit => {
                 frame.close();
@@ -501,6 +536,7 @@ impl eframe::App for ZaoaiApp {
                 panic!("Not a valid state {:?}", self.state);
             }
         }
+        // self.draw_ui_menu(ctx, frame);
     }
 
     fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &eframe::Frame) {

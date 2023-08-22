@@ -11,16 +11,6 @@ use symphonia::core::util::clamp;
 
 use super::datapoint::DataPoint;
 
-#[derive(Clone)]
-pub struct TrainingSession {
-    nn: Option<NeuralNetwork>,
-    state: TrainingState,
-    num_epochs: usize,
-    batch_size: usize,
-    learn_rate: f32,
-    training_data: Vec<DataPoint>,
-}
-
 #[derive(Clone, PartialEq, Debug)]
 pub enum DatasetUsage {
     Training,
@@ -107,82 +97,21 @@ impl AIResultMetadata {
     }
 }
 
-impl Default for TrainingSession {
-    fn default() -> Self {
-        Self {
-            nn: None,
-            state: TrainingState::Idle,
-            num_epochs: 0,
-            batch_size: 0,
-            learn_rate: 0.0,
-            training_data: Vec::new(),
-        }
-    }
+pub struct TrainingThread {
+    pub id: u64,
+    pub handle: JoinHandle<()>,
+    pub rx_neuralnetwork: Receiver<NeuralNetwork>,
+    pub rx_payload: Receiver<TrainingThreadPayload>,
+    pub payload_buffer: Vec<TrainingThreadPayload>,
 }
 
-impl TrainingSession {
-    pub fn new(
-        nn: Option<&NeuralNetwork>,
-        training_data: &[DataPoint],
-        num_epochs: usize,
-        batch_size: usize,
-        learn_rate: f32,
-    ) -> Self {
-        if nn.is_some() {
-            return Self {
-                nn: Some(nn.unwrap().clone()),
-                state: TrainingState::Idle,
-                num_epochs: num_epochs,
-                batch_size: batch_size,
-                learn_rate: learn_rate,
-                training_data: training_data.to_vec(),
-            };
-        }
-
-        Self {
-            nn: None,
-            state: TrainingState::Idle,
-            num_epochs: num_epochs,
-            batch_size: batch_size,
-            learn_rate: learn_rate,
-            training_data: training_data.to_vec(),
-        }
-    }
-
-    pub fn get_num_epochs(&self) -> usize {
-        self.num_epochs
-    }
-
-    pub fn get_batch_size(&self) -> usize {
-        self.batch_size
-    }
-
-    pub fn set_training_data(&mut self, in_data: &[DataPoint]) {
-        self.training_data = in_data.to_vec();
-    }
-
-    pub fn ready(&self) -> bool {
-        self.nn.is_some()
-            && self.training_data.len() > 0
-            && self.state == TrainingState::Idle
-            && self.num_epochs > 0
-            && self.batch_size > 0
-            && self.learn_rate > 0.0
-    }
-
-    // Spawns a new thread and begins learning the supplied NN
-    pub fn begin(
-        &self,
-    ) -> (
-        JoinHandle<()>,
-        Receiver<NeuralNetwork>,
-        Receiver<TrainingThreadPayload>,
-    ) {
-        let nn_option = self.nn.clone();
-        let training_data = self.training_data.clone();
-        let num_epochs = self.num_epochs;
-        let batch_size = self.batch_size;
-        let learn_rate = self.learn_rate;
+impl TrainingThread {
+    pub fn new(training_session: TrainingSession) -> Self {
+        let nn_option = training_session.nn;
+        let training_data = training_session.training_data.clone();
+        let num_epochs = training_session.num_epochs;
+        let batch_size = training_session.batch_size;
+        let learn_rate = training_session.learn_rate;
 
         let (tx_nn, rx_nn) = mpsc::channel();
         let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
@@ -204,7 +133,96 @@ impl TrainingSession {
             }
         });
 
-        return (training_thread, rx_nn, rx_training_metadata);
+        Self {
+            id: 0,
+            handle: training_thread,
+            rx_neuralnetwork: rx_nn,
+            rx_payload: rx_training_metadata,
+            payload_buffer: Vec::with_capacity(num_epochs),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct TrainingSession {
+    nn: Option<NeuralNetwork>,
+    state: TrainingState,
+    num_epochs: usize,
+    batch_size: usize,
+    learn_rate: f32,
+    training_data: Vec<DataPoint>,
+}
+
+impl Default for TrainingSession {
+    fn default() -> Self {
+        Self {
+            nn: None,
+            state: TrainingState::Idle,
+            num_epochs: 2,
+            batch_size: 1000,
+            learn_rate: 0.2,
+            training_data: Vec::new(),
+        }
+    }
+}
+
+impl TrainingSession {
+    pub fn new(
+        nn: Option<&NeuralNetwork>,
+        training_data: &[DataPoint],
+        num_epochs: usize,
+        batch_size: usize,
+        learn_rate: f32,
+    ) -> Self {
+        let mut nn_option: Option<NeuralNetwork> = None;
+        if nn.is_some() {
+            nn_option = Some(nn.unwrap().clone());
+        }
+
+        Self {
+            nn: nn_option,
+            state: TrainingState::Idle,
+            num_epochs: num_epochs,
+            batch_size: batch_size,
+            learn_rate: learn_rate,
+            training_data: training_data.to_vec(),
+        }
+    }
+
+    pub fn set_nn(&mut self, nn: &NeuralNetwork) {
+        self.nn = Some(nn.clone());
+    }
+
+    pub fn set_state(&mut self, new_state: TrainingState) {
+        self.state = new_state;
+    }
+
+    pub fn get_state(&self) -> TrainingState {
+        self.state
+    }
+
+    pub fn get_num_epochs(&self) -> usize {
+        self.num_epochs
+    }
+
+    pub fn get_batch_size(&self) -> usize {
+        self.batch_size
+    }
+
+    pub fn get_learn_rate(&self) -> f32 {
+        self.learn_rate
+    }
+
+    pub fn set_training_data(&mut self, in_data: &[DataPoint]) {
+        self.training_data = in_data.to_vec();
+    }
+
+    pub fn ready(&self) -> bool {
+        self.nn.is_some()
+            && self.training_data.len() > 0
+            && self.num_epochs > 0
+            && self.batch_size > 0
+            && self.learn_rate > 0.0
     }
 }
 
@@ -306,12 +324,19 @@ pub struct TestResults {
     pub cost: f32,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum TrainingState {
     Idle,
+    StartTraining,
     Training,
     Finish,
     Abort,
+}
+
+impl TrainingState {
+    pub fn can_begin_training(&self) -> bool {
+        *self == TrainingState::StartTraining
+    }
 }
 
 #[derive(Clone)]
