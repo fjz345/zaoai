@@ -1,9 +1,9 @@
 use std::ops::RangeInclusive;
 
 use eframe::egui::{
-    self,
-    plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints}, Slider,
+    self, Slider,
 };
+use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 
 use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::{NeuralNetwork, TrainingSession, TrainingState}}};
 
@@ -38,13 +38,13 @@ impl WindowTrainingGraph {
             .show(ctx, |ui| {
                 use crate::app_windows::PlotPoints::Owned;
                 let plot_clone: PlotPoints = Owned(self.plot_data.clone());
-                let line: Line = Line::new(plot_clone);
+                let line: Line = Line::new("LineName", plot_clone);
 
                 Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line));
             });
     }
 
-    fn create_plot_training() -> Plot {
+    fn create_plot_training<'a>() -> Plot<'a> {
         const INCLUDE_Y_PADDING: f64 = 0.06;
         Plot::new("my_plot")
             .allow_drag(false)
@@ -52,13 +52,11 @@ impl WindowTrainingGraph {
             .allow_scroll(false)
             .allow_boxed_zoom(false)
             .allow_double_click_reset(false)
-            .auto_bounds_x()
             .center_x_axis(false)
-            .sharp_grid_lines(true)
             .include_y(0.0 - INCLUDE_Y_PADDING)
             .include_y(1.0 + INCLUDE_Y_PADDING)
             .include_x(0.0)
-            .y_grid_spacer(Self::create_plot_training_y_spacer_func)
+            .y_grid_spacer(Self::create_plot_training_y_spacer_func as fn(GridInput) -> Vec<GridMark>)
             .width(500.0)
             .height(300.0)
     }

@@ -10,7 +10,7 @@ use symphonia::core::probe::Hint;
 use symphonia::core::units::TimeBase;
 
 // returns a array with samples and the sample rate
-fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
+pub fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
     log::info!("###############################");
     log::info!(
         "[0/6] Start fetching samples for <{}>",
@@ -208,8 +208,8 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
     (ret_samples, sample_rate)
 }
 
-static S_IS_DEBUG: i32 = 1;
-fn init_soloud() -> Soloud {
+pub static S_IS_DEBUG: i32 = 1;
+pub fn init_soloud() -> Soloud {
     let sl = Soloud::default().expect("Soloud Init failed");
 
     if S_IS_DEBUG > 0 {
@@ -227,9 +227,9 @@ use plotlib::page::Page;
 use plotlib::repr::{Histogram, HistogramBins};
 use plotlib::view::ContinuousView;
 
-static S_HISTOGRAM_MAX_X: f64 = 0.5;
-static S_HISTOGRAM_MAX_Y: f64 = 160.0;
-fn sl_debug(sl: &Soloud) {
+pub static S_HISTOGRAM_MAX_X: f64 = 0.5;
+pub static S_HISTOGRAM_MAX_Y: f64 = 160.0;
+pub fn sl_debug(sl: &Soloud) {
     let fft = sl.calc_fft();
 
     let mut vec64: Vec<f64> = Vec::new();
@@ -264,11 +264,11 @@ fn sl_debug(sl: &Soloud) {
 }
 
 use sonogram::*;
-static S_SPECTOGRAM_PATH_DIR: &str = "";
-static S_SPECTOGRAM_NUM_BINS: usize = 2048;
-static S_SPECTOGRAM_WIDTH: usize = 512;
-static S_SPECTOGRAM_HEIGHT: usize = 512;
-fn save_spectrograph_as_png(
+pub static S_SPECTOGRAM_PATH_DIR: &str = "";
+pub static S_SPECTOGRAM_NUM_BINS: usize = 2048;
+pub static S_SPECTOGRAM_WIDTH: usize = 512;
+pub static S_SPECTOGRAM_HEIGHT: usize = 512;
+pub fn save_spectrograph_as_png(
     path_dir: &String,
     path_filename: &String,
     data: &Vec<f32>,

@@ -35,6 +35,12 @@ use crate::graphviz_examples::*;
 use crate::layer::*;
 use crate::neuralnetwork::*;
 use crate::simpletest::*;
+use crate::sound::decode_samples_from_file;
+use crate::sound::init_soloud;
+use crate::sound::save_spectrograph_as_png;
+use crate::sound::sl_debug;
+use crate::sound::S_IS_DEBUG;
+use crate::sound::S_SPECTOGRAM_PATH_DIR;
 use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::*;
 
@@ -42,15 +48,6 @@ use eframe::egui;
 use soloud::*;
 use std::env;
 use std::error;
-//use symphonia::core::sample;
-use symphonia::core::audio::{AudioBufferRef, Signal};
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
-use symphonia::core::errors::Error;
-use symphonia::core::formats::FormatOptions;
-use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::{MetadataOptions, MetadataRevision};
-use symphonia::core::probe::Hint;
-use symphonia::core::units::TimeBase;
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -65,11 +62,6 @@ fn main() -> Result<()> {
     env::set_var("RUST_LOG", "debug"); // or "info" or "debug"
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-    let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(1400.0, 1000.0)),
-        ..Default::default()
-    };
-
     let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2], true);
     let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
     nntest.validate();
@@ -77,7 +69,12 @@ fn main() -> Result<()> {
     let graph_params: GenerateGraphParams = GenerateGraphParams { layer_spacing: 2.2 };
     let graph_layout = generate_nn_graph_layout_string(&nntest.graph_structure, &graph_params);
 
-    eframe::run_native("ZaoAI", options, Box::new(|_cc| Box::<ZaoaiApp>::default()));
+    let options = eframe::NativeOptions::default();
+    eframe::run_native(
+        "ZaoAI",
+        options,
+        Box::new(|_cc| Ok(Box::<ZaoaiApp>::default())),
+    );
 
     return Ok(());
 

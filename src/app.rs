@@ -5,19 +5,13 @@ use std::{
     ops::RangeInclusive, str::FromStr, sync::mpsc::Receiver, thread::JoinHandle, time::Duration,
 };
 
-use egui::plot::{Line, Plot, PlotPoints, PlotPoints::Owned};
-
 use eframe::{
-    egui::{
-        self,
-        plot::{GridInput, GridMark, PlotPoint},
-        style::Widgets,
-        RawInput, Response, Slider,
-    },
+    egui::{self, style::Widgets, InnerResponse, RawInput, Response, Slider},
     epaint::{Color32, Pos2, Rect},
     glow::TESS_EVALUATION_TEXTURE,
     App,
 };
+use egui_plot::PlotPoint;
 use graphviz_rust::{dot_structures::Graph, print};
 use ndarray::{Array2, ArrayBase, Dim, OwnedRepr};
 use symphonia::core::conv::IntoSample;
@@ -179,8 +173,8 @@ impl ZaoaiApp {
         self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
     }
 
-    fn draw_ui(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn draw_ui(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) -> InnerResponse<()> {
+        let response = egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.checkbox(&mut self.window_data.show_traning_dataset, "Show Dataset");
 
@@ -214,6 +208,8 @@ impl ZaoaiApp {
         self.window_ai
             .draw_ui(ctx, self.ai.as_mut(), &self.training_dataset);
         self.window_graph.draw_ui(ctx);
+
+        response
     }
 }
 
@@ -250,7 +246,11 @@ impl eframe::App for ZaoaiApp {
                 self.state = AppState::Idle;
             }
             AppState::Idle => {
-                self.draw_ui(ctx, frame);
+                let response = self.draw_ui(ctx, frame);
+
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
+                    response.response.rect.size(),
+                ));
             }
             AppState::Training => {
                 let training_state = self.training_session.get_state();
@@ -315,7 +315,7 @@ impl eframe::App for ZaoaiApp {
                 ctx.request_repaint();
             }
             AppState::Exit => {
-                frame.close();
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
 
             default => {
@@ -323,10 +323,6 @@ impl eframe::App for ZaoaiApp {
             }
         }
         // self.draw_ui_menu(ctx, frame);
-    }
-
-    fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &eframe::Frame) {
-        self.window_graph.should_show = self.window_data.show_training_graph;
     }
 }
 
