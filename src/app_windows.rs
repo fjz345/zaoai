@@ -1,9 +1,11 @@
+use std::ops::RangeInclusive;
+
 use eframe::egui::{
     self,
     plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints},
 };
 
-use crate::{app::TrainingDataset, zneural_network::neuralnetwork::NeuralNetwork};
+use crate::{app::TrainingDataset, egui_ext::Interval, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::NeuralNetwork}};
 
 pub struct WindowTrainingGraph {
     pub(crate) title: String,
@@ -187,5 +189,76 @@ impl WindowAi {
                 ui.label("NN not set");
             }
         });
+    }
+}
+
+
+pub struct WindowTrainingSet
+{
+
+}
+
+impl WindowTrainingSet
+{
+    pub fn draw_ui(&self, ctx: &egui::Context, training_dataset: &mut TrainingDataset, training_dataset_split_thresholds_0: &mut f64, training_dataset_split_thresholds_1: &mut f64) {
+        // if !self.window_data.show_traning_dataset {
+        //     return;
+        // }
+
+        let pos = egui::pos2(0.0, 600.0);
+        egui::Window::new("Dataset")
+            .default_pos(pos)
+            .show(ctx, |ui: &mut egui::Ui| {
+                ui.add(Interval::new(
+                    training_dataset_split_thresholds_0,
+                    training_dataset_split_thresholds_1,
+                    RangeInclusive::new(0.0, 1.0),
+                ));
+
+                if ui.button("Split").clicked() {
+                    training_dataset.split([
+                        *training_dataset_split_thresholds_0,
+                        *training_dataset_split_thresholds_1,
+                    ]);
+                }
+
+                ui.heading("Current Dataset");
+                ui.label(format!(
+                    "Training: {} ({:.2}%)\nValidation: {} ({:.2}%)\nTest: {} ({:.2}%)\nTotal: {} ({:.2}%)",
+                    training_dataset.training_split.len(),
+                    training_dataset.thresholds[0],
+                    training_dataset.validation_split.len(),
+                    training_dataset.thresholds[1] - training_dataset.thresholds[0],
+                    training_dataset.test_split.len(),
+                    1.0 - training_dataset.thresholds[1],
+                    training_dataset.full_dataset.len(),
+                    (training_dataset.training_split.len()
+                        + training_dataset.validation_split.len()
+                        + training_dataset.test_split.len()) as f64
+                        / training_dataset.full_dataset.len().max(1) as f64,
+                ));
+
+                ui.label(format!("Dimensions: ({}, {})", training_dataset.get_dimensions().0, training_dataset.get_dimensions().1));
+
+                if ui.button("Load [2, 2] test dataset").clicked()
+                {
+                    let dataset = create_2x2_test_datapoints(0, 100000 as i32);
+                    *training_dataset = TrainingDataset::new(&dataset);
+                    training_dataset.split([1.0, 1.0]);
+                }
+                if ui.button("Load [784, 10] MNIST dataset").clicked()
+                {
+                    get_mnist();
+
+                    // let mut dataset: Vec<DataPoint> = Vec::new();
+                    // for (i, data) in train_data.iter().enumerate()
+                    // {
+                    //     dataset.push(DataPoint { inputs: [*train_data.get((i,0,0)).unwrap(), *train_data.get((i,0,1)).unwrap()], expected_outputs: [*train_labels.get((i,0)).unwrap(), *train_labels.get((i,0)).unwrap()] });
+                    // }
+                    
+                    // training_dataset = TrainingDataset::new(&dataset);
+                }
+                
+            });
     }
 }
