@@ -1,16 +1,14 @@
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::{self, Sender};
-use std::thread::JoinHandle;
-
 use crate::layer::*;
 
+use super::datapoint::DataPoint;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand_chacha;
 use serde::{Deserialize, Serialize};
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{self, Sender};
+use std::thread::JoinHandle;
 use symphonia::core::util::clamp;
-
-use super::datapoint::DataPoint;
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum DatasetUsage {
@@ -315,7 +313,6 @@ impl GraphStructure {
     }
 
     fn print(&self) {
-        // Print
         log::info!("{}", self.to_string());
     }
 }
@@ -461,8 +458,8 @@ impl NeuralNetwork {
         }
 
         if (last_batch_size >= 1) {
-            batch_step = last_batch_size;
             // Last epoch
+            batch_step = last_batch_size;
             let epoch_data = &training_data[cur_index..(cur_index + batch_step)];
 
             if print_enabled {

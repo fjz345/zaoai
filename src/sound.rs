@@ -17,23 +17,18 @@ pub fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
         &path.to_string_lossy()
     );
 
-    // Open the media source.
     let src = File::open(&path).expect("failed to open media");
 
     log::info!("[1/6] Creating MediaSourceStream");
-    // Create the media source stream.
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
-    // Create a probe hint using the file's extension. [Optional]
     let mut hint = Hint::new();
     hint.with_extension("mp3");
 
-    // Use the default options for metadata and format readers.
     let meta_opts: MetadataOptions = Default::default();
     let fmt_opts: FormatOptions = Default::default();
 
     log::info!("[2/6] Creating ProbeResult");
-    // Probe the media source.
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &fmt_opts, &meta_opts)
         .expect("unsupported format");
@@ -52,7 +47,6 @@ pub fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
     // Store the track identifier, it will be used to filter packets.
     let track_id = track.id;
 
-    // Track data
     let mut sample_rate: u32 = 0;
     match track.codec_params.sample_rate {
         Some(v) => sample_rate = v,
@@ -69,11 +63,8 @@ pub fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
         None => log::info!("time_base failed"),
     }
 
-    // Use the default options for the decoder.
-    let dec_opts: DecoderOptions = Default::default();
-
     log::info!("[4/6] Creating Decoder for Track {}", track_id);
-    // Create a decoder for the track.
+    let dec_opts: DecoderOptions = Default::default();
     let decoder_result = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts);
     match &decoder_result {
         Ok(v) => (),
@@ -82,8 +73,6 @@ pub fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
             v, track.codec_params.codec
         ),
     }
-
-    let mut decoder = decoder_result.unwrap();
 
     // The decode loop.
     let time_duration = time_base.calc_time(n_frames).seconds;
@@ -105,6 +94,8 @@ pub fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
 
     let mut timestamp_counter: u64 = 0;
     let mut ret_samples: Vec<f32> = Vec::new();
+
+    let mut decoder = decoder_result.unwrap();
     loop {
         // Get the next packet from the media format.
         let packet = match format.next_packet() {

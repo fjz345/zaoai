@@ -1,10 +1,6 @@
 // hide console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::{
-    ops::RangeInclusive, str::FromStr, sync::mpsc::Receiver, thread::JoinHandle, time::Duration,
-};
-
 use eframe::{
     egui::{self, style::Widgets, InnerResponse, RawInput, Response, Slider},
     epaint::{Color32, Pos2, Rect},
@@ -15,6 +11,9 @@ use egui_plot::PlotPoint;
 use graphviz_rust::{dot_structures::Graph, print};
 use ndarray::{Array2, ArrayBase, Dim, OwnedRepr};
 use serde::{Deserialize, Serialize};
+use std::{
+    ops::RangeInclusive, str::FromStr, sync::mpsc::Receiver, thread::JoinHandle, time::Duration,
+};
 use symphonia::core::conv::IntoSample;
 
 use crate::{
@@ -29,6 +28,7 @@ use crate::{
         },
     },
 };
+
 #[derive(Serialize, Deserialize)]
 struct MenuWindowData {
     // Main Menu
@@ -45,6 +45,7 @@ struct MenuWindowData {
     training_dataset_split_thresholds_0: f64,
     training_dataset_split_thresholds_1: f64,
 }
+
 #[derive(Serialize, Deserialize)]
 pub struct TrainingDataset {
     pub full_dataset: Vec<DataPoint>,
@@ -175,7 +176,6 @@ impl ZaoaiApp {
             self.ai = Some(NeuralNetwork::new(nn_structure));
             self.training_session.set_nn(self.ai.as_ref().unwrap());
         }
-
         self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
         self.window_data.training_session_batch_size = self.training_session.get_batch_size();
         self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
@@ -353,8 +353,11 @@ impl eframe::App for ZaoaiApp {
                     }
                 }
 
-                self.draw_ui(ctx, frame);
+                let response = self.draw_ui(ctx, frame);
                 ctx.request_repaint();
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
+                    response.response.rect.size(),
+                ));
             }
             AppState::Exit => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -364,7 +367,6 @@ impl eframe::App for ZaoaiApp {
                 panic!("Not a valid state {:?}", self.state);
             }
         }
-        // self.draw_ui_menu(ctx, frame);
     }
 }
 

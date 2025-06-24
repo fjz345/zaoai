@@ -5,7 +5,6 @@ use eframe::egui::{
 };
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
-
 use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::{NeuralNetwork, TrainingSession, TrainingState}}};
 
 #[derive(Serialize, Deserialize)]
@@ -59,107 +58,37 @@ impl WindowTrainingGraph {
     }
 
     fn create_plot_training_y_spacer_func(grid: GridInput) -> Vec<GridMark> {
-        vec![
-            // 0.1
-            GridMark {
-                value: 0.05,
+        let mut marks = Vec::new();
+
+        // 0.05 step marks
+        for &value in &[0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] {
+            marks.push(GridMark {
+                value,
                 step_size: 0.05,
-            },
-            GridMark {
-                value: 0.1,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.15,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.2,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.25,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.3,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.35,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.4,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.45,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.6,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.65,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.7,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.75,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.8,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.85,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.9,
-                step_size: 0.05,
-            },
-            GridMark {
-                value: 0.95,
-                step_size: 0.05,
-            },
-            // 0.25
-            GridMark {
-                value: 0.0,
+            });
+        }
+
+        // 0.25 step marks
+        for &value in &[0.0, 0.25, 0.5, 0.75] {
+            marks.push(GridMark {
+                value,
                 step_size: 0.25,
-            },
-            GridMark {
-                value: 0.25,
-                step_size: 0.25,
-            },
-            GridMark {
-                value: 0.50,
-                step_size: 0.25,
-            },
-            GridMark {
-                value: 0.75,
-                step_size: 0.25,
-            },
-            // 1.0
-            GridMark {
-                value: 0.0,
+            });
+        }
+
+        // 1.0 step marks
+        for &value in &[0.0, 1.0] {
+            marks.push(GridMark {
+                value,
                 step_size: 1.0,
-            },
-            GridMark {
-                value: 1.0,
-                step_size: 1.0,
-            },
-        ]
+            });
+        }
+
+        marks
     }
 }
-#[derive(Serialize, Deserialize)]pub struct WindowAi {}
 
+#[derive(Serialize, Deserialize)]pub struct WindowAi {}
 impl WindowAi {
     pub fn draw_ui(
         &self,
@@ -183,10 +112,7 @@ impl WindowAi {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct WindowTrainingSet
-{
-
-}
+pub struct WindowTrainingSet {}
 
 impl WindowTrainingSet
 {
@@ -248,11 +174,9 @@ impl WindowTrainingSet
             });
     }
 }
-#[derive(Serialize, Deserialize)]
-pub struct WindowTrainingSession
-{
 
-}
+#[derive(Serialize, Deserialize)]
+pub struct WindowTrainingSession {}
 impl WindowTrainingSession
 {
     pub fn draw_ui(&mut self, ctx: &egui::Context, training_session: &mut TrainingSession, app_state: &mut AppState) {
