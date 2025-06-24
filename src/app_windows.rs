@@ -2,10 +2,10 @@ use std::ops::RangeInclusive;
 
 use eframe::egui::{
     self,
-    plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints},
+    plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints}, Slider,
 };
 
-use crate::{app::TrainingDataset, egui_ext::Interval, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::NeuralNetwork}};
+use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::{NeuralNetwork, TrainingSession, TrainingState}}};
 
 pub struct WindowTrainingGraph {
     pub(crate) title: String,
@@ -259,6 +259,84 @@ impl WindowTrainingSet
                     // training_dataset = TrainingDataset::new(&dataset);
                 }
                 
+            });
+    }
+}
+
+pub struct WindowTrainingSession
+{
+
+}
+impl WindowTrainingSession
+{
+    pub fn draw_ui(&mut self, ctx: &egui::Context, training_session: &mut TrainingSession, app_state: &mut AppState) {
+        // if !self.window_data.show_training_session {
+        //     return;
+        // }
+
+        let pos = egui::pos2(500.0, 0.0);
+        egui::Window::new("Training")
+            .default_pos(pos)
+            .show(ctx, |ui| {
+                let mut ui_dirty: bool = false;
+                ui.horizontal(|ui| {
+                    if add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut training_session.num_epochs,
+                            RangeInclusive::new(1, 100),
+                        )
+                        .step_by(1.0),
+                    )
+                    .changed()
+                    {
+                        ui_dirty = true;
+                    };
+                    ui.label("Num Epochs");
+                });
+
+                ui.horizontal(|ui| {
+                    if add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut training_session.batch_size,
+                            RangeInclusive::new(10, 1000),
+                        )
+                        .step_by(10.0),
+                    )
+                    .changed()
+                    {
+                        ui_dirty = true;
+                    };
+                    ui.label("Batch Size");
+                });
+
+                ui.horizontal(|ui| {
+                    if add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut training_session.learn_rate,
+                            RangeInclusive::new(0.1, 0.5),
+                        )
+                        .step_by(0.1),
+                    )
+                    .changed()
+                    {
+                        ui_dirty = true;
+                    };
+                    ui.label("Learn Rate");
+                });
+
+                if ui.button("Begin Training").clicked() {
+                    if training_session.ready() {
+                    *app_state = AppState::Training;
+                        training_session
+                            .set_state(TrainingState::StartTraining);
+                    }
+                }
             });
     }
 }

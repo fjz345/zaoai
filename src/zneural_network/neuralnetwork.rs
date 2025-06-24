@@ -145,12 +145,12 @@ impl TrainingThread {
 
 #[derive(Clone)]
 pub struct TrainingSession {
-    nn: Option<NeuralNetwork>,
-    state: TrainingState,
-    num_epochs: usize,
-    batch_size: usize,
-    learn_rate: f32,
-    training_data: Vec<DataPoint>,
+    pub nn: Option<NeuralNetwork>,
+    pub state: TrainingState,
+    pub num_epochs: usize,
+    pub batch_size: usize,
+    pub learn_rate: f32,
+    pub training_data: Vec<DataPoint>,
 }
 
 impl Default for TrainingSession {

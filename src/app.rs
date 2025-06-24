@@ -23,7 +23,7 @@ use ndarray::{Array2, ArrayBase, Dim, OwnedRepr};
 use symphonia::core::conv::IntoSample;
 
 use crate::{
-    app_windows::{WindowAi, WindowTrainingGraph, WindowTrainingSet},
+    app_windows::{WindowAi, WindowTrainingGraph, WindowTrainingSession, WindowTrainingSet},
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
@@ -115,6 +115,7 @@ pub struct ZaoaiApp {
     window_graph: WindowTrainingGraph,
     window_ai: WindowAi,
     window_training_set: WindowTrainingSet,
+    window_training_session: WindowTrainingSession,
 }
 
 impl Default for ZaoaiApp {
@@ -144,12 +145,13 @@ impl Default for ZaoaiApp {
             training_thread: None,
             window_ai: WindowAi {},
             window_training_set: WindowTrainingSet {},
+            window_training_session: WindowTrainingSession {},
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-enum AppState {
+pub enum AppState {
     Startup,
     Idle,
     SetupAi,
@@ -159,17 +161,6 @@ enum AppState {
 }
 
 impl ZaoaiApp {
-    fn update_training_session(&mut self) {
-        let mut ai_ref: Option<&NeuralNetwork> = self.ai.as_ref();
-        self.training_session = TrainingSession::new(
-            ai_ref,
-            &self.training_dataset.get_training_data_slice(),
-            self.window_data.training_session_num_epochs,
-            self.window_data.training_session_batch_size,
-            self.window_data.training_session_learn_rate,
-        );
-    }
-
     fn startup(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let mut visuals: egui::Visuals = egui::Visuals::dark();
         // visuals.panel_fill = Color32::from_rgba_unmultiplied(24, 36, 41, 255);
@@ -188,82 +179,7 @@ impl ZaoaiApp {
         self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
     }
 
-    fn draw_ui_training_session(&mut self, ctx: &egui::Context) {
-        if !self.window_data.show_training_session {
-            return;
-        }
-
-        let pos = egui::pos2(500.0, 0.0);
-        egui::Window::new("Training")
-            .default_pos(pos)
-            .show(ctx, |ui| {
-                let mut ui_dirty: bool = false;
-                ui.horizontal(|ui| {
-                    if add_slider_sized(
-                        ui,
-                        100.0,
-                        Slider::new(
-                            &mut self.window_data.training_session_num_epochs,
-                            RangeInclusive::new(1, 100),
-                        )
-                        .step_by(1.0),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
-                    ui.label("Num Epochs");
-                });
-
-                ui.horizontal(|ui| {
-                    if add_slider_sized(
-                        ui,
-                        100.0,
-                        Slider::new(
-                            &mut self.window_data.training_session_batch_size,
-                            RangeInclusive::new(10, 1000),
-                        )
-                        .step_by(10.0),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
-                    ui.label("Batch Size");
-                });
-
-                ui.horizontal(|ui| {
-                    if add_slider_sized(
-                        ui,
-                        100.0,
-                        Slider::new(
-                            &mut self.window_data.training_session_learn_rate,
-                            RangeInclusive::new(0.1, 0.5),
-                        )
-                        .step_by(0.1),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
-                    ui.label("Learn Rate");
-                });
-
-                if ui_dirty {
-                    self.update_training_session();
-                }
-
-                if ui.button("Begin Training").clicked() {
-                    if self.training_session.ready() {
-                        self.state = AppState::Training;
-                        self.training_session
-                            .set_state(TrainingState::StartTraining);
-                    }
-                }
-            });
-    }
-
-    fn draw_ui_menu(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn draw_ui(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.checkbox(&mut self.window_data.show_traning_dataset, "Show Dataset");
@@ -286,15 +202,15 @@ impl ZaoaiApp {
             });
         });
 
-        // Training Session
-        self.draw_ui_training_session(ctx);
+        // Windows
+        self.window_training_session
+            .draw_ui(ctx, &mut self.training_session, &mut self.state);
         self.window_training_set.draw_ui(
             ctx,
             &mut self.training_dataset,
             &mut self.window_data.training_dataset_split_thresholds_0,
             &mut self.window_data.training_dataset_split_thresholds_1,
         );
-
         self.window_ai
             .draw_ui(ctx, self.ai.as_mut(), &self.training_dataset);
         self.window_graph.draw_ui(ctx);
@@ -334,7 +250,7 @@ impl eframe::App for ZaoaiApp {
                 self.state = AppState::Idle;
             }
             AppState::Idle => {
-                self.draw_ui_menu(ctx, frame);
+                self.draw_ui(ctx, frame);
             }
             AppState::Training => {
                 let training_state = self.training_session.get_state();
@@ -395,7 +311,7 @@ impl eframe::App for ZaoaiApp {
                     }
                 }
 
-                self.draw_ui_menu(ctx, frame);
+                self.draw_ui(ctx, frame);
                 ctx.request_repaint();
             }
             AppState::Exit => {
