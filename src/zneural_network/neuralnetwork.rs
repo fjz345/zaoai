@@ -100,6 +100,7 @@ pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
     pub last_test_results: TestResults,
+    #[serde(skip)]
     layer_learn_data: Vec<LayerLearnData>,
 }
 
