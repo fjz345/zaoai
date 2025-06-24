@@ -150,7 +150,7 @@ impl Default for ZaoaiApp {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum AppState {
     #[default]
     Startup,
@@ -220,7 +220,7 @@ impl ZaoaiApp {
             .set_training_data(self.training_dataset.get_training_data_slice());
         if self.window_data.show_training_session {
             self.window_training_session
-                .draw_ui(ctx, &mut self.training_session, &mut self.state);
+                .draw_ui(ctx, &mut self.training_session, &mut self.state, &mut self.training_thread);
         }
 
         if self.window_data.show_ai {

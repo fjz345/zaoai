@@ -7,6 +7,7 @@ use crate::{
     zneural_network::{
         datapoint::create_2x2_test_datapoints,
         neuralnetwork::NeuralNetwork,
+        thread::TrainingThread,
         training::{test_nn, TrainingSession, TrainingState},
     },
 };
@@ -189,6 +190,7 @@ impl WindowTrainingSession {
         ctx: &egui::Context,
         training_session: &mut TrainingSession,
         app_state: &mut AppState,
+        training_thread: &mut Option<TrainingThread>,
     ) {
         let pos = egui::pos2(500.0, 0.0);
         egui::Window::new("Training")
@@ -250,15 +252,24 @@ impl WindowTrainingSession {
                     ui.label("Learn Rate");
                 });
 
-                if ui.button("Begin Training").clicked() {
-                    if training_session.ready() {
-                        *app_state = AppState::Training;
-                        training_session.set_state(TrainingState::StartTraining);
-                    } else {
-                        log::error!(
-                            "Could not start training, training_session not ready {:?}",
-                            training_session
-                        );
+                if *app_state == AppState::Training {
+                    if ui.button("Abort Training").clicked() {
+                        log::info!("Training was interupted");
+                        *training_thread = None;
+                        *app_state = AppState::Idle;
+                        training_session.set_state(TrainingState::Idle);
+                    }
+                } else {
+                    if ui.button("Begin Training").clicked() {
+                        if training_session.ready() {
+                            *app_state = AppState::Training;
+                            training_session.set_state(TrainingState::StartTraining);
+                        } else {
+                            log::error!(
+                                "Could not start training, training_session not ready {:?}",
+                                training_session
+                            );
+                        }
                     }
                 }
             });
