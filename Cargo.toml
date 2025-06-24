@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-soloud = { git = "https://github.com/moalyousef/soloud-rs" }
+soloud = { version="1.1.1" }
 wav = "1.0.0"
 symphonia = {version = "0.5.0", features = ["mp3", "mkv", "pcm", "aac"]}
 symphonia-bundle-mp3 = "0.5.0"
@@ -23,3 +23,4 @@ eframe = "0.22.0"
 env_logger = "0.10"
 ndarray = "0.15.6"
 rust-mnist = "0.2.0"
+log = "0.4.27"

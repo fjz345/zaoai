@@ -4,49 +4,19 @@
 #![allow(unused_mut)]
 #![allow(clippy::redundant_closure)]
 
-/*
-Video -> Audio convert: ffmpeg
-Digial processing: https://crates.io&/crates/&bliss-audio
-Digial processing: https://crates.io/crates/fundsp&
-Play audio: https://crates.io/crates/kira
-*/
+// Video -> Audio convert: ffmpeg
+// Digial processing: https://crates.io&/crates/&bliss-audio
+// Digial processing: https://crates.io/crates/fundsp&
+// Play audio: https://crates.io/crates/kira
 
-/*
-Goal of this application:
-Input a anime video file, add chapter timestamps for it for OP start/end & ED start/end.
-This will be done by analyzing mainly the audio.
+// ML Steps:
+// 1. Data Preparation — Inspect and Prepare a Data Set
+// 2. Define Model Validation Strategy — splitting data in train, validation and test set
+// 3. Model development — building three different models using the sklearn library in Python: random forest, decision tree, logistic regression.
+// 4. Model evaluation and fine-tuning (Hyperparameter Tuning) using GridSearch cross-validation
+// 5. Model selection
+// 6. Final Model evaluation
 
-Features TODO list:
-Support Audio Formats
-    * mkv
-    * mp4
-*/
-
-/*
-    TODO:
-    Create ML AI
-        * Save/load weights
-        * Dropout neurons
-        * Cross-validation
-        * MNIST
-        * Eigen vectors? (reduce amount of input tensors)
-        * Gradient dedcent momentum & decay
-        * Add noise
-        * Visualize output over time
-    Add chapters to video file
-    Gather training data
-    Figure out how to train AI
-*/
-
-/*
-ML Steps:
-1. Data Preparation — Inspect and Prepare a Data Set
-2. Define Model Validation Strategy — splitting data in train, validation and test set
-3. Model development — building three different models using the sklearn library in Python: random forest, decision tree, logistic regression.
-4. Model evaluation and fine-tuning (Hyperparameter Tuning) using GridSearch cross-validation
-5. Model selection
-6. Final Model evaluation
-*/
 mod app;
 mod egui_ext;
 mod filesystem;
@@ -131,9 +101,9 @@ fn main() -> Result<()> {
         inputs: [2.0, 3.0],
         expected_outputs: [2.0, 3.0],
     };
-    println!("Before: {:?}", datapoint.inputs);
+    log::info!("Before: {:?}", datapoint.inputs);
     nn.calculate_outputs(&mut datapoint.inputs[..]);
-    println!("After: {:?}", datapoint.inputs);
+    log::info!("After: {:?}", datapoint.inputs);
 
     return Ok(());
 
@@ -177,8 +147,8 @@ fn main() -> Result<()> {
 
 // returns a array with samples and the sample rate
 fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
-    println!("###############################");
-    println!(
+    log::info!("###############################");
+    log::info!(
         "[0/6] Start fetching samples for <{}>",
         &path.to_string_lossy()
     );
@@ -186,7 +156,7 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
     // Open the media source.
     let src = File::open(&path).expect("failed to open media");
 
-    println!("[1/6] Creating MediaSourceStream");
+    log::info!("[1/6] Creating MediaSourceStream");
     // Create the media source stream.
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
@@ -198,7 +168,7 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
     let meta_opts: MetadataOptions = Default::default();
     let fmt_opts: FormatOptions = Default::default();
 
-    println!("[2/6] Creating ProbeResult");
+    log::info!("[2/6] Creating ProbeResult");
     // Probe the media source.
     let probed = symphonia::default::get_probe()
         .format(&hint, mss, &fmt_opts, &meta_opts)
@@ -207,7 +177,7 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
     // Get the instantiated format reader.
     let mut format = probed.format;
 
-    println!("[3/6] Finding Track");
+    log::info!("[3/6] Finding Track");
     // Find the first audio track with a known (decodeable) codec.
     let track = format
         .tracks()
@@ -222,23 +192,23 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
     let mut sample_rate: u32 = 0;
     match track.codec_params.sample_rate {
         Some(v) => sample_rate = v,
-        None => println!("sample_rate failed"),
+        None => log::info!("sample_rate failed"),
     }
     let mut n_frames: u64 = 0;
     match track.codec_params.n_frames {
         Some(v) => n_frames = v,
-        None => println!("n_frames failed"),
+        None => log::info!("n_frames failed"),
     }
     let mut time_base: TimeBase = TimeBase::default();
     match track.codec_params.time_base {
         Some(v) => time_base = v,
-        None => println!("time_base failed"),
+        None => log::info!("time_base failed"),
     }
 
     // Use the default options for the decoder.
     let dec_opts: DecoderOptions = Default::default();
 
-    println!("[4/6] Creating Decoder for Track {}", track_id);
+    log::info!("[4/6] Creating Decoder for Track {}", track_id);
     // Create a decoder for the track.
     let decoder_result = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts);
     match &decoder_result {
@@ -253,7 +223,7 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
 
     // The decode loop.
     let time_duration = time_base.calc_time(n_frames).seconds;
-    println!("[5/6] Gathering Samples ({}s)", time_duration);
+    log::info!("[5/6] Gathering Samples ({}s)", time_duration);
 
     // Determine 10 counter steps to show print
     let mut package_print_steps: Vec<u64> = Vec::new();
@@ -301,7 +271,7 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
                 (package_print_current_step + 1) % package_print_steps.len();
 
             // Show % progress
-            println!(
+            log::info!(
                 "[{}%] Gathering Samples",
                 100.0 * (cur_time as f32) / (time_duration as f32)
             );
@@ -315,16 +285,16 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
             let md: MetadataRevision = _metadata.expect("MetadataRevision Failed");
 
             for tag in md.tags() {
-                println!("Key: {}, Value: {}", tag.key, tag.value);
+                log::info!("Key: {}, Value: {}", tag.key, tag.value);
             }
 
             for vendordata in md.vendor_data() {
-                println!("ident: {}, data: {}", vendordata.ident, vendordata.data[0]);
+                log::info!("ident: {}, data: {}", vendordata.ident, vendordata.data[0]);
             }
 
             for visual in md.visuals() {
                 for tag in visual.clone().tags {
-                    println!("Key: {}, Value: {}", tag.key, tag.value);
+                    log::info!("Key: {}, Value: {}", tag.key, tag.value);
                 }
             }
 
@@ -365,7 +335,7 @@ fn decode_samples_from_file(path: &Path) -> (Vec<f32>, u32) {
             }
         }
     }
-    println!(
+    log::info!(
         "[6/6] Finished fetching samples for <{}> ({})",
         &path.to_string_lossy(),
         time_base.calc_time(timestamp_counter).seconds
@@ -416,7 +386,7 @@ fn sl_debug(sl: &Soloud) {
     {
         panic!("cls failed....");
     }
-    println!(
+    log::info!(
         "{}",
         Page::single(&view)
             .dimensions((60.0 * 4.7) as u32, 15)
@@ -442,8 +412,8 @@ fn save_spectrograph_as_png(
     path.push(&path_filename);
     let png_file = std::path::Path::new(&path);
 
-    println!("###############################");
-    println!(
+    log::info!("###############################");
+    log::info!(
         "[0/1] Start spectrograph to png <{}>",
         path.to_string_lossy()
     );
@@ -470,5 +440,5 @@ fn save_spectrograph_as_png(
         )
         .expect("Spectogram to png failed.");
 
-    println!("[1/1] Finish spectrograph to png");
+    log::info!("[1/1] Finish spectrograph to png");
 }

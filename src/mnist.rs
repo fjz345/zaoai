@@ -24,13 +24,13 @@
 //     *train_data = Array3::from_shape_vec((50_000, 28, 28), trn_img)
 //         .expect("Error converting images to Array3 struct")
 //         .map(|x| *x as f32 / 256.0);
-//     println!("{:#.1?}\n", train_data.slice(s![image_num, .., ..]));
+//     log::info!("{:#.1?}\n", train_data.slice(s![image_num, .., ..]));
 
 //     // Convert the returned Mnist struct to Array2 format
 //     *train_labels = Array2::from_shape_vec((50_000, 1), trn_lbl)
 //         .expect("Error converting training labels to Array2 struct")
 //         .map(|x| *x as f32);
-//     println!(
+//     log::info!(
 //         "The first digit is a {:?}",
 //         train_labels.slice(s![image_num, ..])
 //     );
@@ -53,5 +53,5 @@ pub fn get_mnist() {
 
     // Print one image (the one at index 5) for verification.
     print_image(&mnist.train_data[5], mnist.train_labels[5]);
-    println!("Mnist...");
+    log::info!("Mnist...");
 }

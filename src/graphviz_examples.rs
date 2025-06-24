@@ -84,7 +84,7 @@ pub fn output_exec_from_test() {
         edge!(node_id!("a1") => node_id!(esc "a2"))
     );
     let dot = g.print(&mut PrinterContext::default());
-    println!("{}", dot);
+    log::info!("{}", dot);
     let format = Format::Svg;
 
     let graph_svg = exec_dot(dot.clone(), vec![format.into()]).unwrap();

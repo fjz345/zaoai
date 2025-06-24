@@ -474,7 +474,7 @@ impl eframe::App for ZaoaiApp {
                 let training_state = self.training_session.get_state();
                 match training_state
                 {
-                    TrainingState::Idle => {println!("TrainingState::Idle");}
+                    TrainingState::Idle => {log::info!("TrainingState::Idle");}
                     TrainingState::StartTraining => {
                         if(self.training_thread.is_none())
                         {
@@ -483,7 +483,7 @@ impl eframe::App for ZaoaiApp {
                             self.training_session.set_state(TrainingState::Training);
                         }
                         else {
-                            println!("Cannot start training when another one is in progress...");
+                            log::info!("Cannot start training when another one is in progress...");
                             self.training_session.set_state(TrainingState::Idle);
                         }
                     }
@@ -504,7 +504,7 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
                     TrainingState::Finish => {
-                        println!("Training Finished");
+                        log::info!("Training Finished");
 
                         let result = self.training_thread.as_mut().unwrap().rx_neuralnetwork.try_recv();
                         if result.is_ok()

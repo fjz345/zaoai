@@ -312,7 +312,7 @@ impl GraphStructure {
 
     fn print(&self) {
         // Print
-        println!("{}", self.to_string());
+        log::info!("{}", self.to_string());
     }
 }
 
@@ -407,7 +407,7 @@ impl NeuralNetwork {
         // Print cost
         if (print_enabled) {
             let cost = self.calculate_cost(&batch_data[..]);
-            println!("Cost: {}", cost);
+            log::info!("Cost: {}", cost);
         }
     }
 
@@ -435,7 +435,7 @@ impl NeuralNetwork {
             let epoch_data = &training_data[cur_index..(cur_index + batch_step)];
 
             if print_enabled {
-                println!(
+                log::info!(
                     "Training... @{} #[{}/{}] (#{} - #{})",
                     epoch_index + 1,
                     i + 1,
@@ -463,7 +463,7 @@ impl NeuralNetwork {
             let epoch_data = &training_data[cur_index..(cur_index + batch_step)];
 
             if print_enabled {
-                println!(
+                log::info!(
                     "Training... @{} #[{}/{}] (#{} - #{})",
                     epoch_index + 1,
                     num_batches,
@@ -524,7 +524,7 @@ impl NeuralNetwork {
 
         for e in 0..num_epochs {
             if print_enabled {
-                println!(
+                log::info!(
                     "Training...Learn Epoch Started [@{}/@{}]",
                     e + 1,
                     num_epochs
@@ -552,7 +552,7 @@ impl NeuralNetwork {
         }
 
         if print_enabled {
-            println!("Training...Complete! [@{} Epochs]", num_epochs);
+            log::info!("Training...Complete! [@{} Epochs]", num_epochs);
         }
     }
 
@@ -573,7 +573,7 @@ impl NeuralNetwork {
         num_epochs = num_epochs.min((training_data.len() / num_epochs) + 1);
 
         if print_enabled {
-            println!(
+            log::info!(
                 "Training...Learn Started [{}, {}]",
                 training_data.len(),
                 num_epochs
@@ -594,7 +594,7 @@ impl NeuralNetwork {
             }
 
             if print_enabled {
-                println!(
+                log::info!(
                     "Training...Epoch [{}/{}] @({} - {})",
                     i,
                     num_epochs,
@@ -608,7 +608,7 @@ impl NeuralNetwork {
             let original_cost = self.calculate_cost(&epoch_data[..]);
 
             if print_enabled {
-                println!("Cost: {}", original_cost);
+                log::info!("Cost: {}", original_cost);
             }
 
             // Calculate cost gradients for layers
@@ -821,8 +821,8 @@ impl NeuralNetwork {
     }
 
     pub fn print(&self) {
-        print!("----------NEURAL NETWORK----------\n");
-        print!("{}", self.to_string());
-        print!("----------------------------------\n");
+        log::info!("----------NEURAL NETWORK----------\n");
+        log::info!("{}", self.to_string());
+        log::info!("----------------------------------\n");
     }
 }
