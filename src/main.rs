@@ -69,7 +69,10 @@ fn main() -> Result<()> {
     let graph_params: GenerateGraphParams = GenerateGraphParams { layer_spacing: 2.2 };
     let graph_layout = generate_nn_graph_layout_string(&nntest.graph_structure, &graph_params);
 
-    let native_options = eframe::NativeOptions::default();
+    let native_options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([2560.0, 1440.0]),
+        ..Default::default()
+    };
     eframe::run_native(
         "ZaoAI",
         native_options,
@@ -85,12 +88,17 @@ fn main() -> Result<()> {
                         if let Ok(mut app) = serde_json::from_str::<ZaoaiApp>(&json) {
                             log::info!("Found previous app storage");
                             return Ok(Box::new(app));
+                        } else {
+                            log::error!("Could not parse ZaoaiApp json");
                         }
+                    } else {
+                        log::error!("Could not get storage string");
                     }
+                } else {
+                    log::error!("Could not find app storage");
                 }
             }
 
-            log::error!("Could not find app storage");
             let app = ZaoaiApp::new(cc);
             Ok(Box::<ZaoaiApp>::new(app))
         }),

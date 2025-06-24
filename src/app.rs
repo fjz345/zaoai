@@ -102,6 +102,7 @@ impl TrainingDataset {
 
 #[derive(Serialize, Deserialize)]
 pub struct ZaoaiApp {
+    #[serde(skip)]
     state: AppState,
     ai: Option<NeuralNetwork>,
     window_data: MenuWindowData,
@@ -230,6 +231,17 @@ impl ZaoaiApp {
 }
 
 impl eframe::App for ZaoaiApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        log::info!("SAVING...");
+
+        #[cfg(feature = "serde")]
+        if let Ok(json) = serde_json::to_string(self) {
+            log::debug!("SAVED with state: {:?}", self.state);
+            storage.set_string(eframe::APP_KEY, json);
+        }
+        log::info!("SAVED!");
+    }
+
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         match self.state {
             AppState::Startup => {
