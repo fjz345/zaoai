@@ -18,6 +18,7 @@
 // 6. Final Model evaluation
 
 mod app;
+mod app_windows;
 mod egui_ext;
 mod filesystem;
 mod graphviz;
