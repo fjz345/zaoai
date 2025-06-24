@@ -5,7 +5,7 @@ use eframe::egui::{
 };
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
-use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::{NeuralNetwork, TrainingSession, TrainingState}}};
+use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::NeuralNetwork, training::{TrainingSession, TrainingState}}};
 
 #[derive(Serialize, Deserialize)]
 pub struct WindowTrainingGraph {

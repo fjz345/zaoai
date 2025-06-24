@@ -22,10 +22,9 @@ use crate::{
     mnist::get_mnist,
     zneural_network::{
         datapoint::{create_2x2_test_datapoints, split_datapoints, DataPoint},
-        neuralnetwork::{
-            AIResultMetadata, GraphStructure, NeuralNetwork, TrainingSession, TrainingState,
-            TrainingThread, TrainingThreadPayload,
-        },
+        neuralnetwork::{GraphStructure, NeuralNetwork},
+        thread::{TrainingThread, TrainingThreadPayload},
+        training::{TrainingSession, TrainingState},
     },
 };
 
