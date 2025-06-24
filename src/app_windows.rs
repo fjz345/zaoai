@@ -4,7 +4,6 @@ use crate::{
     app::{AppState, TrainingDataset},
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
-    simpletest::simple_test_nn,
     zneural_network::{
         datapoint::create_2x2_test_datapoints,
         neuralnetwork::NeuralNetwork,

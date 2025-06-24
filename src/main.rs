@@ -24,7 +24,6 @@ mod filesystem;
 mod graphviz;
 mod graphviz_examples;
 mod mnist;
-mod simpletest;
 mod sound;
 mod zneural_network;
 
@@ -34,7 +33,6 @@ use crate::graphviz::*;
 use crate::graphviz_examples::*;
 use crate::layer::*;
 use crate::neuralnetwork::*;
-use crate::simpletest::*;
 use crate::sound::decode_samples_from_file;
 use crate::sound::init_soloud;
 use crate::sound::save_spectrograph_as_png;
