@@ -15,7 +15,7 @@ use ndarray::{ArrayBase, OwnedRepr, Dim, Array2};
 use symphonia::core::conv::IntoSample;
 
 use crate::{
-    app_windows::TrainingGraphVisualization, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{
+    app_windows::{WindowAi, WindowTrainingGraph}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{
         datapoint::{create_2x2_test_datapoints, split_datapoints, DataPoint},
         neuralnetwork::{AIResultMetadata, GraphStructure, NeuralNetwork, TrainingSession, TrainingState, TrainingThread, TrainingThreadPayload},
     }
@@ -40,12 +40,12 @@ struct MenuWindowData {
 }
 
 pub struct TrainingDataset {
-    full_dataset: Vec<DataPoint>,
-    is_split: bool,
-    thresholds: [f64; 2],
-    training_split: Vec<DataPoint>,
-    validation_split: Vec<DataPoint>,
-    test_split: Vec<DataPoint>,
+    pub full_dataset: Vec<DataPoint>,
+    pub is_split: bool,
+    pub thresholds: [f64; 2],
+    pub training_split: Vec<DataPoint>,
+    pub validation_split: Vec<DataPoint>,
+    pub test_split: Vec<DataPoint>,
 }
 
 impl TrainingDataset {
@@ -99,8 +99,9 @@ pub struct ZaoaiApp {
     window_data: MenuWindowData,
     training_dataset: TrainingDataset,
     training_session: TrainingSession,
-    training_graph: TrainingGraphVisualization,
     training_thread: Option<TrainingThread>,
+    window_graph: WindowTrainingGraph,
+    window_ai: WindowAi,
 }
 
 impl Default for ZaoaiApp {
@@ -126,8 +127,9 @@ impl Default for ZaoaiApp {
                 }; 0],
             ),
             training_session: TrainingSession::default(),
-            training_graph: TrainingGraphVisualization::new(),
+            window_graph: WindowTrainingGraph::new(),
             training_thread: None,
+            window_ai: WindowAi {  },
         }
     }
 }
@@ -171,24 +173,7 @@ impl ZaoaiApp {
         self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
     }
 
-    fn draw_ui_ai(&mut self, ctx: &egui::Context) {
-        if !self.ai.is_some() {
-            return;
-        }
-
-        let pos = egui::pos2(999999.0, 0.0);
-        egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
-            ui.label(self.ai.as_ref().unwrap().to_string());
-
-            if ui.button("Test").clicked()
-            {
-                if self.ai.is_some()
-                {
-                    self.ai.as_mut().unwrap().test(&self.training_dataset.test_split[..]);
-                }
-            }
-        });
-    }
+    
 
     fn draw_ui_training_dataset(&mut self, ctx: &egui::Context) {
         if !self.window_data.show_traning_dataset {
@@ -347,12 +332,10 @@ impl ZaoaiApp {
 
         // Training Session
         self.draw_ui_training_session(ctx);
-
         self.draw_ui_training_dataset(ctx);
-
-        self.draw_ui_ai(ctx);
-
-        self.training_graph.draw_ui(ctx);
+        
+        self.window_ai.draw_ui(ctx, self.ai.as_mut(), &self.training_dataset);
+        self.window_graph.draw_ui(ctx);
     }
 }
 
@@ -414,7 +397,7 @@ impl eframe::App for ZaoaiApp {
                             payload_buffer.push(result_metadata.unwrap());
 
                             let training_plotpoints: Vec<PlotPoint> = generate_plotpoints_from_training_thread_payloads(&payload_buffer);
-                            self.training_graph.update_plot_data(&training_plotpoints);
+                            self.window_graph.update_plot_data(&training_plotpoints);
                         }
 
                         if payload_buffer.len() == payload_buffer.capacity()
@@ -459,7 +442,7 @@ impl eframe::App for ZaoaiApp {
     }
 
     fn post_rendering(&mut self, _window_size_px: [u32; 2], _frame: &eframe::Frame) {
-        self.training_graph.should_show = self.window_data.show_training_graph;
+        self.window_graph.should_show = self.window_data.show_training_graph;
     }
 }
 

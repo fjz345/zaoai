@@ -3,13 +3,15 @@ use eframe::egui::{
     plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints},
 };
 
-pub struct TrainingGraphVisualization {
+use crate::{app::TrainingDataset, zneural_network::neuralnetwork::NeuralNetwork};
+
+pub struct WindowTrainingGraph {
     pub(crate) title: String,
     pub(crate) should_show: bool,
     pub(crate) plot_data: Vec<PlotPoint>,
 }
 
-impl TrainingGraphVisualization {
+impl WindowTrainingGraph {
     pub fn new() -> Self {
         let title = format!("Training Graph");
         Self {
@@ -157,5 +159,33 @@ impl TrainingGraphVisualization {
                 step_size: 1.0,
             },
         ]
+    }
+}
+
+pub struct WindowAi {}
+
+impl WindowAi {
+    pub fn draw_ui(
+        &self,
+        ctx: &egui::Context,
+        ai: Option<&mut NeuralNetwork>,
+        test_training_dataset: &TrainingDataset,
+    ) {
+        if !ai.is_some() {
+            return;
+        }
+
+        let pos = egui::pos2(999999.0, 0.0);
+        egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
+            if let Some(ai) = ai {
+                ui.label(ai.to_string());
+
+                if ui.button("Test").clicked() {
+                    ai.test(&test_training_dataset.test_split[..]);
+                }
+            } else {
+                ui.label("NN not set");
+            }
+        });
     }
 }
