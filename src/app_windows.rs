@@ -127,22 +127,20 @@ impl WindowTrainingSet
                     RangeInclusive::new(0.0, 1.0),
                 ));
 
-                if ui.button("Split").clicked() {
-                    training_dataset.split([
+                training_dataset.split([
                         *training_dataset_split_thresholds_0,
                         *training_dataset_split_thresholds_1,
                     ]);
-                }
 
                 ui.heading("Current Dataset");
                 ui.label(format!(
-                    "Training: {} ({:.2}%)\nValidation: {} ({:.2}%)\nTest: {} ({:.2}%)\nTotal: {} ({:.2}%)",
+                    "Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
                     training_dataset.training_split.len(),
-                    training_dataset.thresholds[0],
+                    100.0 * training_dataset.thresholds[0],
                     training_dataset.validation_split.len(),
-                    training_dataset.thresholds[1] - training_dataset.thresholds[0],
+                    100.0 * (training_dataset.thresholds[1] - training_dataset.thresholds[0]),
                     training_dataset.test_split.len(),
-                    1.0 - training_dataset.thresholds[1],
+                    100.0 * (1.0 - training_dataset.thresholds[1]),
                     training_dataset.full_dataset.len(),
                     (training_dataset.training_split.len()
                         + training_dataset.validation_split.len()
@@ -161,14 +159,6 @@ impl WindowTrainingSet
                 if ui.button("Load [784, 10] MNIST dataset").clicked()
                 {
                     get_mnist();
-
-                    // let mut dataset: Vec<DataPoint> = Vec::new();
-                    // for (i, data) in train_data.iter().enumerate()
-                    // {
-                    //     dataset.push(DataPoint { inputs: [*train_data.get((i,0,0)).unwrap(), *train_data.get((i,0,1)).unwrap()], expected_outputs: [*train_labels.get((i,0)).unwrap(), *train_labels.get((i,0)).unwrap()] });
-                    // }
-                    
-                    // training_dataset = TrainingDataset::new(&dataset);
                 }
                 
             });
