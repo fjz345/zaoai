@@ -28,7 +28,6 @@ pub struct GraphStructure {
     pub input_nodes: usize,
     pub hidden_layers: Vec<usize>, // contais nodes
     pub output_nodes: usize,
-    pub use_softmax_output: bool,
 }
 
 impl GraphStructure {
@@ -58,7 +57,6 @@ impl GraphStructure {
             input_nodes,
             hidden_layers: hidden_nodes.clone(),
             output_nodes,
-            use_softmax_output: use_softmax_output,
         }
     }
 
