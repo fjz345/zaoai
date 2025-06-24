@@ -144,13 +144,13 @@ impl<'a> Interval<'a> {
                 ui.add(
                     DragValue::new(&mut lb)
                         .speed(0.01)
-                        .clamp_range(0.0..=range)
+                        .range(0.0..=range)
                         .fixed_decimals(2),
                 );
                 ui.add(
                     DragValue::new(&mut ub)
                         .speed(0.01)
-                        .clamp_range(0.0..=range)
+                        .range(0.0..=range)
                         .fixed_decimals(2),
                 );
             });

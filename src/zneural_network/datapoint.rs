@@ -2,8 +2,9 @@ use crate::neuralnetwork::*;
 
 use rand::*;
 use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct DataPoint {
     pub inputs: [f32; 2],
     pub expected_outputs: [f32; 2],

@@ -14,6 +14,7 @@ use eframe::{
 use egui_plot::PlotPoint;
 use graphviz_rust::{dot_structures::Graph, print};
 use ndarray::{Array2, ArrayBase, Dim, OwnedRepr};
+use serde::{Deserialize, Serialize};
 use symphonia::core::conv::IntoSample;
 
 use crate::{
@@ -28,7 +29,7 @@ use crate::{
         },
     },
 };
-
+#[derive(Serialize, Deserialize)]
 struct MenuWindowData {
     // Main Menu
     nn_structure: String,
@@ -44,7 +45,7 @@ struct MenuWindowData {
     training_dataset_split_thresholds_0: f64,
     training_dataset_split_thresholds_1: f64,
 }
-
+#[derive(Serialize, Deserialize)]
 pub struct TrainingDataset {
     pub full_dataset: Vec<DataPoint>,
     pub is_split: bool,
@@ -99,6 +100,7 @@ impl TrainingDataset {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct ZaoaiApp {
     state: AppState,
     ai: Option<NeuralNetwork>,
@@ -106,7 +108,7 @@ pub struct ZaoaiApp {
     training_dataset: TrainingDataset,
     training_session: TrainingSession,
     training_thread: Option<TrainingThread>,
-    window_graph: WindowTrainingGraph,
+    window_training_graph: WindowTrainingGraph,
     window_ai: WindowAi,
     window_training_set: WindowTrainingSet,
     window_training_session: WindowTrainingSession,
@@ -135,7 +137,7 @@ impl Default for ZaoaiApp {
                 }; 0],
             ),
             training_session: TrainingSession::default(),
-            window_graph: WindowTrainingGraph::new(),
+            window_training_graph: WindowTrainingGraph::new(),
             training_thread: None,
             window_ai: WindowAi {},
             window_training_set: WindowTrainingSet {},
@@ -144,8 +146,9 @@ impl Default for ZaoaiApp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum AppState {
+    #[default]
     Startup,
     Idle,
     SetupAi,
@@ -155,6 +158,10 @@ pub enum AppState {
 }
 
 impl ZaoaiApp {
+    pub fn new(cc: &eframe::CreationContext) -> Self {
+        Self::default()
+    }
+
     fn startup(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let mut visuals: egui::Visuals = egui::Visuals::dark();
         // visuals.panel_fill = Color32::from_rgba_unmultiplied(24, 36, 41, 255);
@@ -197,17 +204,26 @@ impl ZaoaiApp {
         });
 
         // Windows
-        self.window_training_session
-            .draw_ui(ctx, &mut self.training_session, &mut self.state);
-        self.window_training_set.draw_ui(
-            ctx,
-            &mut self.training_dataset,
-            &mut self.window_data.training_dataset_split_thresholds_0,
-            &mut self.window_data.training_dataset_split_thresholds_1,
-        );
+        if self.window_data.show_training_session {
+            self.window_training_session
+                .draw_ui(ctx, &mut self.training_session, &mut self.state);
+        }
+
+        if self.window_data.show_traning_dataset {
+            self.window_training_set.draw_ui(
+                ctx,
+                &mut self.training_dataset,
+                &mut self.window_data.training_dataset_split_thresholds_0,
+                &mut self.window_data.training_dataset_split_thresholds_1,
+            );
+        }
+
         self.window_ai
             .draw_ui(ctx, self.ai.as_mut(), &self.training_dataset);
-        self.window_graph.draw_ui(ctx);
+
+        if self.window_data.show_training_graph {
+            self.window_training_graph.draw_ui(ctx);
+        }
 
         response
     }
@@ -270,8 +286,14 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
                     TrainingState::Training => {
-                        let result_metadata =
-                            self.training_thread.as_ref().unwrap().rx_payload.try_recv();
+                        let result_metadata = self
+                            .training_thread
+                            .as_mut()
+                            .unwrap()
+                            .rx_payload
+                            .as_mut()
+                            .expect("ERROR")
+                            .try_recv();
                         let payload_buffer =
                             &mut self.training_thread.as_mut().unwrap().payload_buffer;
                         if (result_metadata.is_ok()) {
@@ -279,7 +301,8 @@ impl eframe::App for ZaoaiApp {
 
                             let training_plotpoints: Vec<PlotPoint> =
                                 generate_plotpoints_from_training_thread_payloads(&payload_buffer);
-                            self.window_graph.update_plot_data(&training_plotpoints);
+                            self.window_training_graph
+                                .update_plot_data(&training_plotpoints);
                         }
 
                         if payload_buffer.len() == payload_buffer.capacity() {
@@ -294,6 +317,8 @@ impl eframe::App for ZaoaiApp {
                             .as_mut()
                             .unwrap()
                             .rx_neuralnetwork
+                            .as_mut()
+                            .expect("ERROR")
                             .try_recv();
                         if result.is_ok() {
                             self.ai = Some(result.unwrap());
@@ -301,7 +326,12 @@ impl eframe::App for ZaoaiApp {
                             panic!("Unexpected error");
                         }
 
-                        self.training_thread.take().unwrap().handle.join();
+                        self.training_thread
+                            .take()
+                            .unwrap()
+                            .handle
+                            .expect("ERROR")
+                            .join();
                         self.training_thread = None;
                         self.training_session.set_state(TrainingState::Idle);
                         self.state = AppState::Idle;

@@ -4,12 +4,15 @@ use eframe::egui::{
     self, Slider,
 };
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
+use serde::{Deserialize, Serialize};
 
 use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::{NeuralNetwork, TrainingSession, TrainingState}}};
 
+#[derive(Serialize, Deserialize)]
 pub struct WindowTrainingGraph {
     pub(crate) title: String,
     pub(crate) should_show: bool,
+    #[serde(skip)]
     pub(crate) plot_data: Vec<PlotPoint>,
 }
 
@@ -28,13 +31,7 @@ impl WindowTrainingGraph {
     }
 
     pub fn draw_ui(&mut self, ctx: &egui::Context) {
-        if !self.should_show {
-            return ();
-        }
-
-        let pos = egui::pos2(999999.0, 999999.0);
         egui::Window::new(&self.title)
-            .default_pos(pos)
             .show(ctx, |ui| {
                 use crate::app_windows::PlotPoints::Owned;
                 let plot_clone: PlotPoints = Owned(self.plot_data.clone());
@@ -161,8 +158,7 @@ impl WindowTrainingGraph {
         ]
     }
 }
-
-pub struct WindowAi {}
+#[derive(Serialize, Deserialize)]pub struct WindowAi {}
 
 impl WindowAi {
     pub fn draw_ui(
@@ -171,10 +167,6 @@ impl WindowAi {
         ai: Option<&mut NeuralNetwork>,
         test_training_dataset: &TrainingDataset,
     ) {
-        if !ai.is_some() {
-            return;
-        }
-
         let pos = egui::pos2(999999.0, 0.0);
         egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
             if let Some(ai) = ai {
@@ -190,7 +182,7 @@ impl WindowAi {
     }
 }
 
-
+#[derive(Serialize, Deserialize)]
 pub struct WindowTrainingSet
 {
 
@@ -199,10 +191,6 @@ pub struct WindowTrainingSet
 impl WindowTrainingSet
 {
     pub fn draw_ui(&self, ctx: &egui::Context, training_dataset: &mut TrainingDataset, training_dataset_split_thresholds_0: &mut f64, training_dataset_split_thresholds_1: &mut f64) {
-        // if !self.window_data.show_traning_dataset {
-        //     return;
-        // }
-
         let pos = egui::pos2(0.0, 600.0);
         egui::Window::new("Dataset")
             .default_pos(pos)
@@ -260,7 +248,7 @@ impl WindowTrainingSet
             });
     }
 }
-
+#[derive(Serialize, Deserialize)]
 pub struct WindowTrainingSession
 {
 
@@ -268,10 +256,6 @@ pub struct WindowTrainingSession
 impl WindowTrainingSession
 {
     pub fn draw_ui(&mut self, ctx: &egui::Context, training_session: &mut TrainingSession, app_state: &mut AppState) {
-        // if !self.window_data.show_training_session {
-        //     return;
-        // }
-
         let pos = egui::pos2(500.0, 0.0);
         egui::Window::new("Training")
             .default_pos(pos)

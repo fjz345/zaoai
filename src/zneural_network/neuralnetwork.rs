@@ -7,25 +7,26 @@ use crate::layer::*;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand_chacha;
+use serde::{Deserialize, Serialize};
 use symphonia::core::util::clamp;
 
 use super::datapoint::DataPoint;
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum DatasetUsage {
     Training,
     Validation,
     Test,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TrainingThreadPayload {
     pub payload_index: usize,
     pub payload_max_index: usize,
     pub training_metadata: AIResultMetadata,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AIResultMetadata {
     pub true_positives: usize,
     pub true_negatives: usize,
@@ -96,13 +97,16 @@ impl AIResultMetadata {
         self.calc_true_positive_rate() as f64 / self.calc_true_negative_rate() as f64
     }
 }
-
+#[derive(Serialize, Deserialize)]
 pub struct TrainingThread {
     pub id: u64,
-    pub handle: JoinHandle<()>,
-    pub rx_neuralnetwork: Receiver<NeuralNetwork>,
-    pub rx_payload: Receiver<TrainingThreadPayload>,
     pub payload_buffer: Vec<TrainingThreadPayload>,
+    #[serde(skip)]
+    pub handle: Option<JoinHandle<()>>,
+    #[serde(skip)]
+    pub rx_neuralnetwork: Option<Receiver<NeuralNetwork>>,
+    #[serde(skip)]
+    pub rx_payload: Option<Receiver<TrainingThreadPayload>>,
 }
 
 impl TrainingThread {
@@ -135,15 +139,15 @@ impl TrainingThread {
 
         Self {
             id: 0,
-            handle: training_thread,
-            rx_neuralnetwork: rx_nn,
-            rx_payload: rx_training_metadata,
+            handle: Some(training_thread),
+            rx_neuralnetwork: Some(rx_nn),
+            rx_payload: Some(rx_training_metadata),
             payload_buffer: Vec::with_capacity(num_epochs),
         }
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct TrainingSession {
     pub nn: Option<NeuralNetwork>,
     pub state: TrainingState,
@@ -237,7 +241,7 @@ impl LayerLearnData {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct GraphStructure {
     pub input_nodes: usize,
     pub hidden_layers: Vec<usize>, // contais nodes
@@ -316,7 +320,7 @@ impl GraphStructure {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct TestResults {
     pub num_datapoints: i32,
     pub num_correct: i32,
@@ -324,7 +328,7 @@ pub struct TestResults {
     pub cost: f32,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
 pub enum TrainingState {
     Idle,
     StartTraining,
@@ -338,8 +342,7 @@ impl TrainingState {
         *self == TrainingState::StartTraining
     }
 }
-
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,

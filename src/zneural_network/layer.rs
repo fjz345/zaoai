@@ -1,6 +1,7 @@
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand_chacha;
+use serde::{Deserialize, Serialize};
 use symphonia::core::util::clamp;
 
 pub fn softmax(layer_values: &[f32]) -> Vec<f32> {
@@ -61,7 +62,7 @@ pub fn node_cost_d(output_activation: f32, expected_activation: f32) -> f32 {
 }
 // ============================
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Layer {
     pub num_in_nodes: usize,
     pub num_out_nodes: usize,
@@ -71,7 +72,7 @@ pub struct Layer {
     pub biases_cost_grads: Vec<f32>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct LayerLearnData {
     pub inputs: Vec<f32>,
     pub weighted_inputs: Vec<f32>,

@@ -69,11 +69,31 @@ fn main() -> Result<()> {
     let graph_params: GenerateGraphParams = GenerateGraphParams { layer_spacing: 2.2 };
     let graph_layout = generate_nn_graph_layout_string(&nntest.graph_structure, &graph_params);
 
-    let options = eframe::NativeOptions::default();
+    let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "ZaoAI",
-        options,
-        Box::new(|_cc| Ok(Box::<ZaoaiApp>::default())),
+        native_options,
+        Box::new(move |cc: &eframe::CreationContext<'_>| {
+            // This gives us image support:
+            egui_extras::install_image_loaders(&cc.egui_ctx);
+
+            #[cfg(feature = "serde")]
+            {
+                // Try to load saved state from storage
+                if let Some(storage) = cc.storage {
+                    if let Some(json) = storage.get_string(eframe::APP_KEY) {
+                        if let Ok(mut app) = serde_json::from_str::<ZaoaiApp>(&json) {
+                            log::info!("Found previous app storage");
+                            return Ok(Box::new(app));
+                        }
+                    }
+                }
+            }
+
+            log::error!("Could not find app storage");
+            let app = ZaoaiApp::new(cc);
+            Ok(Box::<ZaoaiApp>::new(app))
+        }),
     );
 
     return Ok(());
