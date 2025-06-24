@@ -32,6 +32,7 @@ use crate::{
 struct MenuWindowData {
     // Main Menu
     nn_structure: String,
+    show_ai: bool,
     // Training Graph
     show_training_graph: bool,
     // Training Session
@@ -108,6 +109,7 @@ pub struct ZaoaiApp {
     window_data: MenuWindowData,
     training_dataset: TrainingDataset,
     training_session: TrainingSession,
+    #[serde(skip)]
     training_thread: Option<TrainingThread>,
     window_training_graph: WindowTrainingGraph,
     window_ai: WindowAi,
@@ -130,11 +132,12 @@ impl Default for ZaoaiApp {
                 show_traning_dataset: true,
                 training_dataset_split_thresholds_0: 0.75,
                 training_dataset_split_thresholds_1: 0.9,
+                show_ai: true,
             },
             training_dataset: TrainingDataset::new(
                 &[DataPoint {
-                    inputs: [0.0; 2],
-                    expected_outputs: [0.0; 2],
+                    inputs: vec![0.0; 2],
+                    expected_outputs: vec![0.0; 2],
                 }; 0],
             ),
             training_session: TrainingSession::default(),
@@ -183,6 +186,7 @@ impl ZaoaiApp {
     fn draw_ui(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) -> InnerResponse<()> {
         let response = egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
+                ui.checkbox(&mut self.window_data.show_ai, "Show AI");
                 ui.checkbox(&mut self.window_data.show_traning_dataset, "Show Dataset");
 
                 ui.checkbox(&mut self.window_data.show_training_session, "Show Training");
@@ -204,11 +208,6 @@ impl ZaoaiApp {
         });
 
         // Windows
-        if self.window_data.show_training_session {
-            self.window_training_session
-                .draw_ui(ctx, &mut self.training_session, &mut self.state);
-        }
-
         if self.window_data.show_traning_dataset {
             self.window_training_set.draw_ui(
                 ctx,
@@ -218,9 +217,17 @@ impl ZaoaiApp {
             );
         }
 
-        self.window_ai
-            .draw_ui(ctx, self.ai.as_mut(), &self.training_dataset);
+        self.training_session
+            .set_training_data(self.training_dataset.get_training_data_slice());
+        if self.window_data.show_training_session {
+            self.window_training_session
+                .draw_ui(ctx, &mut self.training_session, &mut self.state);
+        }
 
+        if self.window_data.show_ai {
+            self.window_ai
+                .draw_ui(ctx, self.ai.as_mut(), &self.training_dataset);
+        }
         if self.window_data.show_training_graph {
             self.window_training_graph.draw_ui(ctx);
         }
@@ -283,16 +290,41 @@ impl eframe::App for ZaoaiApp {
                 let training_state = self.training_session.get_state();
                 match training_state {
                     TrainingState::Idle => {
-                        log::info!("TrainingState::Idle");
+                        log::trace!("TrainingState::Idle");
                     }
                     TrainingState::StartTraining => {
-                        if (self.training_thread.is_none()) {
-                            // Copy the session for TrainingThread to take care of
-                            self.training_thread =
-                                Some(TrainingThread::new(self.training_session.clone()));
-                            self.training_session.set_state(TrainingState::Training);
+                        if let Some(ai) = &self.ai {
+                            if (self.training_thread.is_none()) {
+                                if let Some(first_point) =
+                                    self.training_session.training_data.first()
+                                {
+                                    if first_point.inputs.len() == ai.graph_structure.input_nodes
+                                        && first_point.expected_outputs.len()
+                                            == ai.graph_structure.output_nodes
+                                    {
+                                        // Copy the session for TrainingThread to take care of
+                                        self.training_thread = Some(TrainingThread::new(
+                                            self.training_session.clone(),
+                                        ));
+                                        self.training_session.set_state(TrainingState::Training);
+                                    } else {
+                                        log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})",
+                                         ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, 
+                                         first_point.inputs.len(), first_point.expected_outputs.len());
+                                        self.training_session.set_state(TrainingState::Idle);
+                                    }
+                                } else {
+                                    log::error!("Cannot start training, datapoint len <= 0");
+                                    self.training_session.set_state(TrainingState::Idle);
+                                }
+                            } else {
+                                log::error!(
+                                    "Cannot start training when another one is in progress..."
+                                );
+                                self.training_session.set_state(TrainingState::Idle);
+                            }
                         } else {
-                            log::info!("Cannot start training when another one is in progress...");
+                            log::error!("Cannot start training, NN not set");
                             self.training_session.set_state(TrainingState::Idle);
                         }
                     }

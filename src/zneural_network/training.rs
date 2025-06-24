@@ -81,9 +81,10 @@ impl AIResultMetadata {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct TrainingSession {
     pub nn: Option<NeuralNetwork>,
+    #[serde(skip)]
     pub state: TrainingState,
     pub num_epochs: usize,
     pub batch_size: usize,
@@ -172,8 +173,9 @@ pub struct TestResults {
     pub cost: f32,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, PartialEq, Debug)]
 pub enum TrainingState {
+    #[default]
     Idle,
     StartTraining,
     Training,
@@ -192,8 +194,8 @@ pub fn test_nn(nn: &mut NeuralNetwork, test_data: &[DataPoint]) -> TestResults {
     let mut num_correct = 0;
 
     for i in 0..test_data.len() {
-        let mut datapoint = test_data[i];
-        let outputs = nn.calculate_outputs(&mut datapoint.inputs[..]);
+        let mut datapoint = &test_data[i];
+        let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
         let result = NeuralNetwork::determine_output_result(&outputs);
         let result_expected = NeuralNetwork::determine_output_result(&datapoint.expected_outputs);
 

@@ -4,10 +4,10 @@ use rand::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DataPoint {
-    pub inputs: [f32; 2],
-    pub expected_outputs: [f32; 2],
+    pub inputs: Vec<f32>,
+    pub expected_outputs: Vec<f32>,
 }
 
 fn calculate_y_for_datapoint(x1: f32, x2: f32) -> (f32, f32) {
@@ -48,8 +48,8 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
         let (y1, y2) = calculate_y_for_datapoint(x1_rand, x2_rand);
 
         result.push(DataPoint {
-            inputs: [x1_rand, x2_rand],
-            expected_outputs: [y1, y2],
+            inputs: vec![x1_rand, x2_rand],
+            expected_outputs: vec![y1, y2],
         });
     }
 

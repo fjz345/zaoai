@@ -23,7 +23,7 @@ impl LayerLearnData {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct GraphStructure {
     pub input_nodes: usize,
     pub hidden_layers: Vec<usize>, // contais nodes
@@ -95,7 +95,7 @@ impl GraphStructure {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
@@ -177,6 +177,15 @@ impl NeuralNetwork {
         print: Option<bool>,
         mut epoch_metadata: Option<&mut AIResultMetadata>,
     ) {
+        assert!(training_data.len() >= 1);
+        assert_eq!(
+            self.graph_structure.input_nodes,
+            training_data[0].inputs.len()
+        );
+        assert_eq!(
+            self.graph_structure.output_nodes,
+            training_data[0].expected_outputs.len()
+        );
         let num_batches = training_data.len() / batch_size;
         let last_batch_size = training_data.len() % batch_size;
 
@@ -481,7 +490,7 @@ impl NeuralNetwork {
         (max_index, max)
     }
 
-    fn calculate_cost_datapoint(&mut self, datapoint: DataPoint) -> f32 {
+    fn calculate_cost_datapoint(&mut self, datapoint: &DataPoint) -> f32 {
         let mut cost: f32 = 0.0;
 
         // Calculate the output of the neural network
@@ -506,7 +515,7 @@ impl NeuralNetwork {
 
         let mut cost: f32 = 0.0;
         for datapoint in &data[..] {
-            cost += self.calculate_cost_datapoint(*datapoint);
+            cost += self.calculate_cost_datapoint(datapoint);
         }
 
         cost / (data.len() as f32)

@@ -62,7 +62,7 @@ pub fn node_cost_d(output_activation: f32, expected_activation: f32) -> f32 {
 }
 // ============================
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct Layer {
     pub num_in_nodes: usize,
     pub num_out_nodes: usize,
@@ -72,7 +72,7 @@ pub struct Layer {
     pub biases_cost_grads: Vec<f32>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub struct LayerLearnData {
     pub inputs: Vec<f32>,
     pub weighted_inputs: Vec<f32>,

@@ -1,11 +1,19 @@
 use std::ops::RangeInclusive;
 
-use eframe::egui::{
-    self, Slider,
+use crate::{
+    app::{AppState, TrainingDataset},
+    egui_ext::{add_slider_sized, Interval},
+    mnist::get_mnist,
+    simpletest::simple_test_nn,
+    zneural_network::{
+        datapoint::create_2x2_test_datapoints,
+        neuralnetwork::NeuralNetwork,
+        training::{test_nn, TrainingSession, TrainingState},
+    },
 };
+use eframe::egui::{self, Slider};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
-use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, simpletest::simple_test_nn, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::NeuralNetwork, training::{test_nn, TrainingSession, TrainingState}}};
 
 #[derive(Serialize, Deserialize)]
 pub struct WindowTrainingGraph {
@@ -30,14 +38,13 @@ impl WindowTrainingGraph {
     }
 
     pub fn draw_ui(&mut self, ctx: &egui::Context) {
-        egui::Window::new(&self.title)
-            .show(ctx, |ui| {
-                use crate::app_windows::PlotPoints::Owned;
-                let plot_clone: PlotPoints = Owned(self.plot_data.clone());
-                let line: Line = Line::new("LineName", plot_clone);
+        egui::Window::new(&self.title).show(ctx, |ui| {
+            use crate::app_windows::PlotPoints::Owned;
+            let plot_clone: PlotPoints = Owned(self.plot_data.clone());
+            let line: Line = Line::new("LineName", plot_clone);
 
-                Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line));
-            });
+            Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line));
+        });
     }
 
     fn create_plot_training<'a>() -> Plot<'a> {
@@ -52,7 +59,9 @@ impl WindowTrainingGraph {
             .include_y(0.0 - INCLUDE_Y_PADDING)
             .include_y(1.0 + INCLUDE_Y_PADDING)
             .include_x(0.0)
-            .y_grid_spacer(Self::create_plot_training_y_spacer_func as fn(GridInput) -> Vec<GridMark>)
+            .y_grid_spacer(
+                Self::create_plot_training_y_spacer_func as fn(GridInput) -> Vec<GridMark>,
+            )
             .width(500.0)
             .height(300.0)
     }
@@ -61,7 +70,10 @@ impl WindowTrainingGraph {
         let mut marks = Vec::new();
 
         // 0.05 step marks
-        for &value in &[0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95] {
+        for &value in &[
+            0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9,
+            0.95,
+        ] {
             marks.push(GridMark {
                 value,
                 step_size: 0.05,
@@ -88,7 +100,8 @@ impl WindowTrainingGraph {
     }
 }
 
-#[derive(Serialize, Deserialize)]pub struct WindowAi {}
+#[derive(Serialize, Deserialize)]
+pub struct WindowAi {}
 impl WindowAi {
     pub fn draw_ui(
         &self,
@@ -114,9 +127,14 @@ impl WindowAi {
 #[derive(Serialize, Deserialize)]
 pub struct WindowTrainingSet {}
 
-impl WindowTrainingSet
-{
-    pub fn draw_ui(&self, ctx: &egui::Context, training_dataset: &mut TrainingDataset, training_dataset_split_thresholds_0: &mut f64, training_dataset_split_thresholds_1: &mut f64) {
+impl WindowTrainingSet {
+    pub fn draw_ui(
+        &self,
+        ctx: &egui::Context,
+        training_dataset: &mut TrainingDataset,
+        training_dataset_split_thresholds_0: &mut f64,
+        training_dataset_split_thresholds_1: &mut f64,
+    ) {
         let pos = egui::pos2(0.0, 600.0);
         egui::Window::new("Dataset")
             .default_pos(pos)
@@ -160,16 +178,19 @@ impl WindowTrainingSet
                 {
                     get_mnist();
                 }
-                
             });
     }
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct WindowTrainingSession {}
-impl WindowTrainingSession
-{
-    pub fn draw_ui(&mut self, ctx: &egui::Context, training_session: &mut TrainingSession, app_state: &mut AppState) {
+impl WindowTrainingSession {
+    pub fn draw_ui(
+        &mut self,
+        ctx: &egui::Context,
+        training_session: &mut TrainingSession,
+        app_state: &mut AppState,
+    ) {
         let pos = egui::pos2(500.0, 0.0);
         egui::Window::new("Training")
             .default_pos(pos)
@@ -228,9 +249,13 @@ impl WindowTrainingSession
 
                 if ui.button("Begin Training").clicked() {
                     if training_session.ready() {
-                    *app_state = AppState::Training;
-                        training_session
-                            .set_state(TrainingState::StartTraining);
+                        *app_state = AppState::Training;
+                        training_session.set_state(TrainingState::StartTraining);
+                    } else {
+                        log::error!(
+                            "Could not start training, training_session not ready {:?}",
+                            training_session
+                        );
                     }
                 }
             });
