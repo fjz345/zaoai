@@ -5,7 +5,7 @@ use eframe::egui::{
 };
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
-use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::NeuralNetwork, training::{TrainingSession, TrainingState}}};
+use crate::{app::{AppState, TrainingDataset}, egui_ext::{add_slider_sized, Interval}, mnist::get_mnist, simpletest::simple_test_nn, zneural_network::{datapoint::create_2x2_test_datapoints, neuralnetwork::NeuralNetwork, training::{test_nn, TrainingSession, TrainingState}}};
 
 #[derive(Serialize, Deserialize)]
 pub struct WindowTrainingGraph {
@@ -102,7 +102,7 @@ impl WindowAi {
                 ui.label(ai.to_string());
 
                 if ui.button("Test").clicked() {
-                    ai.test(&test_training_dataset.test_split[..]);
+                    test_nn(ai, &test_training_dataset.test_split[..]);
                 }
             } else {
                 ui.label("NN not set");

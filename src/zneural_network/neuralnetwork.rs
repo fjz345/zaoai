@@ -77,22 +77,18 @@ impl GraphStructure {
     fn to_string(&self) -> String {
         let mut result_string: String = String::new();
         let mut layer_sizes: Vec<usize> = Vec::new();
-
         layer_sizes.push(self.input_nodes);
         for hidden_layer in &self.hidden_layers[..] {
             layer_sizes.push(*hidden_layer);
         }
-
         layer_sizes.push(self.output_nodes);
 
         for (i, layer) in layer_sizes.iter().enumerate() {
             if (i >= 1) {
                 result_string += ", ";
             }
-
             result_string += layer.to_string().as_str();
         }
-
         result_string
     }
 
@@ -400,35 +396,6 @@ impl NeuralNetwork {
 
             cur_index += epoch_step;
         }
-    }
-
-    // Returns a TestResult
-    pub fn test(&mut self, test_data: &[DataPoint]) -> TestResults {
-        let mut num_correct = 0;
-
-        for i in 0..test_data.len() {
-            let mut datapoint = test_data[i];
-            let outputs = self.calculate_outputs(&mut datapoint.inputs[..]);
-            let result = NeuralNetwork::determine_output_result(&outputs);
-            let result_expected =
-                NeuralNetwork::determine_output_result(&datapoint.expected_outputs);
-
-            let is_correct = result.0 == result_expected.0;
-            if (is_correct) {
-                num_correct += 1;
-            }
-        }
-
-        let avg_cost = self.calculate_cost(test_data);
-        let test_result = TestResults {
-            num_datapoints: test_data.len() as i32,
-            num_correct: num_correct,
-            accuracy: (num_correct as f32) / (test_data.len() as f32),
-            cost: avg_cost,
-        };
-
-        self.last_test_results = test_result;
-        test_result
     }
 
     // Backpropegation
