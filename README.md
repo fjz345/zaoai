@@ -11,6 +11,10 @@ Support Audio Formats
     * mp4
 
 ## TODO:
+    * fix mnist not lagging
+    * fix WindowTraining____ UI structs
+    * fix ide bug refusing to format document
+
     Create ML AI
         * Save/load weights
         * Dropout neurons

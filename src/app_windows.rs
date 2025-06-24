@@ -5,7 +5,7 @@ use crate::{
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
-        datapoint::create_2x2_test_datapoints,
+        datapoint::{create_2x2_test_datapoints, DataPoint},
         neuralnetwork::NeuralNetwork,
         thread::TrainingThread,
         training::{test_nn, TrainingSession, TrainingState},
@@ -135,39 +135,40 @@ impl WindowTrainingSet {
         training_dataset_split_thresholds_0: &mut f64,
         training_dataset_split_thresholds_1: &mut f64,
     ) {
-        let pos = egui::pos2(0.0, 600.0);
         egui::Window::new("Dataset")
-            .default_pos(pos)
-            .show(ctx, |ui: &mut egui::Ui| {
+            .default_pos([0.0, 600.0])
+            .show(ctx, |ui| {
                 ui.add(Interval::new(
                     training_dataset_split_thresholds_0,
                     training_dataset_split_thresholds_1,
                     RangeInclusive::new(0.0, 1.0),
                 ));
 
-                training_dataset.split([
+                if training_dataset.full_dataset.is_some()
+                {
+                    training_dataset.split([
                         *training_dataset_split_thresholds_0,
                         *training_dataset_split_thresholds_1,
                     ]);
-
-                ui.heading("Current Dataset");
-                ui.label(format!(
-                    "Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
+                }
+                    if let Some(full_dataset) = &training_dataset.full_dataset
+                    {
+              ui.heading("Current Dataset");
+                ui.label(format!("Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
                     training_dataset.training_split.len(),
                     100.0 * training_dataset.thresholds[0],
                     training_dataset.validation_split.len(),
                     100.0 * (training_dataset.thresholds[1] - training_dataset.thresholds[0]),
                     training_dataset.test_split.len(),
                     100.0 * (1.0 - training_dataset.thresholds[1]),
-                    training_dataset.full_dataset.len(),
+                    full_dataset.len(),
                     (training_dataset.training_split.len()
                         + training_dataset.validation_split.len()
                         + training_dataset.test_split.len()) as f64
-                        / training_dataset.full_dataset.len().max(1) as f64,
+                        / full_dataset.len().max(1) as f64,
                 ));
-
+                }
                 ui.label(format!("Dimensions: ({}, {})", training_dataset.get_dimensions().0, training_dataset.get_dimensions().1));
-
                 if ui.button("Load [2, 2] test dataset").clicked()
                 {
                     let dataset = create_2x2_test_datapoints(0, 100000 as i32);
@@ -176,7 +177,42 @@ impl WindowTrainingSet {
                 }
                 if ui.button("Load [784, 10] MNIST dataset").clicked()
                 {
-                    get_mnist();
+                    let mnist = get_mnist();
+                    let dataset_train: Vec<DataPoint> = mnist.train_data.iter()
+        .zip(mnist.train_labels.iter())
+        .map(|(image, &label)| {
+            // Normalize pixels to [0.0, 1.0]
+            let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
+
+            let one_hot_encode = |label: u8, num_classes: usize| -> Vec<f32> {
+                let mut v = vec![0.0; num_classes];
+                if (label as usize) < num_classes {
+                    v[label as usize] = 1.0;
+                }
+                v
+            };
+            let expected_outputs = one_hot_encode(label, 10);
+            DataPoint { inputs, expected_outputs }
+        })
+        .collect();
+        let dataset_test: Vec<DataPoint> = mnist.train_data.iter()
+        .zip(mnist.train_labels.iter())
+        .map(|(image, &label)| {
+            // Normalize pixels to [0.0, 1.0]
+            let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
+
+            let one_hot_encode = |label: u8, num_classes: usize| -> Vec<f32> {
+                let mut v = vec![0.0; num_classes];
+                if (label as usize) < num_classes {
+                    v[label as usize] = 1.0;
+                }
+                v
+            };
+            let expected_outputs = one_hot_encode(label, 10);
+            DataPoint { inputs, expected_outputs }
+        })
+        .collect();
+                    *training_dataset = TrainingDataset{ full_dataset: None, is_split: true, thresholds: [0.0,0.0], training_split: dataset_train, validation_split: vec![], test_split: dataset_test };
                 }
             });
     }

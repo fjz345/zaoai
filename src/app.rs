@@ -46,9 +46,9 @@ struct MenuWindowData {
     training_dataset_split_thresholds_1: f64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct TrainingDataset {
-    pub full_dataset: Vec<DataPoint>,
+    pub full_dataset: Option<Vec<DataPoint>>,
     pub is_split: bool,
     pub thresholds: [f64; 2],
     pub training_split: Vec<DataPoint>,
@@ -59,7 +59,7 @@ pub struct TrainingDataset {
 impl TrainingDataset {
     pub fn new(datapoints: &[DataPoint]) -> Self {
         Self {
-            full_dataset: datapoints.to_vec(),
+            full_dataset: Some(datapoints.to_vec()),
             is_split: false,
             thresholds: [0.0; 2],
             training_split: Vec::new(),
@@ -69,35 +69,42 @@ impl TrainingDataset {
     }
 
     pub fn split(&mut self, thresholds: [f64; 2]) {
-        self.is_split = true;
-        self.thresholds = thresholds;
-        split_datapoints(
-            &self.full_dataset[..],
-            thresholds,
-            self.training_split.as_mut(),
-            self.validation_split.as_mut(),
-            self.test_split.as_mut(),
-        )
+        if let Some(full) = &self.full_dataset {
+            self.is_split = true;
+            self.thresholds = thresholds;
+            split_datapoints(
+                &full[..],
+                thresholds,
+                self.training_split.as_mut(),
+                self.validation_split.as_mut(),
+                self.test_split.as_mut(),
+            )
+        } else {
+            log::error!("Tried to split win full_dataset = None");
+        }
     }
 
-    pub fn get_training_data_slice(&self) -> &[DataPoint] {
-        if self.is_split {
-            return &self.training_split[..];
-        } else {
-            return &self.full_dataset[..];
-        }
+    pub fn get_datapoint_iter(&self) -> impl Iterator<Item = &DataPoint> + '_ {
+        self.training_split
+            .iter()
+            .chain(self.validation_split.iter())
+            .chain(self.test_split.iter())
     }
 
     // Returns the number of (in, out) nodes needed in layers
     pub fn get_dimensions(&self) -> (usize, usize) {
-        if (self.full_dataset.len() <= 0) {
-            return (0, 0);
+        if let Some(full_dataset) = &self.full_dataset {
+            if full_dataset.len() >= 1 {
+                (
+                    full_dataset[0].inputs.len(),
+                    full_dataset[0].expected_outputs.len(),
+                )
+            } else {
+                (0, 0)
+            }
+        } else {
+            (0, 0)
         }
-
-        (
-            self.full_dataset[0].inputs.len(),
-            self.full_dataset[0].expected_outputs.len(),
-        )
     }
 }
 
@@ -107,6 +114,7 @@ pub struct ZaoaiApp {
     state: AppState,
     ai: Option<NeuralNetwork>,
     window_data: MenuWindowData,
+    #[serde(skip)]
     training_dataset: TrainingDataset,
     training_session: TrainingSession,
     #[serde(skip)]
@@ -216,11 +224,19 @@ impl ZaoaiApp {
             );
         }
 
-        self.training_session
-            .set_training_data(self.training_dataset.get_training_data_slice());
+        let vec: Vec<_> = self
+            .training_dataset
+            .get_datapoint_iter()
+            .map(|f| f.clone())
+            .collect();
+        self.training_session.set_training_data(&vec[..]);
         if self.window_data.show_training_session {
-            self.window_training_session
-                .draw_ui(ctx, &mut self.training_session, &mut self.state, &mut self.training_thread);
+            self.window_training_session.draw_ui(
+                ctx,
+                &mut self.training_session,
+                &mut self.state,
+                &mut self.training_thread,
+            );
         }
 
         if self.window_data.show_ai {
@@ -275,8 +291,7 @@ impl eframe::App for ZaoaiApp {
 
                 if (formatted_nn_structure.len() >= 2) {
                     self.setup_ai(GraphStructure::new(&formatted_nn_structure));
-                }
-                else{
+                } else {
                     log::error!("SetupAI failed, formatted_nn_structure.len() < 2");
                 }
                 self.state = AppState::Idle;
@@ -310,9 +325,7 @@ impl eframe::App for ZaoaiApp {
                                         ));
                                         self.training_session.set_state(TrainingState::Training);
                                     } else {
-                                        log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})",
-                                         ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, 
-                                         first_point.inputs.len(), first_point.expected_outputs.len());
+                                        log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, first_point.inputs.len(), first_point.expected_outputs.len());
                                         self.training_session.set_state(TrainingState::Idle);
                                     }
                                 } else {
