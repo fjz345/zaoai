@@ -5,16 +5,18 @@ use serde::{Deserialize, Serialize};
 use symphonia::core::util::clamp;
 
 pub fn softmax(layer_values: &[f32]) -> Vec<f32> {
-    let mut sum: f64 = 0.0;
-    for value in layer_values {
-        sum += value.exp() as f64;
+    let max_val = layer_values
+        .iter()
+        .cloned()
+        .fold(f32::NEG_INFINITY, f32::max);
+    let mut sum = 0.0f64;
+    for &value in layer_values {
+        sum += (value - max_val).exp() as f64;
     }
-
-    let mut softmax_values = layer_values.to_vec();
-    for softmax_value in &mut softmax_values {
-        *softmax_value = ((softmax_value.exp() as f64) / sum) as f32;
-    }
-    softmax_values
+    layer_values
+        .iter()
+        .map(|&v| ((v - max_val).exp() as f64 / sum) as f32)
+        .collect()
 }
 
 // ============================
@@ -34,7 +36,11 @@ fn relu(in_value: f32) -> f32 {
 }
 
 fn relu_d(in_value: f32) -> f32 {
-    !panic!("not implemented");
+    if in_value > 0.0 {
+        1.0
+    } else {
+        0.0
+    }
 }
 
 pub fn activation_function(in_value: f32) -> f32 {
@@ -100,8 +106,7 @@ impl Layer {
 
         // Allocate memory
         // Bias
-        let mut biases: Vec<f32> = Vec::new();
-        biases.resize(num_out_nodes, 0.0);
+        let mut biases = vec![0.0; num_out_nodes];
         let mut biases_cost_grads: Vec<f32> = Vec::new();
         biases_cost_grads.resize(num_out_nodes, 0.0);
 
@@ -223,7 +228,7 @@ impl Layer {
         }
     }
 
-    pub fn update_cost_gradients(&mut self, learn_data: LayerLearnData) {
+    pub fn update_cost_gradients(&mut self, learn_data: &LayerLearnData) {
         for node_out in 0..self.num_out_nodes {
             // Weight costs
             for node_in in 0..self.num_in_nodes {

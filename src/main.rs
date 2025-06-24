@@ -62,7 +62,7 @@ fn main() -> Result<()> {
     env::set_var("RUST_LOG", "debug"); // or "info" or "debug"
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-    let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2], true);
+    let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2]);
     let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
     nntest.validate();
 

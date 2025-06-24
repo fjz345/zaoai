@@ -204,6 +204,7 @@ impl WindowTrainingSession {
                             &mut training_session.num_epochs,
                             RangeInclusive::new(1, 100),
                         )
+                        .clamping(egui::SliderClamping::Never)
                         .step_by(1.0),
                     )
                     .changed()
@@ -221,6 +222,7 @@ impl WindowTrainingSession {
                             &mut training_session.batch_size,
                             RangeInclusive::new(10, 1000),
                         )
+                        .clamping(egui::SliderClamping::Never)
                         .step_by(10.0),
                     )
                     .changed()
@@ -236,9 +238,11 @@ impl WindowTrainingSession {
                         100.0,
                         Slider::new(
                             &mut training_session.learn_rate,
-                            RangeInclusive::new(0.1, 0.5),
+                            RangeInclusive::new(0.01, 0.5),
                         )
-                        .step_by(0.1),
+                        .clamping(egui::SliderClamping::Never)
+                        .min_decimals(2)
+                        .max_decimals_opt(Some(5)),
                     )
                     .changed()
                     {

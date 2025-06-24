@@ -31,7 +31,7 @@ pub struct GraphStructure {
 }
 
 impl GraphStructure {
-    pub fn new(args: &[usize], use_softmax_output: bool) -> GraphStructure {
+    pub fn new(args: &[usize]) -> GraphStructure {
         if args.len() < 2 {
             // Format args to string
             let mut output_string: String = "".to_owned();
@@ -177,7 +177,7 @@ impl NeuralNetwork {
         print: Option<bool>,
         mut epoch_metadata: Option<&mut AIResultMetadata>,
     ) {
-        assert!(training_data.len() >= 1);
+        assert!(!training_data.is_empty());
         assert_eq!(
             self.graph_structure.input_nodes,
             training_data[0].inputs.len()
@@ -186,66 +186,45 @@ impl NeuralNetwork {
             self.graph_structure.output_nodes,
             training_data[0].expected_outputs.len()
         );
-        let num_batches = training_data.len() / batch_size;
-        let last_batch_size = training_data.len() % batch_size;
 
-        let print_enabled = print == Some(true);
+        let print_enabled = print.unwrap_or(false);
+        let mut cur_index = 0;
+        let len = training_data.len();
 
-        let mut cur_index: usize = 0;
-        let mut batch_step = batch_size;
-        if batch_step > training_data.len() {
-            batch_step = training_data.len();
-        }
+        let mut process_batch =
+            |data: &[DataPoint], batch_num: usize, total_batches: usize, cur_index: usize| {
+                if print_enabled {
+                    log::info!(
+                        "Training... @{} #[{}/{}] (#{} - #{})",
+                        epoch_index + 1,
+                        batch_num + 1,
+                        total_batches,
+                        cur_index,
+                        cur_index + data.len(),
+                    );
+                }
+
+                self.learn_batch(data, learn_rate, print);
+
+                if let Some(metadata) = epoch_metadata.as_mut() {
+                    let mut new_metadata = AIResultMetadata::new(DatasetUsage::Training);
+                    self.learn_batch_metadata(data, &mut new_metadata);
+                    metadata.merge(&new_metadata);
+                }
+            };
+
+        let num_batches = len / batch_size;
+        let last_batch_size = len % batch_size;
 
         for i in 0..num_batches {
-            let epoch_data = &training_data[cur_index..(cur_index + batch_step)];
-
-            if print_enabled {
-                log::info!(
-                    "Training... @{} #[{}/{}] (#{} - #{})",
-                    epoch_index + 1,
-                    i + 1,
-                    num_batches,
-                    cur_index,
-                    cur_index + batch_step,
-                );
-            }
-
-            self.learn_batch(epoch_data, learn_rate, print);
-            if epoch_metadata.is_some() {
-                let mut new_metadata: AIResultMetadata =
-                    AIResultMetadata::new(DatasetUsage::Training);
-
-                self.learn_batch_metadata(epoch_data, &mut new_metadata);
-                epoch_metadata.as_mut().unwrap().merge(&new_metadata);
-            }
-
-            cur_index += batch_step;
+            let batch = &training_data[cur_index..cur_index + batch_size];
+            process_batch(batch, i, num_batches, cur_index);
+            cur_index += batch_size;
         }
 
-        if (last_batch_size >= 1) {
-            // Last epoch
-            batch_step = last_batch_size;
-            let epoch_data = &training_data[cur_index..(cur_index + batch_step)];
-
-            if print_enabled {
-                log::info!(
-                    "Training... @{} #[{}/{}] (#{} - #{})",
-                    epoch_index + 1,
-                    num_batches,
-                    num_batches,
-                    cur_index,
-                    cur_index + batch_step,
-                );
-            }
-            self.learn_batch(epoch_data, learn_rate, print);
-            if epoch_metadata.is_some() {
-                let mut new_metadata: AIResultMetadata =
-                    AIResultMetadata::new(DatasetUsage::Training);
-
-                self.learn_batch_metadata(epoch_data, &mut new_metadata);
-                epoch_metadata.as_mut().unwrap().merge(&new_metadata);
-            }
+        if last_batch_size > 0 {
+            let batch = &training_data[cur_index..];
+            process_batch(batch, num_batches, num_batches, cur_index);
         }
     }
 
@@ -253,13 +232,13 @@ impl NeuralNetwork {
         for data in epoch_data {
             let output_result = self.calculate_outputs(&data.inputs);
 
-            let (determined_indedx, determined_value) =
+            let (determined_index, determined_value) =
                 Self::determine_output_result(&output_result[..]);
 
             let (determined_expected_indedx, determined_expected_value) =
                 Self::determine_output_result(&data.expected_outputs);
 
-            match (determined_indedx == determined_expected_indedx, false) {
+            match (determined_index == determined_expected_indedx, false) {
                 (true, false) => {
                     new_metadata.true_positives += 1;
                     new_metadata.positive_instances += 1;
@@ -423,7 +402,7 @@ impl NeuralNetwork {
             &mut learn_data_output,
             &datapoint.expected_outputs[..],
         );
-        output_layer.update_cost_gradients(learn_data_output.clone());
+        output_layer.update_cost_gradients(learn_data_output);
 
         // Update for hidden layers
         for i in (0..(self.layers.len() - 1)).rev() {
@@ -440,7 +419,7 @@ impl NeuralNetwork {
             );
 
             let mut_hidden_layer = &mut self.layers[i];
-            mut_hidden_layer.update_cost_gradients(learn_data_hidden.clone());
+            mut_hidden_layer.update_cost_gradients(learn_data_hidden);
         }
     }
 

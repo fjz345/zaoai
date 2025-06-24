@@ -173,11 +173,10 @@ impl ZaoaiApp {
     }
 
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
-        self.training_session = TrainingSession::default();
         if (nn_structure.validate()) {
             self.ai = Some(NeuralNetwork::new(nn_structure));
-            self.training_session.set_nn(self.ai.as_ref().unwrap());
         }
+        self.training_session.set_nn(self.ai.as_ref().unwrap());
         self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
         self.window_data.training_session_batch_size = self.training_session.get_batch_size();
         self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
@@ -275,7 +274,10 @@ impl eframe::App for ZaoaiApp {
                 }
 
                 if (formatted_nn_structure.len() >= 2) {
-                    self.setup_ai(GraphStructure::new(&formatted_nn_structure, true));
+                    self.setup_ai(GraphStructure::new(&formatted_nn_structure));
+                }
+                else{
+                    log::error!("SetupAI failed, formatted_nn_structure.len() < 2");
                 }
                 self.state = AppState::Idle;
             }
@@ -321,7 +323,7 @@ impl eframe::App for ZaoaiApp {
                                 log::error!(
                                     "Cannot start training when another one is in progress..."
                                 );
-                                self.training_session.set_state(TrainingState::Idle);
+                                self.training_session.set_state(TrainingState::Training);
                             }
                         } else {
                             log::error!("Cannot start training, NN not set");
