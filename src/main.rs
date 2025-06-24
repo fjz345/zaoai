@@ -38,6 +38,7 @@ use crate::zneural_network::*;
 
 use eframe::egui;
 use soloud::*;
+use std::env;
 use std::error;
 //use symphonia::core::sample;
 use symphonia::core::units::TimeBase;
@@ -60,6 +61,7 @@ static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 fn main() -> Result<()> {
+    env::set_var("RUST_LOG", "debug"); // or "info" or "debug"
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
     let options = eframe::NativeOptions {
@@ -71,42 +73,14 @@ fn main() -> Result<()> {
     let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
     nntest.validate();
 
-    // parse_test();
-    // print_test();
-    // output_test();
-    // graph_test();
-    //output_exec_from_test();
     let graph_params: GenerateGraphParams = GenerateGraphParams { layer_spacing: 2.2 };
     let graph_layout = generate_nn_graph_layout_string(&nntest.graph_structure, &graph_params);
-    // let graph_layout = generate_nn_graph_weight_bias_string(
-    //     &nntest.graph_structure,
-    //     &graph_params,
-    //     &nntest.get_layers(),
-    // );
-
-    save_string_to_file(&graph_layout, NN_GRAPH_LAYOUT_FILEPATH);
-
-    //test_nn(&mut nntest);
-    // TestNNOld(&mut nntest);
 
     eframe::run_native("ZaoAI", options, Box::new(|_cc| Box::<ZaoaiApp>::default()));
 
-    let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2], false);
-    let mut nn: NeuralNetwork = NeuralNetwork::new(nn_structure);
-    nn.validate();
-
-    nn.print();
-
-    let mut datapoint = DataPoint {
-        inputs: [2.0, 3.0],
-        expected_outputs: [2.0, 3.0],
-    };
-    log::info!("Before: {:?}", datapoint.inputs);
-    nn.calculate_outputs(&mut datapoint.inputs[..]);
-    log::info!("After: {:?}", datapoint.inputs);
-
     return Ok(());
 
+    // Code create spectogram
     let path_testdir = String::from("test_files");
     // let filename = String::from("mp3.mp3");
     let filename = String::from("test0.mkv");
