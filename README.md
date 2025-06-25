@@ -2,7 +2,6 @@
 Z Anime Opening AI
 
 ![alt text](img/showcase.png)
-![alt text](img/NN.dot)
 
 # This project is still in its infancy stage
 At this moment it can only:
