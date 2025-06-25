@@ -5,7 +5,9 @@
 /.vs
 /mnist
 
-*.png
+/Cargo.lock
+
+*.log
 *.svg
 *.jpg
 *.jpeg

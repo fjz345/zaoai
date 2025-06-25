@@ -1,6 +1,15 @@
 # zaoai
 Z Anime Opening AI
 
+![alt text](img/showcase.png)
+![alt text](img/NN.dot)
+
+# This project is still in its infancy stage
+At this moment it can only:
+    1. Create neural network that can perform backpropegation
+    2. Train that network
+    3. Provides a interactive UI
+
 # Goal of this application:
 Input a anime video file, add chapter timestamps for it for OP start/end & ED start/end.
 This will be done by analyzing mainly the audio.

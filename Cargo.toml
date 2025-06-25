@@ -28,11 +28,19 @@ serde = { version = "1.0.48", features = ["derive"], optional = true}
 serde_json = "1.0.48"
 egui_plot = {version = "0.32.1", features = ["serde"]}
 egui_extras = "0.31.1"
+pprof = { version="0.15.0", features = ["flamegraph"], optional = true}
 
 [features]
 default = ["serde"]
 serde = ["dep:serde"]
 accesskit = []
+linux-profile = ["dep:pprof"]
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.5", features = ["winnt", "winuser"] }
+
+[profile.release]
+debug = true
+
+[profile.dev]
+incremental = true

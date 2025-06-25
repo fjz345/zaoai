@@ -57,6 +57,13 @@ static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 fn main() -> Result<()> {
+    #[cfg(feature = "linux-profile")]
+    let guard = pprof::ProfilerGuardBuilder::default()
+        .frequency(100)
+        .blocklist(&["libc", "libgcc", "pthread", "vdso", "eframe"])
+        .build()
+        .unwrap();
+
     env::set_var("RUST_LOG", "debug"); // or "info" or "debug"
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
@@ -101,6 +108,15 @@ fn main() -> Result<()> {
             Ok(Box::<ZaoaiApp>::new(app))
         }),
     );
+
+    #[cfg(feature = "linux-profile")]
+    {
+        log::info!("Profiling exporting...");
+        if let Ok(report) = guard.report().build() {
+            let file = File::create("flamegraph.svg").unwrap();
+            report.flamegraph(file).unwrap();
+        };
+    }
 
     return Ok(());
 

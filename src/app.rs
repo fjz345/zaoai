@@ -125,6 +125,172 @@ pub struct ZaoaiApp {
     window_training_session: WindowTrainingSession,
 }
 
+impl eframe::App for ZaoaiApp {
+    #[cfg(not(feature = "linux-profile"))]
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        log::info!("SAVING...");
+
+        #[cfg(feature = "serde")]
+        if let Ok(json) = serde_json::to_string(self) {
+            log::debug!("SAVED with state: {:?}", self.state);
+            storage.set_string(eframe::APP_KEY, json);
+        }
+        log::info!("SAVED!");
+    }
+
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        match self.state {
+            AppState::Startup => {
+                self.startup(ctx, frame);
+                self.state = AppState::SetupAi;
+            }
+            AppState::SetupAi => {
+                let mut formatted_nn_structure = self
+                    .window_data
+                    .nn_structure
+                    .split(|c| c == ',' || c == ' ')
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .map(|str| -> usize {
+                        let ret = FromStr::from_str(str).unwrap_or(0);
+                        ret
+                    })
+                    .collect::<Vec<_>>();
+
+                for i in (0..formatted_nn_structure.len()).rev() {
+                    let nr = formatted_nn_structure[i];
+                    if nr == 0 {
+                        formatted_nn_structure.remove(i);
+                    }
+                }
+
+                if (formatted_nn_structure.len() >= 2) {
+                    self.setup_ai(GraphStructure::new(&formatted_nn_structure));
+                } else {
+                    log::error!("SetupAI failed, formatted_nn_structure.len() < 2");
+                }
+                self.state = AppState::Idle;
+            }
+            AppState::Idle => {
+                let response = self.draw_ui(ctx, frame);
+
+                // ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
+                //     response.response.rect.size(),
+                // ));
+            }
+            AppState::Training => {
+                let training_state = self.training_session.get_state();
+                match training_state {
+                    TrainingState::Idle => {
+                        log::trace!("TrainingState::Idle");
+                    }
+                    TrainingState::StartTraining => {
+                        if let Some(ai) = &self.ai {
+                            if (self.training_thread.is_none()) {
+                                if let Some(first_point) =
+                                    self.training_session.training_data.first()
+                                {
+                                    if first_point.inputs.len() == ai.graph_structure.input_nodes
+                                        && first_point.expected_outputs.len()
+                                            == ai.graph_structure.output_nodes
+                                    {
+                                        // Copy the session for TrainingThread to take care of
+                                        self.training_thread = Some(TrainingThread::new(
+                                            self.training_session.clone(),
+                                        ));
+                                        self.training_session.set_state(TrainingState::Training);
+                                    } else {
+                                        log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, first_point.inputs.len(), first_point.expected_outputs.len());
+                                        self.training_session.set_state(TrainingState::Idle);
+                                    }
+                                } else {
+                                    log::error!("Cannot start training, datapoint len <= 0");
+                                    self.training_session.set_state(TrainingState::Idle);
+                                }
+                            } else {
+                                log::error!(
+                                    "Cannot start training when another one is in progress..."
+                                );
+                                self.training_session.set_state(TrainingState::Training);
+                            }
+                        } else {
+                            log::error!("Cannot start training, NN not set");
+                            self.training_session.set_state(TrainingState::Idle);
+                        }
+                    }
+                    TrainingState::Training => {
+                        let result_metadata = self
+                            .training_thread
+                            .as_mut()
+                            .unwrap()
+                            .rx_payload
+                            .as_mut()
+                            .expect("ERROR")
+                            .try_recv();
+                        let payload_buffer =
+                            &mut self.training_thread.as_mut().unwrap().payload_buffer;
+                        if (result_metadata.is_ok()) {
+                            payload_buffer.push(result_metadata.unwrap());
+
+                            let training_plotpoints: Vec<PlotPoint> =
+                                generate_plotpoints_from_training_thread_payloads(&payload_buffer);
+                            self.window_training_graph
+                                .update_plot_data(&training_plotpoints);
+                        }
+
+                        if payload_buffer.len() == payload_buffer.capacity() {
+                            self.training_session.set_state(TrainingState::Finish);
+                        }
+                    }
+                    TrainingState::Finish => {
+                        log::info!("Training Finished");
+
+                        let result = self
+                            .training_thread
+                            .as_mut()
+                            .unwrap()
+                            .rx_neuralnetwork
+                            .as_mut()
+                            .expect("ERROR")
+                            .try_recv();
+                        if result.is_ok() {
+                            self.ai = Some(result.unwrap());
+                        } else {
+                            panic!("Unexpected error");
+                        }
+
+                        self.training_thread
+                            .take()
+                            .unwrap()
+                            .handle
+                            .expect("ERROR")
+                            .join();
+                        self.training_thread = None;
+                        self.training_session.set_state(TrainingState::Idle);
+                        self.state = AppState::Idle;
+                    }
+                    TrainingState::Abort => {
+                        panic!("Not Implemented");
+                    }
+                }
+
+                let response = self.draw_ui(ctx, frame);
+                ctx.request_repaint();
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
+                    response.response.rect.size(),
+                ));
+            }
+            AppState::Exit => {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+
+            default => {
+                panic!("Not a valid state {:?}", self.state);
+            }
+        }
+    }
+}
+
 impl Default for ZaoaiApp {
     fn default() -> Self {
         Self {
@@ -248,171 +414,6 @@ impl ZaoaiApp {
         }
 
         response
-    }
-}
-
-impl eframe::App for ZaoaiApp {
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        log::info!("SAVING...");
-
-        #[cfg(feature = "serde")]
-        if let Ok(json) = serde_json::to_string(self) {
-            log::debug!("SAVED with state: {:?}", self.state);
-            storage.set_string(eframe::APP_KEY, json);
-        }
-        log::info!("SAVED!");
-    }
-
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        match self.state {
-            AppState::Startup => {
-                self.startup(ctx, frame);
-                self.state = AppState::SetupAi;
-            }
-            AppState::SetupAi => {
-                let mut formatted_nn_structure = self
-                    .window_data
-                    .nn_structure
-                    .split(|c| c == ',' || c == ' ')
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .map(|str| -> usize {
-                        let ret = FromStr::from_str(str).unwrap_or(0);
-                        ret
-                    })
-                    .collect::<Vec<_>>();
-
-                for i in (0..formatted_nn_structure.len()).rev() {
-                    let nr = formatted_nn_structure[i];
-                    if nr == 0 {
-                        formatted_nn_structure.remove(i);
-                    }
-                }
-
-                if (formatted_nn_structure.len() >= 2) {
-                    self.setup_ai(GraphStructure::new(&formatted_nn_structure));
-                } else {
-                    log::error!("SetupAI failed, formatted_nn_structure.len() < 2");
-                }
-                self.state = AppState::Idle;
-            }
-            AppState::Idle => {
-                let response = self.draw_ui(ctx, frame);
-
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
-                    response.response.rect.size(),
-                ));
-            }
-            AppState::Training => {
-                let training_state = self.training_session.get_state();
-                match training_state {
-                    TrainingState::Idle => {
-                        log::trace!("TrainingState::Idle");
-                    }
-                    TrainingState::StartTraining => {
-                        if let Some(ai) = &self.ai {
-                            if (self.training_thread.is_none()) {
-                                if let Some(first_point) =
-                                    self.training_session.training_data.first()
-                                {
-                                    if first_point.inputs.len() == ai.graph_structure.input_nodes
-                                        && first_point.expected_outputs.len()
-                                            == ai.graph_structure.output_nodes
-                                    {
-                                        // Copy the session for TrainingThread to take care of
-                                        self.training_thread = Some(TrainingThread::new(
-                                            self.training_session.clone(),
-                                        ));
-                                        self.training_session.set_state(TrainingState::Training);
-                                    } else {
-                                        log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, first_point.inputs.len(), first_point.expected_outputs.len());
-                                        self.training_session.set_state(TrainingState::Idle);
-                                    }
-                                } else {
-                                    log::error!("Cannot start training, datapoint len <= 0");
-                                    self.training_session.set_state(TrainingState::Idle);
-                                }
-                            } else {
-                                log::error!(
-                                    "Cannot start training when another one is in progress..."
-                                );
-                                self.training_session.set_state(TrainingState::Training);
-                            }
-                        } else {
-                            log::error!("Cannot start training, NN not set");
-                            self.training_session.set_state(TrainingState::Idle);
-                        }
-                    }
-                    TrainingState::Training => {
-                        let result_metadata = self
-                            .training_thread
-                            .as_mut()
-                            .unwrap()
-                            .rx_payload
-                            .as_mut()
-                            .expect("ERROR")
-                            .try_recv();
-                        let payload_buffer =
-                            &mut self.training_thread.as_mut().unwrap().payload_buffer;
-                        if (result_metadata.is_ok()) {
-                            payload_buffer.push(result_metadata.unwrap());
-
-                            let training_plotpoints: Vec<PlotPoint> =
-                                generate_plotpoints_from_training_thread_payloads(&payload_buffer);
-                            self.window_training_graph
-                                .update_plot_data(&training_plotpoints);
-                        }
-
-                        if payload_buffer.len() == payload_buffer.capacity() {
-                            self.training_session.set_state(TrainingState::Finish);
-                        }
-                    }
-                    TrainingState::Finish => {
-                        log::info!("Training Finished");
-
-                        let result = self
-                            .training_thread
-                            .as_mut()
-                            .unwrap()
-                            .rx_neuralnetwork
-                            .as_mut()
-                            .expect("ERROR")
-                            .try_recv();
-                        if result.is_ok() {
-                            self.ai = Some(result.unwrap());
-                        } else {
-                            panic!("Unexpected error");
-                        }
-
-                        self.training_thread
-                            .take()
-                            .unwrap()
-                            .handle
-                            .expect("ERROR")
-                            .join();
-                        self.training_thread = None;
-                        self.training_session.set_state(TrainingState::Idle);
-                        self.state = AppState::Idle;
-                    }
-                    TrainingState::Abort => {
-                        panic!("Not Implemented");
-                    }
-                }
-
-                let response = self.draw_ui(ctx, frame);
-                ctx.request_repaint();
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
-                    response.response.rect.size(),
-                ));
-            }
-            AppState::Exit => {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-            }
-
-            default => {
-                panic!("Not a valid state {:?}", self.state);
-            }
-        }
     }
 }
 
