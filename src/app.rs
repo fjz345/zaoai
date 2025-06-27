@@ -17,7 +17,10 @@ use std::{
 use symphonia::core::conv::IntoSample;
 
 use crate::{
-    app_windows::{WindowAi, WindowTrainingGraph, WindowTrainingSession, WindowTrainingSet},
+    app_windows::{
+        DrawableWindow, WindowAi, WindowAiCtx, WindowTrainingGraph, WindowTrainingGraphCtx,
+        WindowTrainingSession, WindowTrainingSessionCtx, WindowTrainingSet, WindowTrainingSetCtx,
+    },
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
@@ -46,7 +49,7 @@ struct MenuWindowData {
     training_dataset_split_thresholds_1: f64,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct TrainingDataset {
     pub full_dataset: Option<Vec<DataPoint>>,
     pub is_split: bool,
@@ -229,14 +232,7 @@ impl eframe::App for ZaoaiApp {
                             .try_recv();
                         let payload_buffer =
                             &mut self.training_thread.as_mut().unwrap().payload_buffer;
-                        if (result_metadata.is_ok()) {
-                            payload_buffer.push(result_metadata.unwrap());
-
-                            let training_plotpoints: Vec<PlotPoint> =
-                                generate_plotpoints_from_training_thread_payloads(&payload_buffer);
-                            self.window_training_graph
-                                .update_plot_data(&training_plotpoints);
-                        }
+                        payload_buffer.push(result_metadata.unwrap());
 
                         if payload_buffer.len() == payload_buffer.capacity() {
                             self.training_session.set_state(TrainingState::Finish);
@@ -315,10 +311,10 @@ impl Default for ZaoaiApp {
                 }; 0],
             ),
             training_session: TrainingSession::default(),
-            window_training_graph: WindowTrainingGraph::new(),
+            window_training_graph: WindowTrainingGraph::default(),
             training_thread: None,
             window_ai: WindowAi {},
-            window_training_set: WindowTrainingSet {},
+            window_training_set: WindowTrainingSet::default(),
             window_training_session: WindowTrainingSession {},
         }
     }
@@ -382,37 +378,67 @@ impl ZaoaiApp {
 
         // Windows
         if self.window_data.show_traning_dataset {
-            self.window_training_set.draw_ui(
+            self.window_training_set.with_ctx(
                 ctx,
-                &mut self.training_dataset,
-                &mut self.window_data.training_dataset_split_thresholds_0,
-                &mut self.window_data.training_dataset_split_thresholds_1,
+                &mut WindowTrainingSetCtx {
+                    training_dataset: &mut self.training_dataset,
+                },
+                |this, state_ctx| {
+                    this.draw_ui(ctx, state_ctx);
+                },
             );
         }
 
-        let vec: Vec<_> = self
-            .training_dataset
-            .get_datapoint_iter()
-            .map(|f| f.clone())
-            .collect();
-        self.training_session.set_training_data(&vec[..]);
         if self.window_data.show_training_session {
-            self.window_training_session.draw_ui(
+            let vec: Vec<_> = self
+                .training_dataset
+                .get_datapoint_iter()
+                .map(|f| f.clone())
+                .collect();
+            self.training_session.set_training_data(&vec[..]);
+
+            self.window_training_session.with_ctx(
                 ctx,
-                &mut self.training_session,
-                &mut self.state,
-                &mut self.training_thread,
+                &mut WindowTrainingSessionCtx {
+                    training_session: &mut Some(self.training_session.clone()),
+                    app_state: &mut self.state,
+                    training_thread: &mut self.training_thread,
+                },
+                |this, state_ctx| {
+                    this.draw_ui(ctx, state_ctx);
+                },
             );
         }
 
         if self.window_data.show_ai {
-            self.window_ai
-                .draw_ui(ctx, self.ai.as_mut(), &self.training_dataset);
+            self.window_ai.with_ctx(
+                ctx,
+                &mut WindowAiCtx {
+                    ai: &mut self.ai,
+                    test_button_training_dataset: &Some(self.training_dataset.clone()),
+                },
+                |this, state_ctx| {
+                    this.draw_ui(ctx, state_ctx);
+                },
+            );
         }
         if self.window_data.show_training_graph {
-            self.window_training_graph.draw_ui(ctx);
-        }
+            let training_plotpoints: Vec<PlotPoint> =
+                if let Some(training_thread) = &self.training_thread {
+                    let payload_buffer = &self.training_thread.as_mut().unwrap().payload_buffer;
+                    generate_plotpoints_from_training_thread_payloads(&payload_buffer)
+                } else {
+                    vec![]
+                };
 
+            self.window_training_graph.with_ctx(
+                ctx,
+                &mut WindowTrainingGraphCtx {
+                    plot_data: &training_plotpoints,
+                },
+                |this, state_ctx| this.draw_ui(ctx, state_ctx),
+            );
+        }
         response
     }
 }

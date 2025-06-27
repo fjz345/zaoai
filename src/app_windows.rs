@@ -1,4 +1,4 @@
-use std::ops::RangeInclusive;
+use std::{cell::RefCell, ops::RangeInclusive, rc::Rc};
 
 use crate::{
     app::{AppState, TrainingDataset},
@@ -11,42 +11,45 @@ use crate::{
         training::{test_nn, TrainingSession, TrainingState},
     },
 };
-use eframe::egui::{self, Slider};
+use eframe::egui::{self, Button, Sense, Slider};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
-pub struct WindowTrainingGraph {
-    pub(crate) title: String,
-    pub(crate) should_show: bool,
-    #[serde(skip)]
-    pub(crate) plot_data: Vec<PlotPoint>,
+pub trait DrawableWindow<'a> {
+    type Ctx;
+
+    fn with_ctx<F>(&mut self, egui_ctx: &egui::Context, ctx: &mut Self::Ctx, f: F)
+    where
+        F: FnOnce(&mut Self, &mut Self::Ctx),
+    {
+        f(self, ctx);
+    }
+
+    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx);
 }
 
-impl WindowTrainingGraph {
-    pub fn new() -> Self {
-        let title = format!("Training Graph");
-        Self {
-            title,
-            should_show: false,
-            plot_data: Vec::new(),
-        }
-    }
+pub struct WindowTrainingGraphCtx<'a> {
+    pub(crate) plot_data: &'a Vec<PlotPoint>,
+}
 
-    pub fn update_plot_data(&mut self, new_data: &Vec<PlotPoint>) {
-        self.plot_data = new_data.clone();
-    }
+#[derive(Serialize, Deserialize, Default)]
+pub struct WindowTrainingGraph {}
 
-    pub fn draw_ui(&mut self, ctx: &egui::Context) {
-        egui::Window::new(&self.title).show(ctx, |ui| {
+impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
+    type Ctx = WindowTrainingGraphCtx<'a>;
+
+    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
+        egui::Window::new("Training Graph").show(ctx, |ui| {
             use crate::app_windows::PlotPoints::Owned;
-            let plot_clone: PlotPoints = Owned(self.plot_data.clone());
+            let plot_clone: PlotPoints = Owned(state_ctx.plot_data.clone());
             let line: Line = Line::new("LineName", plot_clone);
 
             Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line));
         });
     }
+}
 
+impl WindowTrainingGraph {
     fn create_plot_training<'a>() -> Plot<'a> {
         const INCLUDE_Y_PADDING: f64 = 0.06;
         Plot::new("my_plot")
@@ -100,22 +103,34 @@ impl WindowTrainingGraph {
     }
 }
 
+pub struct WindowAiCtx<'a> {
+    pub ai: &'a mut Option<NeuralNetwork>,
+    pub test_button_training_dataset: &'a Option<TrainingDataset>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct WindowAi {}
-impl WindowAi {
-    pub fn draw_ui(
-        &self,
-        ctx: &egui::Context,
-        ai: Option<&mut NeuralNetwork>,
-        test_training_dataset: &TrainingDataset,
-    ) {
+
+impl<'a> DrawableWindow<'a> for WindowAi {
+    type Ctx = WindowAiCtx<'a>;
+
+    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
         let pos = egui::pos2(999999.0, 0.0);
         egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
-            if let Some(ai) = ai {
+            if let Some(ai) = &mut state_ctx.ai {
                 ui.label(ai.to_string());
 
-                if ui.button("Test").clicked() {
-                    test_nn(ai, &test_training_dataset.test_split[..]);
+                let sense = match state_ctx.test_button_training_dataset {
+                    Some(_) => Sense::click(),
+                    None => Sense::empty(),
+                };
+                let test_button = Button::new("Test").sense(sense);
+                if ui.add(test_button).clicked() {
+                    if let Some(training_dataset) = &state_ctx.test_button_training_dataset {
+                        test_nn(ai, &training_dataset.test_split[..]);
+                    } else {
+                        log::error!("Training dataset not set, could not train");
+                    }
                 }
             } else {
                 ui.label("NN not set");
@@ -124,56 +139,70 @@ impl WindowAi {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct WindowTrainingSet {}
+impl WindowAi {}
 
-impl WindowTrainingSet {
-    pub fn draw_ui(
-        &self,
-        ctx: &egui::Context,
-        training_dataset: &mut TrainingDataset,
-        training_dataset_split_thresholds_0: &mut f64,
-        training_dataset_split_thresholds_1: &mut f64,
-    ) {
+pub struct WindowTrainingSetCtx<'a> {
+    pub training_dataset: &'a mut TrainingDataset, // Probably should store on heap to avoid copy, not an issue for now
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct WindowTrainingSet {
+    ui_training_dataset_split_thresholds_0: f64,
+    ui_training_dataset_split_thresholds_1: f64,
+}
+
+impl Default for WindowTrainingSet {
+    fn default() -> Self {
+        Self {
+            ui_training_dataset_split_thresholds_0: 1.0,
+            ui_training_dataset_split_thresholds_1: 1.0,
+        }
+    }
+}
+
+impl<'a> DrawableWindow<'a> for WindowTrainingSet {
+    type Ctx = WindowTrainingSetCtx<'a>;
+
+    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
         egui::Window::new("Dataset")
             .default_pos([0.0, 600.0])
             .show(ctx, |ui| {
-                ui.add(Interval::new(
-                    training_dataset_split_thresholds_0,
-                    training_dataset_split_thresholds_1,
+                               ui.add(Interval::new(
+                    &mut self.ui_training_dataset_split_thresholds_0,
+                    &mut self.ui_training_dataset_split_thresholds_1,
                     RangeInclusive::new(0.0, 1.0),
                 ));
 
-                if training_dataset.full_dataset.is_some()
+                if state_ctx.training_dataset.full_dataset.is_some()
                 {
-                    training_dataset.split([
-                        *training_dataset_split_thresholds_0,
-                        *training_dataset_split_thresholds_1,
+                    state_ctx.training_dataset.split([
+                        self.ui_training_dataset_split_thresholds_0,
+                        self.ui_training_dataset_split_thresholds_1,
                     ]);
                 }
-                    if let Some(full_dataset) = &training_dataset.full_dataset
+                    if let Some(full_dataset) = &state_ctx.training_dataset.full_dataset
                     {
               ui.heading("Current Dataset");
                 ui.label(format!("Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
-                    training_dataset.training_split.len(),
-                    100.0 * training_dataset.thresholds[0],
-                    training_dataset.validation_split.len(),
-                    100.0 * (training_dataset.thresholds[1] - training_dataset.thresholds[0]),
-                    training_dataset.test_split.len(),
-                    100.0 * (1.0 - training_dataset.thresholds[1]),
+                    state_ctx.training_dataset.training_split.len(),
+                    100.0 * state_ctx.training_dataset.thresholds[0],
+                    state_ctx.training_dataset.validation_split.len(),
+                    100.0 * (state_ctx.training_dataset.thresholds[1] - state_ctx.training_dataset.thresholds[0]),
+                    state_ctx.training_dataset.test_split.len(),
+                    100.0 * (1.0 - state_ctx.training_dataset.thresholds[1]),
                     full_dataset.len(),
-                    (training_dataset.training_split.len()
-                        + training_dataset.validation_split.len()
-                        + training_dataset.test_split.len()) as f64
+                    (state_ctx.training_dataset.training_split.len()
+                        + state_ctx.training_dataset.validation_split.len()
+                        + state_ctx.training_dataset.test_split.len()) as f64
                         / full_dataset.len().max(1) as f64,
                 ));
                 }
-                ui.label(format!("Dimensions: ({}, {})", training_dataset.get_dimensions().0, training_dataset.get_dimensions().1));
+                ui.label(format!("Dimensions: ({}, {})", state_ctx.training_dataset.get_dimensions().0, state_ctx.training_dataset.get_dimensions().1));
                 if ui.button("Load [2, 2] test dataset").clicked()
                 {
                     let dataset = create_2x2_test_datapoints(0, 100000 as i32);
-                    *training_dataset = TrainingDataset::new(&dataset);
-                    training_dataset.split([1.0, 1.0]);
+                    *state_ctx.training_dataset = TrainingDataset::new(&dataset);
+                    state_ctx.training_dataset.split([1.0, 1.0]);
                 }
                 if ui.button("Load [784, 10] MNIST dataset").clicked()
                 {
@@ -212,102 +241,109 @@ impl WindowTrainingSet {
             DataPoint { inputs, expected_outputs }
         })
         .collect();
-                    *training_dataset = TrainingDataset{ full_dataset: None, is_split: true, thresholds: [0.0,0.0], training_split: dataset_train, validation_split: vec![], test_split: dataset_test };
+                    *state_ctx.training_dataset = TrainingDataset{ full_dataset: None, is_split: true, thresholds: [0.0,0.0], training_split: dataset_train, validation_split: vec![], test_split: dataset_test };
                 }
             });
     }
 }
 
+pub struct WindowTrainingSessionCtx<'a> {
+    pub training_session: &'a mut Option<TrainingSession>,
+    pub app_state: &'a mut AppState,
+    pub training_thread: &'a mut Option<TrainingThread>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct WindowTrainingSession {}
-impl WindowTrainingSession {
-    pub fn draw_ui(
-        &mut self,
-        ctx: &egui::Context,
-        training_session: &mut TrainingSession,
-        app_state: &mut AppState,
-        training_thread: &mut Option<TrainingThread>,
-    ) {
+
+impl<'a> DrawableWindow<'a> for WindowTrainingSession {
+    type Ctx = WindowTrainingSessionCtx<'a>;
+
+    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
         let pos = egui::pos2(500.0, 0.0);
         egui::Window::new("Training")
             .default_pos(pos)
             .show(ctx, |ui| {
-                let mut ui_dirty: bool = false;
-                ui.horizontal(|ui| {
-                    if add_slider_sized(
-                        ui,
-                        100.0,
-                        Slider::new(
-                            &mut training_session.num_epochs,
-                            RangeInclusive::new(1, 100),
+                if let Some(training_session) = &mut state_ctx.training_session {
+                    let mut ui_dirty: bool = false;
+                    ui.horizontal(|ui| {
+                        if add_slider_sized(
+                            ui,
+                            100.0,
+                            Slider::new(
+                                &mut training_session.num_epochs,
+                                RangeInclusive::new(1, 100),
+                            )
+                            .clamping(egui::SliderClamping::Never)
+                            .step_by(1.0),
                         )
-                        .clamping(egui::SliderClamping::Never)
-                        .step_by(1.0),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
-                    ui.label("Num Epochs");
-                });
+                        .changed()
+                        {
+                            ui_dirty = true;
+                        };
+                        ui.label("Num Epochs");
+                    });
 
-                ui.horizontal(|ui| {
-                    if add_slider_sized(
-                        ui,
-                        100.0,
-                        Slider::new(
-                            &mut training_session.batch_size,
-                            RangeInclusive::new(10, 1000),
+                    ui.horizontal(|ui| {
+                        if add_slider_sized(
+                            ui,
+                            100.0,
+                            Slider::new(
+                                &mut training_session.batch_size,
+                                RangeInclusive::new(10, 1000),
+                            )
+                            .clamping(egui::SliderClamping::Never)
+                            .step_by(10.0),
                         )
-                        .clamping(egui::SliderClamping::Never)
-                        .step_by(10.0),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
-                    ui.label("Batch Size");
-                });
+                        .changed()
+                        {
+                            ui_dirty = true;
+                        };
+                        ui.label("Batch Size");
+                    });
 
-                ui.horizontal(|ui| {
-                    if add_slider_sized(
-                        ui,
-                        100.0,
-                        Slider::new(
-                            &mut training_session.learn_rate,
-                            RangeInclusive::new(0.01, 0.5),
+                    ui.horizontal(|ui| {
+                        if add_slider_sized(
+                            ui,
+                            100.0,
+                            Slider::new(
+                                &mut training_session.learn_rate,
+                                RangeInclusive::new(0.01, 0.5),
+                            )
+                            .clamping(egui::SliderClamping::Never)
+                            .min_decimals(2)
+                            .max_decimals_opt(Some(5)),
                         )
-                        .clamping(egui::SliderClamping::Never)
-                        .min_decimals(2)
-                        .max_decimals_opt(Some(5)),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
-                    ui.label("Learn Rate");
-                });
+                        .changed()
+                        {
+                            ui_dirty = true;
+                        };
+                        ui.label("Learn Rate");
+                    });
 
-                if *app_state == AppState::Training {
-                    if ui.button("Abort Training").clicked() {
-                        log::info!("Training was interupted");
-                        *training_thread = None;
-                        *app_state = AppState::Idle;
-                        training_session.set_state(TrainingState::Idle);
-                    }
-                } else {
-                    if ui.button("Begin Training").clicked() {
-                        if training_session.ready() {
-                            *app_state = AppState::Training;
-                            training_session.set_state(TrainingState::StartTraining);
-                        } else {
-                            log::error!(
-                                "Could not start training, training_session not ready {:?}",
-                                training_session
-                            );
+                    if *state_ctx.app_state == AppState::Training {
+                        if ui.button("Abort Training").clicked() {
+                            log::info!("Training was interupted");
+                            *state_ctx.training_thread = None;
+                            *state_ctx.app_state = AppState::Idle;
+                            training_session.set_state(TrainingState::Idle);
+                        }
+                    } else {
+                        if ui.button("Begin Training").clicked() {
+                            if training_session.ready() {
+                                *state_ctx.app_state = AppState::Training;
+                                training_session.set_state(TrainingState::StartTraining);
+                            } else {
+                                log::error!(
+                                    "Could not start training, training_session not ready {:?}",
+                                    training_session
+                                );
+                            }
                         }
                     }
                 }
             });
     }
 }
+
+impl WindowTrainingSession {}

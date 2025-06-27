@@ -21,7 +21,7 @@ Support Audio Formats
 ## TODO:
     * fix mnist not lagging
     * fix WindowTraining____ UI structs
-    * fix ide bug refusing to format document
+    * avoid cloning of TrainingDataset
 
     Create ML AI
         * Save/load weights
