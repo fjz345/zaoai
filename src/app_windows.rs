@@ -1,7 +1,7 @@
 use std::{cell::RefCell, ops::RangeInclusive, rc::Rc};
 
 use crate::{
-    app::{AppState, TrainingDataset},
+    app::{generate_plotpoints_from_training_thread_payloads, AppState, TrainingDataset},
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
@@ -29,19 +29,31 @@ pub trait DrawableWindow<'a> {
 }
 
 pub struct WindowTrainingGraphCtx<'a> {
-    pub(crate) plot_data: &'a Vec<PlotPoint>,
+    pub(crate) training_thread: &'a Option<TrainingThread>,
 }
 
 #[derive(Serialize, Deserialize, Default)]
-pub struct WindowTrainingGraph {}
+pub struct WindowTrainingGraph {
+    #[serde(skip)]
+    cached_plot_points: Vec<PlotPoint>,
+}
 
 impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
     type Ctx = WindowTrainingGraphCtx<'a>;
 
     fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
+        // Update
+        if let Some(training_thread) = &state_ctx.training_thread {
+            let payload_buffer = &state_ctx.training_thread.as_ref().unwrap().payload_buffer;
+            let training_plotpoints =
+                generate_plotpoints_from_training_thread_payloads(&payload_buffer);
+
+            self.cached_plot_points = training_plotpoints;
+        }
+
         egui::Window::new("Training Graph").show(ctx, |ui| {
             use crate::app_windows::PlotPoints::Owned;
-            let plot_clone: PlotPoints = Owned(state_ctx.plot_data.clone());
+            let plot_clone: PlotPoints = Owned(self.cached_plot_points.clone());
             let line: Line = Line::new("LineName", plot_clone);
 
             Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line));

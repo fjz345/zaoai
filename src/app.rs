@@ -425,18 +425,10 @@ impl ZaoaiApp {
             );
         }
         if self.window_data.show_training_graph {
-            let training_plotpoints: Vec<PlotPoint> =
-                if let Some(training_thread) = &self.training_thread {
-                    let payload_buffer = &self.training_thread.as_mut().unwrap().payload_buffer;
-                    generate_plotpoints_from_training_thread_payloads(&payload_buffer)
-                } else {
-                    vec![]
-                };
-
             self.window_training_graph.with_ctx(
                 ctx,
                 &mut WindowTrainingGraphCtx {
-                    plot_data: &training_plotpoints,
+                    training_thread: &self.training_thread,
                 },
                 |this, state_ctx| this.draw_ui(ctx, state_ctx),
             );
@@ -445,7 +437,7 @@ impl ZaoaiApp {
     }
 }
 
-fn generate_plotpoints_from_training_thread_payloads(
+pub fn generate_plotpoints_from_training_thread_payloads(
     payloads: &Vec<TrainingThreadPayload>,
 ) -> Vec<PlotPoint> {
     let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
