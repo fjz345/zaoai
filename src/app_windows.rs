@@ -248,7 +248,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
 }
 
 pub struct WindowTrainingSessionCtx<'a> {
-    pub training_session: &'a mut Option<TrainingSession>,
+    pub training_session: &'a mut TrainingSession,
     pub app_state: &'a mut AppState,
     pub training_thread: &'a mut Option<TrainingThread>,
 }
@@ -264,81 +264,81 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
         egui::Window::new("Training")
             .default_pos(pos)
             .show(ctx, |ui| {
-                if let Some(training_session) = &mut state_ctx.training_session {
-                    let mut ui_dirty: bool = false;
-                    ui.horizontal(|ui| {
-                        if add_slider_sized(
-                            ui,
-                            100.0,
-                            Slider::new(
-                                &mut training_session.num_epochs,
-                                RangeInclusive::new(1, 100),
-                            )
-                            .clamping(egui::SliderClamping::Never)
-                            .step_by(1.0),
+                let mut ui_dirty: bool = false;
+                ui.horizontal(|ui| {
+                    if add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut state_ctx.training_session.num_epochs,
+                            RangeInclusive::new(1, 100),
                         )
-                        .changed()
-                        {
-                            ui_dirty = true;
-                        };
-                        ui.label("Num Epochs");
-                    });
+                        .clamping(egui::SliderClamping::Never)
+                        .step_by(1.0),
+                    )
+                    .changed()
+                    {
+                        ui_dirty = true;
+                    };
+                    ui.label("Num Epochs");
+                });
 
-                    ui.horizontal(|ui| {
-                        if add_slider_sized(
-                            ui,
-                            100.0,
-                            Slider::new(
-                                &mut training_session.batch_size,
-                                RangeInclusive::new(10, 1000),
-                            )
-                            .clamping(egui::SliderClamping::Never)
-                            .step_by(10.0),
+                ui.horizontal(|ui| {
+                    if add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut state_ctx.training_session.batch_size,
+                            RangeInclusive::new(10, 1000),
                         )
-                        .changed()
-                        {
-                            ui_dirty = true;
-                        };
-                        ui.label("Batch Size");
-                    });
+                        .clamping(egui::SliderClamping::Never)
+                        .step_by(10.0),
+                    )
+                    .changed()
+                    {
+                        ui_dirty = true;
+                    };
+                    ui.label("Batch Size");
+                });
 
-                    ui.horizontal(|ui| {
-                        if add_slider_sized(
-                            ui,
-                            100.0,
-                            Slider::new(
-                                &mut training_session.learn_rate,
-                                RangeInclusive::new(0.01, 0.5),
-                            )
-                            .clamping(egui::SliderClamping::Never)
-                            .min_decimals(2)
-                            .max_decimals_opt(Some(5)),
+                ui.horizontal(|ui| {
+                    if add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut state_ctx.training_session.learn_rate,
+                            RangeInclusive::new(0.01, 0.5),
                         )
-                        .changed()
-                        {
-                            ui_dirty = true;
-                        };
-                        ui.label("Learn Rate");
-                    });
+                        .clamping(egui::SliderClamping::Never)
+                        .min_decimals(2)
+                        .max_decimals_opt(Some(5)),
+                    )
+                    .changed()
+                    {
+                        ui_dirty = true;
+                    };
+                    ui.label("Learn Rate");
+                });
 
-                    if *state_ctx.app_state == AppState::Training {
-                        if ui.button("Abort Training").clicked() {
-                            log::info!("Training was interupted");
-                            *state_ctx.training_thread = None;
-                            *state_ctx.app_state = AppState::Idle;
-                            training_session.set_state(TrainingState::Idle);
-                        }
-                    } else {
-                        if ui.button("Begin Training").clicked() {
-                            if training_session.ready() {
-                                *state_ctx.app_state = AppState::Training;
-                                training_session.set_state(TrainingState::StartTraining);
-                            } else {
-                                log::error!(
-                                    "Could not start training, training_session not ready {:?}",
-                                    training_session
-                                );
-                            }
+                if *state_ctx.app_state == AppState::Training {
+                    if ui.button("Abort Training").clicked() {
+                        log::info!("Training was interupted");
+                        *state_ctx.training_thread = None;
+                        *state_ctx.app_state = AppState::Idle;
+                        state_ctx.training_session.set_state(TrainingState::Idle);
+                    }
+                } else {
+                    if ui.button("Begin Training").clicked() {
+                        if state_ctx.training_session.ready() {
+                            *state_ctx.app_state = AppState::Training;
+                            state_ctx
+                                .training_session
+                                .set_state(TrainingState::StartTraining);
+                        } else {
+                            log::error!(
+                                "Could not start training, training_session not ready {:?}",
+                                state_ctx.training_session
+                            );
                         }
                     }
                 }

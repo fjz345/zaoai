@@ -230,12 +230,14 @@ impl eframe::App for ZaoaiApp {
                             .as_mut()
                             .expect("ERROR")
                             .try_recv();
-                        let payload_buffer =
-                            &mut self.training_thread.as_mut().unwrap().payload_buffer;
-                        payload_buffer.push(result_metadata.unwrap());
+                        if let Ok(result_metadata) = result_metadata {
+                            let payload_buffer =
+                                &mut self.training_thread.as_mut().unwrap().payload_buffer;
+                            payload_buffer.push(result_metadata);
 
-                        if payload_buffer.len() == payload_buffer.capacity() {
-                            self.training_session.set_state(TrainingState::Finish);
+                            if payload_buffer.len() == payload_buffer.capacity() {
+                                self.training_session.set_state(TrainingState::Finish);
+                            }
                         }
                     }
                     TrainingState::Finish => {
@@ -400,7 +402,7 @@ impl ZaoaiApp {
             self.window_training_session.with_ctx(
                 ctx,
                 &mut WindowTrainingSessionCtx {
-                    training_session: &mut Some(self.training_session.clone()),
+                    training_session: &mut self.training_session,
                     app_state: &mut self.state,
                     training_thread: &mut self.training_thread,
                 },
