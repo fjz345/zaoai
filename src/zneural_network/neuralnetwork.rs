@@ -422,16 +422,16 @@ impl NeuralNetwork {
 
         // Update for hidden layers
         for i in (0..(self.layers.len() - 1)).rev() {
+            let (left, right) = self.layer_learn_data.split_at_mut(i + 1);
+            let learn_data_hidden = &mut left[i];
+            let learn_data_hidden_next = &right[0];
+
             let hidden_layer: &Layer = &self.layers[i];
-
-            let learn_data_hidden_prev_values = self.layer_learn_data[i + 1].node_values.clone();
-            let mut learn_data_hidden: &mut LayerLearnData = &mut self.layer_learn_data[i];
-
             let prev_layer = &self.layers[i + 1];
             hidden_layer.calculate_hidden_layer_node_cost_values(
-                &mut learn_data_hidden,
+                learn_data_hidden,
                 prev_layer,
-                &learn_data_hidden_prev_values,
+                &learn_data_hidden_next.node_values,
             );
 
             let mut_hidden_layer = &mut self.layers[i];
