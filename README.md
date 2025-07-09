@@ -35,3 +35,4 @@ Support Audio Formats
     Add chapters to video file
     Gather training data
     Figure out how to train AI
+    SIMD

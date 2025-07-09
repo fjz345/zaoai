@@ -139,7 +139,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                 let test_button = Button::new("Test").sense(sense);
                 if ui.add(test_button).clicked() {
                     if let Some(training_dataset) = &state_ctx.test_button_training_dataset {
-                        test_nn(ai, &training_dataset.test_split[..]);
+                        test_nn(ai, &training_dataset.test_split());
                     } else {
                         log::error!("Training dataset not set, could not train");
                     }
@@ -184,37 +184,29 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     &mut self.ui_training_dataset_split_thresholds_1,
                     RangeInclusive::new(0.0, 1.0),
                 ));
+                state_ctx.training_dataset.thresholds[0] = self.ui_training_dataset_split_thresholds_0;
+                state_ctx.training_dataset.thresholds[1] = self.ui_training_dataset_split_thresholds_1;
 
-                if state_ctx.training_dataset.full_dataset.is_some()
-                {
-                    state_ctx.training_dataset.split([
-                        self.ui_training_dataset_split_thresholds_0,
-                        self.ui_training_dataset_split_thresholds_1,
-                    ]);
-                }
-                    if let Some(full_dataset) = &state_ctx.training_dataset.full_dataset
-                    {
-              ui.heading("Current Dataset");
+                ui.heading("Current Dataset");
                 ui.label(format!("Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
-                    state_ctx.training_dataset.training_split.len(),
-                    100.0 * state_ctx.training_dataset.thresholds[0],
-                    state_ctx.training_dataset.validation_split.len(),
-                    100.0 * (state_ctx.training_dataset.thresholds[1] - state_ctx.training_dataset.thresholds[0]),
-                    state_ctx.training_dataset.test_split.len(),
-                    100.0 * (1.0 - state_ctx.training_dataset.thresholds[1]),
-                    full_dataset.len(),
-                    (state_ctx.training_dataset.training_split.len()
-                        + state_ctx.training_dataset.validation_split.len()
-                        + state_ctx.training_dataset.test_split.len()) as f64
-                        / full_dataset.len().max(1) as f64,
+                state_ctx.training_dataset.training_split().len(),
+                100.0 * state_ctx.training_dataset.thresholds[0],
+                state_ctx.training_dataset.validation_split().len(),
+                100.0 * (state_ctx.training_dataset.thresholds[1] - state_ctx.training_dataset.thresholds[0]),
+                state_ctx.training_dataset.test_split().len(),
+                100.0 * (1.0 - state_ctx.training_dataset.thresholds[1]),
+                state_ctx.training_dataset.full_dataset.len(),
+                (state_ctx.training_dataset.training_split().len()
+                    + state_ctx.training_dataset.validation_split().len()
+                    + state_ctx.training_dataset.test_split().len()) as f64
+                    / state_ctx.training_dataset.full_dataset.len().max(1) as f64,
                 ));
-                }
+
                 ui.label(format!("Dimensions: ({}, {})", state_ctx.training_dataset.get_dimensions().0, state_ctx.training_dataset.get_dimensions().1));
                 if ui.button("Load [2, 2] test dataset").clicked()
                 {
                     let dataset = create_2x2_test_datapoints(0, 100000 as i32);
                     *state_ctx.training_dataset = TrainingDataset::new(&dataset);
-                    state_ctx.training_dataset.split([1.0, 1.0]);
                 }
                 if ui.button("Load [784, 10] MNIST dataset").clicked()
                 {
@@ -253,7 +245,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
             DataPoint { inputs, expected_outputs }
         })
         .collect();
-                    *state_ctx.training_dataset = TrainingDataset{ full_dataset: None, is_split: true, thresholds: [0.0,0.0], training_split: dataset_train, validation_split: vec![], test_split: dataset_test };
+                    *state_ctx.training_dataset = TrainingDataset{ full_dataset: vec![], is_split: true, thresholds: [1.0,1.0] };
                 }
             });
     }

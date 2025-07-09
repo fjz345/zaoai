@@ -51,60 +51,58 @@ struct MenuWindowData {
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct TrainingDataset {
-    pub full_dataset: Option<Vec<DataPoint>>,
+    pub full_dataset: Vec<DataPoint>,
     pub is_split: bool,
     pub thresholds: [f64; 2],
-    pub training_split: Vec<DataPoint>,
-    pub validation_split: Vec<DataPoint>,
-    pub test_split: Vec<DataPoint>,
 }
 
 impl TrainingDataset {
     pub fn new(datapoints: &[DataPoint]) -> Self {
         Self {
-            full_dataset: Some(datapoints.to_vec()),
+            full_dataset: datapoints.to_vec(),
             is_split: false,
             thresholds: [0.0; 2],
-            training_split: Vec::new(),
-            validation_split: Vec::new(),
-            test_split: Vec::new(),
         }
     }
 
-    pub fn split(&mut self, thresholds: [f64; 2]) {
-        if let Some(full) = &self.full_dataset {
-            self.is_split = true;
-            self.thresholds = thresholds;
-            split_datapoints(
-                &full[..],
-                thresholds,
-                self.training_split.as_mut(),
-                self.validation_split.as_mut(),
-                self.test_split.as_mut(),
-            )
-        } else {
-            log::error!("Tried to split win full_dataset = None");
-        }
+    pub fn training_split(&self) -> &[DataPoint] {
+        let traning_data_end: usize =
+            (self.thresholds[0] * (self.full_dataset.len() as f64)).floor() as usize;
+
+        &self.full_dataset[0..traning_data_end]
     }
 
-    pub fn get_datapoint_iter(&self) -> impl Iterator<Item = &DataPoint> + '_ {
-        self.training_split
+    pub fn validation_split(&self) -> &[DataPoint] {
+        let traning_data_end: usize =
+            (self.thresholds[0] * (self.full_dataset.len() as f64)).floor() as usize;
+        let validadtion_data_end: usize =
+            (self.thresholds[1] * (self.full_dataset.len() as f64)).floor() as usize;
+
+        &self.full_dataset[traning_data_end..validadtion_data_end]
+    }
+
+    pub fn test_split(&self) -> &[DataPoint] {
+        let validadtion_data_end: usize =
+            (self.thresholds[1] * (self.full_dataset.len() as f64)).floor() as usize;
+        let test_data_end: usize = self.full_dataset.len();
+
+        &self.full_dataset[validadtion_data_end..test_data_end]
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &DataPoint> + '_ {
+        self.training_split()
             .iter()
-            .chain(self.validation_split.iter())
-            .chain(self.test_split.iter())
+            .chain(self.validation_split().iter())
+            .chain(self.test_split().iter())
     }
 
     // Returns the number of (in, out) nodes needed in layers
     pub fn get_dimensions(&self) -> (usize, usize) {
-        if let Some(full_dataset) = &self.full_dataset {
-            if full_dataset.len() >= 1 {
-                (
-                    full_dataset[0].inputs.len(),
-                    full_dataset[0].expected_outputs.len(),
-                )
-            } else {
-                (0, 0)
-            }
+        if self.full_dataset.len() >= 1 {
+            (
+                self.full_dataset[0].inputs.len(),
+                self.full_dataset[0].expected_outputs.len(),
+            )
         } else {
             (0, 0)
         }
