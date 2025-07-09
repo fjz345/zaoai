@@ -206,7 +206,7 @@ impl Layer {
             let weights = &self.weights[output_node];
             let mut sum = f32x8::splat(0.0);
 
-            for i in (0..chunks).step_by(2) {
+            for i in 0..chunks {
                 let offset = i * CHUNK_SIZE;
                 let a = f32x8::from(&activation_inputs[offset..offset + CHUNK_SIZE]);
                 let b = f32x8::from(&weights[offset..offset + CHUNK_SIZE]);
@@ -337,7 +337,7 @@ impl Layer {
     }
 
     pub fn update_cost_gradients_simd(&mut self, learn_data: &LayerLearnData) {
-        let CHUNK_SIZE = 4;
+        const CHUNK_SIZE: usize = 8;
         let chunks = self.num_in_nodes / CHUNK_SIZE;
         let remainder = self.num_in_nodes % CHUNK_SIZE;
 
