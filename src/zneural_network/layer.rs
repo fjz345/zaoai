@@ -164,95 +164,67 @@ impl Layer {
         }
     }
 
-    pub fn calculate_outputs(&self, activation_inputs: &[f32]) -> Vec<f32> {
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+    fn compute_weighted_inputs_scalar(&self, inputs: &[f32], output_buf: &mut [f32]) {
+        assert_eq!(inputs.len(), self.num_in_nodes);
+        assert_eq!(output_buf.len(), self.num_out_nodes);
 
-        assert_eq!(
-            activation_inputs.len(),
-            self.num_in_nodes,
-            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
-            activation_inputs.len(),
-            self.num_in_nodes
-        );
-
-        for output_node in 0..self.num_out_nodes {
-            let mut weighted_input = self.biases[output_node];
-            for input in 0..activation_inputs.len() {
-                weighted_input += activation_inputs[input] * self.weights[output_node][input];
+        for out_i in 0..self.num_out_nodes {
+            let mut sum = self.biases[out_i];
+            let weights_row = &self.weights[out_i];
+            for in_i in 0..self.num_in_nodes {
+                sum += inputs[in_i] * weights_row[in_i];
             }
-            weighted_inputs[output_node] = weighted_input;
+            output_buf[out_i] = sum;
         }
-
-        let mut activation_outputs = vec![0.0; self.num_out_nodes];
-        for output_node in 0..self.num_out_nodes {
-            activation_outputs[output_node] = activation_function(weighted_inputs[output_node]);
-        }
-
-        activation_outputs
     }
 
-    pub fn calculate_outputs_simd(&self, activation_inputs: &[f32]) -> Vec<f32> {
-        assert_eq!(
-            activation_inputs.len(),
-            self.num_in_nodes,
-            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
-            activation_inputs.len(),
-            self.num_in_nodes
-        );
+    fn compute_weighted_inputs_simd(&self, inputs: &[f32], output_buf: &mut [f32]) {
+        assert_eq!(inputs.len(), self.num_in_nodes);
+        assert_eq!(output_buf.len(), self.num_out_nodes);
 
         const CHUNK_SIZE: usize = 8;
-        let chunks = activation_inputs.len() / CHUNK_SIZE;
-        let remainder = activation_inputs.len() % CHUNK_SIZE;
+        let chunks = self.num_in_nodes / CHUNK_SIZE;
+        let remainder = self.num_in_nodes % CHUNK_SIZE;
 
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-
-        for output_node in 0..self.num_out_nodes {
-            let weights = &self.weights[output_node];
+        for out_i in 0..self.num_out_nodes {
+            let weights_row = &self.weights[out_i];
             let mut sum = f32x8::splat(0.0);
 
             for i in 0..chunks {
                 let offset = i * CHUNK_SIZE;
-                let a = f32x8::from(&activation_inputs[offset..offset + CHUNK_SIZE]);
-                let b = f32x8::from(&weights[offset..offset + CHUNK_SIZE]);
+                let a = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
+                let b = f32x8::from(&weights_row[offset..offset + CHUNK_SIZE]);
                 sum += a * b;
             }
 
-            let mut weighted_input = sum.reduce_add();
+            let mut weighted_sum = sum.reduce_add();
 
-            for i in (activation_inputs.len() - remainder)..activation_inputs.len() {
-                weighted_input += activation_inputs[i] * weights[i];
+            for i in (self.num_in_nodes - remainder)..self.num_in_nodes {
+                weighted_sum += inputs[i] * weights_row[i];
             }
 
-            weighted_inputs[output_node] = weighted_input + self.biases[output_node];
+            output_buf[out_i] = weighted_sum + self.biases[out_i];
         }
-
-        weighted_inputs
-            .into_iter()
-            .map(activation_function)
-            .collect()
     }
 
-    pub fn calculate_outputs_simd_rayon(&self, activation_inputs: &[f32]) -> Vec<f32> {
-        assert_eq!(
-            activation_inputs.len(),
-            self.num_in_nodes,
-            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
-            activation_inputs.len(),
-            self.num_in_nodes
-        );
+    fn compute_weighted_inputs_simd_rayon(&self, inputs: &[f32], output_buf: &mut [f32]) {
+        use rayon::prelude::*;
+
+        assert_eq!(inputs.len(), self.num_in_nodes);
+        assert_eq!(output_buf.len(), self.num_out_nodes);
 
         const CHUNK_SIZE: usize = 8;
-        let chunks = activation_inputs.len() / CHUNK_SIZE;
-        let remainder = activation_inputs.len() % CHUNK_SIZE;
+        let chunks = self.num_in_nodes / CHUNK_SIZE;
+        let remainder = self.num_in_nodes % CHUNK_SIZE;
 
-        let biases = &self.biases;
         let weights = &self.weights;
-        let inputs = activation_inputs;
+        let biases = &self.biases;
 
-        (0..self.num_out_nodes)
-            .into_par_iter()
-            .map(|output_node| {
-                let weight_row = &weights[output_node];
+        output_buf
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(out_i, out_val)| {
+                let weight_row = &weights[out_i];
                 let mut sum = f32x8::splat(0.0);
 
                 for i in 0..chunks {
@@ -262,154 +234,96 @@ impl Layer {
                     sum += a * b;
                 }
 
-                let mut weighted_input = sum.reduce_add();
+                let mut weighted_sum = sum.reduce_add();
 
                 for i in (inputs.len() - remainder)..inputs.len() {
-                    weighted_input += inputs[i] * weight_row[i];
+                    weighted_sum += inputs[i] * weight_row[i];
                 }
 
-                weighted_input + biases[output_node]
-            })
-            .map(activation_function)
+                *out_val = weighted_sum + biases[out_i];
+            });
+    }
+
+    fn apply_activation(weighted_inputs: &[f32]) -> Vec<f32> {
+        weighted_inputs
+            .iter()
+            .map(|&x| activation_function(x))
             .collect()
+    }
+
+    fn fill_learn_data(&self, learn_data: &mut LayerLearnData, weighted_inputs: &[f32]) {
+        assert_eq!(learn_data.weighted_inputs.len(), self.num_out_nodes);
+        assert_eq!(learn_data.activation_values.len(), self.num_out_nodes);
+
+        learn_data.weighted_inputs.copy_from_slice(weighted_inputs);
+
+        for (w_in, act) in learn_data
+            .weighted_inputs
+            .iter()
+            .zip(learn_data.activation_values.iter_mut())
+        {
+            *act = activation_function(*w_in);
+        }
+    }
+
+    pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+        self.compute_weighted_inputs_scalar(inputs, &mut weighted_inputs);
+        Self::apply_activation(&weighted_inputs)
+    }
+
+    pub fn calculate_outputs_simd(&self, inputs: &[f32]) -> Vec<f32> {
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+        self.compute_weighted_inputs_simd(inputs, &mut weighted_inputs);
+        Self::apply_activation(&weighted_inputs)
+    }
+
+    pub fn calculate_outputs_simd_rayon(&self, inputs: &[f32]) -> Vec<f32> {
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+        self.compute_weighted_inputs_simd_rayon(inputs, &mut weighted_inputs);
+        Self::apply_activation(&weighted_inputs)
     }
 
     pub fn calculate_outputs_learn(
         &mut self,
         learn_data: &mut LayerLearnData,
-        activation_inputs: &[f32],
+        inputs: &[f32],
     ) -> Vec<f32> {
-        assert_eq!(
-            activation_inputs.len(),
-            self.num_in_nodes,
-            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
-            activation_inputs.len(),
-            self.num_in_nodes
-        );
+        learn_data.inputs.clone_from_slice(inputs);
 
-        learn_data.inputs.clone_from_slice(activation_inputs);
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+        self.compute_weighted_inputs_scalar(inputs, &mut weighted_inputs);
 
-        for output_node in 0..self.num_out_nodes {
-            let mut weighted_input = self.biases[output_node];
-            for input_node in 0..self.num_in_nodes {
-                weighted_input +=
-                    activation_inputs[input_node] * self.weights[output_node][input_node];
-            }
-            learn_data.weighted_inputs[output_node] = weighted_input;
-        }
-
-        for i in 0..learn_data.activation_values.len() {
-            learn_data.activation_values[i] = activation_function(learn_data.weighted_inputs[i]);
-        }
-
+        self.fill_learn_data(learn_data, &weighted_inputs);
         learn_data.activation_values.clone()
     }
 
     pub fn calculate_outputs_learn_simd(
         &mut self,
         learn_data: &mut LayerLearnData,
-        activation_inputs: &[f32],
+        inputs: &[f32],
     ) -> Vec<f32> {
-        assert_eq!(
-            activation_inputs.len(),
-            self.num_in_nodes,
-            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
-            activation_inputs.len(),
-            self.num_in_nodes
-        );
+        learn_data.inputs.clone_from_slice(inputs);
 
-        learn_data.inputs.clone_from_slice(activation_inputs);
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+        self.compute_weighted_inputs_simd(inputs, &mut weighted_inputs);
 
-        const CHUNK_SIZE: usize = 8;
-        let chunks = activation_inputs.len() / CHUNK_SIZE;
-        let remainder = activation_inputs.len() % CHUNK_SIZE;
-
-        for output_node in 0..self.num_out_nodes {
-            let weights = &self.weights[output_node];
-            let mut sum = f32x8::splat(0.0);
-
-            for i in 0..chunks {
-                let offset = i * CHUNK_SIZE;
-                let a = f32x8::from(&activation_inputs[offset..offset + CHUNK_SIZE]);
-                let b = f32x8::from(&weights[offset..offset + CHUNK_SIZE]);
-                sum += a * b;
-            }
-
-            let mut weighted_input = sum.reduce_add();
-
-            for i in (activation_inputs.len() - remainder)..activation_inputs.len() {
-                weighted_input += activation_inputs[i] * weights[i];
-            }
-
-            weighted_input += self.biases[output_node];
-            learn_data.weighted_inputs[output_node] = weighted_input;
-        }
-
-        for (weighted, output) in learn_data
-            .weighted_inputs
-            .iter()
-            .zip(learn_data.activation_values.iter_mut())
-        {
-            *output = activation_function(*weighted);
-        }
-
+        self.fill_learn_data(learn_data, &weighted_inputs);
         learn_data.activation_values.clone()
     }
 
     pub fn calculate_outputs_learn_simd_rayon(
         &mut self,
         learn_data: &mut LayerLearnData,
-        activation_inputs: &[f32],
+        inputs: &[f32],
     ) -> Vec<f32> {
-        assert_eq!(
-            activation_inputs.len(),
-            self.num_in_nodes,
-            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
-            activation_inputs.len(),
-            self.num_in_nodes
-        );
+        learn_data.inputs.clone_from_slice(inputs);
 
-        learn_data.inputs.clone_from_slice(activation_inputs);
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+        self.compute_weighted_inputs_simd_rayon(inputs, &mut weighted_inputs);
 
-        const CHUNK_SIZE: usize = 8;
-        let chunks = activation_inputs.len() / CHUNK_SIZE;
-        let remainder = activation_inputs.len() % CHUNK_SIZE;
-
-        let inputs = activation_inputs;
-        let weights = &self.weights;
-        let biases = &self.biases;
-        let weighted_inputs = &mut learn_data.weighted_inputs;
-        let activations = &mut learn_data.activation_values;
-
-        // Parallel output node computation
-        weighted_inputs
-            .par_iter_mut()
-            .zip(activations.par_iter_mut())
-            .enumerate()
-            .for_each(|(output_node, (weighted_out, activation_out))| {
-                let weight_row = &weights[output_node];
-                let mut sum = f32x8::splat(0.0);
-
-                for i in 0..chunks {
-                    let offset = i * CHUNK_SIZE;
-                    let a = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
-                    let b = f32x8::from(&weight_row[offset..offset + CHUNK_SIZE]);
-                    sum += a * b;
-                }
-
-                let mut weighted_input = sum.reduce_add();
-
-                for i in (inputs.len() - remainder)..inputs.len() {
-                    weighted_input += inputs[i] * weight_row[i];
-                }
-
-                weighted_input += biases[output_node];
-
-                *weighted_out = weighted_input;
-                *activation_out = activation_function(weighted_input);
-            });
-
-        activations.clone()
+        self.fill_learn_data(learn_data, &weighted_inputs);
+        learn_data.activation_values.clone()
     }
 
     pub fn apply_cost_gradient(&mut self, learn_rate: f32) {
