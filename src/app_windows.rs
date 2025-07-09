@@ -62,6 +62,14 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                 generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer);
             self.cached_plot_points_last_loss =
                 generate_loss_plotpoints_from_training_thread_payloads(&payload_buffer);
+
+            // normalize based on first point
+            if self.cached_plot_points_last_loss.len() >= 1 {
+                let first_point = self.cached_plot_points_last_loss[0];
+                self.cached_plot_points_last_loss
+                    .iter_mut()
+                    .for_each(|p| p.y /= first_point.y);
+            }
         }
 
         egui::Window::new("Training Graph").show(ctx, |ui| {
@@ -100,6 +108,8 @@ impl WindowTrainingGraph {
             .center_x_axis(false)
             .include_y(0.0 - INCLUDE_Y_PADDING)
             .include_y(1.0 + INCLUDE_Y_PADDING)
+            .default_y_bounds(0.0 - INCLUDE_Y_PADDING, 1.0 + INCLUDE_Y_PADDING)
+            .auto_bounds([true, false])
             .include_x(0.0)
             .y_grid_spacer(
                 Self::create_plot_training_y_spacer_func as fn(GridInput) -> Vec<GridMark>,
