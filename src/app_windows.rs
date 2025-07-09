@@ -1,7 +1,10 @@
 use std::{cell::RefCell, ops::RangeInclusive, rc::Rc};
 
 use crate::{
-    app::{generate_plotpoints_from_training_thread_payloads, AppState, TrainingDataset},
+    app::{
+        generate_accuracy_plotpoints_from_training_thread_payloads,
+        generate_cost_plotpoints_from_training_thread_payloads, AppState, TrainingDataset,
+    },
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
@@ -32,10 +35,10 @@ pub struct WindowTrainingGraphCtx<'a> {
     pub(crate) training_thread: &'a Option<TrainingThread>,
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Default)]
 pub struct WindowTrainingGraph {
-    #[serde(skip)]
-    cached_plot_points: Vec<PlotPoint>,
+    cached_plot_points_accuracy: Vec<PlotPoint>,
+    cached_plot_points_cost: Vec<PlotPoint>,
 }
 
 impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
@@ -45,18 +48,23 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         // Update
         if let Some(training_thread) = &state_ctx.training_thread {
             let payload_buffer = &state_ctx.training_thread.as_ref().unwrap().payload_buffer;
-            let training_plotpoints =
-                generate_plotpoints_from_training_thread_payloads(&payload_buffer);
 
-            self.cached_plot_points = training_plotpoints;
+            self.cached_plot_points_accuracy =
+                generate_accuracy_plotpoints_from_training_thread_payloads(&payload_buffer);
+            self.cached_plot_points_cost =
+                generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer);
         }
 
         egui::Window::new("Training Graph").show(ctx, |ui| {
             use crate::app_windows::PlotPoints::Owned;
-            let plot_clone: PlotPoints = Owned(self.cached_plot_points.clone());
-            let line: Line = Line::new("LineName", plot_clone);
 
-            Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line));
+            let plot_accuracy: PlotPoints = Owned(self.cached_plot_points_accuracy.clone());
+            let line_accuracy: Line = Line::new("Accuracy", plot_accuracy);
+            Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line_accuracy));
+
+            let plot_cost: PlotPoints = Owned(self.cached_plot_points_cost.clone());
+            let line_cost: Line = Line::new("Cost", plot_cost);
+            Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line_cost));
         });
     }
 }

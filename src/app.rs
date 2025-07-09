@@ -153,6 +153,7 @@ pub struct ZaoaiApp {
     training_session: TrainingSession,
     #[serde(skip)]
     training_thread: Option<TrainingThread>,
+    #[serde(skip)]
     window_training_graph: WindowTrainingGraph,
     window_ai: WindowAi,
     window_training_set: WindowTrainingSet,
@@ -457,16 +458,32 @@ impl ZaoaiApp {
     }
 }
 
-pub fn generate_plotpoints_from_training_thread_payloads(
+pub fn generate_accuracy_plotpoints_from_training_thread_payloads(
     payloads: &Vec<TrainingThreadPayload>,
 ) -> Vec<PlotPoint> {
     let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
 
     for payload in payloads {
-        let asd = payload.training_metadata.calc_accuracy();
+        let accuracy = payload.training_metadata.calc_accuracy();
         let plotpoint = PlotPoint {
             x: payload.payload_index as f64,
-            y: asd,
+            y: accuracy,
+        };
+        result.push(plotpoint);
+    }
+    result
+}
+
+pub fn generate_cost_plotpoints_from_training_thread_payloads(
+    payloads: &Vec<TrainingThreadPayload>,
+) -> Vec<PlotPoint> {
+    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+
+    for payload in payloads {
+        let cost = payload.training_metadata.cost;
+        let plotpoint = PlotPoint {
+            x: payload.payload_index as f64,
+            y: cost,
         };
         result.push(plotpoint);
     }
