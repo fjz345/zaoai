@@ -1,8 +1,32 @@
-use crate::neuralnetwork::*;
+use std::path::PathBuf;
+
+use crate::{
+    neuralnetwork::*,
+    sound::{decode_samples_from_file, S_SPECTOGRAM_NUM_BINS},
+};
 
 use rand::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
+use sonogram::{SpecOptionsBuilder, Spectrogram};
+
+pub struct AnimeDataPoint {
+    pub path: PathBuf,
+    pub spectogram: Spectrogram,
+    pub expected_outputs: Vec<f32>,
+}
+
+impl AnimeDataPoint {
+    pub fn into_data_point(self, img_width: usize, img_height: usize) -> DataPoint {
+        let buffer =
+            self.spectogram
+                .to_buffer(sonogram::FrequencyScale::Log, img_width, img_height);
+        DataPoint {
+            inputs: buffer,
+            expected_outputs: self.expected_outputs,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DataPoint {
@@ -54,6 +78,24 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
     }
 
     result
+}
+
+pub fn create_test_spectogram(path: &PathBuf) -> Vec<AnimeDataPoint> {
+    let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
+
+    let mut spectrobuilder = SpecOptionsBuilder::new(S_SPECTOGRAM_NUM_BINS)
+        .load_data_from_memory_f32(samples, sample_rate)
+        .build()
+        .unwrap();
+    let mut spectogram = spectrobuilder.compute();
+
+    let new_point = AnimeDataPoint {
+        path: path.to_path_buf(),
+        spectogram,
+        expected_outputs: vec![0.08936, 0.1510],
+    };
+
+    vec![new_point]
 }
 
 pub fn split_datapoints(

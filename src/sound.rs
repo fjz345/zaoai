@@ -1,4 +1,4 @@
-use soloud::Soloud;
+use soloud::{audio, Soloud};
 //use symphonia::core::sample;
 use symphonia::core::audio::{AudioBufferRef, Signal};
 use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
@@ -255,20 +255,14 @@ pub fn sl_debug(sl: &Soloud) {
 }
 
 use sonogram::*;
-pub static S_SPECTOGRAM_PATH_DIR: &str = "";
 pub static S_SPECTOGRAM_NUM_BINS: usize = 2048;
-pub static S_SPECTOGRAM_WIDTH: usize = 512;
-pub static S_SPECTOGRAM_HEIGHT: usize = 512;
 pub fn save_spectrograph_as_png(
-    path_dir: &String,
-    path_filename: &String,
+    path: &PathBuf,
     data: &Vec<f32>,
     sample_rate: u32,
+    out_dim: [usize; 2],
 ) {
     // Save the spectrogram to PNG.
-    let mut path: PathBuf = PathBuf::new();
-    path.push(&path_dir);
-    path.push(&path_filename);
     let png_file = std::path::Path::new(&path);
 
     log::info!("###############################");
@@ -277,27 +271,35 @@ pub fn save_spectrograph_as_png(
         path.to_string_lossy()
     );
 
-    // Build the model
     let mut spectrobuilder = SpecOptionsBuilder::new(S_SPECTOGRAM_NUM_BINS)
         .load_data_from_memory_f32(data.clone(), sample_rate)
         .build()
         .unwrap();
-
-    // Compute the spectrogram giving the number of bins and the window overlap.
     let mut spectogram = spectrobuilder.compute();
 
-    // Specify a colour gradient to use (note you can create custom ones)
     let mut gradient = ColourGradient::black_white_theme();
-
     spectogram
         .to_png(
             &png_file,
             FrequencyScale::Linear,
             &mut gradient,
-            S_SPECTOGRAM_WIDTH,  // Width
-            S_SPECTOGRAM_HEIGHT, // Height
+            out_dim[0],
+            out_dim[1],
         )
         .expect("Spectogram to png failed.");
 
     log::info!("[1/1] Finish spectrograph to png");
+}
+
+pub fn preview_sound_file(wav: audio::Wav) {
+    let sl: Soloud = init_soloud();
+
+    sl.play(&wav); // calls to play are non-blocking, so we put the thread to sleep
+    while sl.voice_count() > 0 {
+        if S_IS_DEBUG > 0 {
+            sl_debug(&sl);
+        } else {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
 }

@@ -1,11 +1,11 @@
-use std::{cell::RefCell, ops::RangeInclusive, rc::Rc};
+use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc};
 
 use crate::{
     app::{AppState, TrainingDataset},
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
-        datapoint::{create_2x2_test_datapoints, DataPoint},
+        datapoint::{create_2x2_test_datapoints, create_test_spectogram, DataPoint},
         neuralnetwork::NeuralNetwork,
         thread::{TrainingThread, TrainingThreadPayload},
         training::{test_nn, TrainingSession, TrainingState},
@@ -295,6 +295,16 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     *state_ctx.training_dataset = TrainingDataset::new_from_splits(&dataset_train, &vec![], &dataset_test);
                     self.ui_training_dataset_split_thresholds_0 = state_ctx.training_dataset.get_thresholds()[0];
                     self.ui_training_dataset_split_thresholds_1 = state_ctx.training_dataset.get_thresholds()[1];
+                }
+                const SPECTOGRAM_WIDTH: usize = 512;
+                const SPECTOGRAM_HEIGHT: usize = 512;
+                if ui.button(format!("Load [{}, {}] spectogram test", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2)).clicked()
+                {
+                    let dataset_anime = create_test_spectogram(&PathBuf::from("test_files/test0.mkv"));
+                    let dataset: Vec<_> = dataset_anime.into_iter().map(|a|a.into_data_point(SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)).collect();
+                    *state_ctx.training_dataset = TrainingDataset::new(&dataset);
+                    state_ctx.training_dataset.thresholds[0] = 1.0;
+                    state_ctx.training_dataset.thresholds[1] = 1.0;
                 }
             })
     }

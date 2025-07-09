@@ -35,10 +35,10 @@ use crate::layer::*;
 use crate::neuralnetwork::*;
 use crate::sound::decode_samples_from_file;
 use crate::sound::init_soloud;
+use crate::sound::preview_sound_file;
 use crate::sound::save_spectrograph_as_png;
 use crate::sound::sl_debug;
 use crate::sound::S_IS_DEBUG;
-use crate::sound::S_SPECTOGRAM_PATH_DIR;
 use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::*;
 
@@ -66,6 +66,27 @@ fn main() -> Result<()> {
 
     env::set_var("RUST_LOG", "debug"); // or "info" or "debug"
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
+
+    let path_testdir = String::from("test_files");
+    // let filename = String::from("mp3.mp3");
+    let filename = String::from("test0.mkv");
+    let mut path = std::path::PathBuf::from(path_testdir);
+    path.push(filename);
+    let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
+
+    // let mut wav = audio::Wav::default();
+    // unsafe {
+    //     wav.load_raw_wav(&samples)?;
+    // }
+    // wav.set_volume(0.2);
+    // preview_sound_file(wav);
+
+    save_spectrograph_as_png(
+        &PathBuf::from("").join("test2.png"),
+        &samples,
+        sample_rate,
+        [512, 512],
+    );
 
     let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2]);
     let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
@@ -116,44 +137,6 @@ fn main() -> Result<()> {
             let file = File::create("flamegraph.svg").unwrap();
             report.flamegraph(file).unwrap();
         };
-    }
-
-    return Ok(());
-
-    // Code create spectogram
-    let path_testdir = String::from("test_files");
-    // let filename = String::from("mp3.mp3");
-    let filename = String::from("test0.mkv");
-
-    let mut path = std::path::PathBuf::from(path_testdir);
-    path.push(filename);
-
-    let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
-
-    let sl: Soloud = init_soloud();
-
-    let mut wav = audio::Wav::default();
-
-    unsafe {
-        wav.load_raw_wav(&samples)?;
-    }
-
-    wav.set_volume(0.2);
-
-    save_spectrograph_as_png(
-        &String::from(S_SPECTOGRAM_PATH_DIR),
-        &String::from("test.png"),
-        &samples,
-        sample_rate,
-    );
-
-    sl.play(&wav); // calls to play are non-blocking, so we put the thread to sleep
-    while sl.voice_count() > 0 {
-        if S_IS_DEBUG > 0 {
-            sl_debug(&sl);
-        } else {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
     }
 
     Ok(())
