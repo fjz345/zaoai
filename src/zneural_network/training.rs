@@ -183,12 +183,6 @@ pub enum TrainingState {
     Abort,
 }
 
-impl TrainingState {
-    pub fn can_begin_training(&self) -> bool {
-        *self == TrainingState::StartTraining
-    }
-}
-
 // Returns a TestResult
 pub fn test_nn(nn: &mut NeuralNetwork, test_data: &[DataPoint]) -> TestResults {
     let mut num_correct = 0;

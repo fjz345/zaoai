@@ -3,6 +3,7 @@ use rand::rngs::StdRng;
 use rand_chacha;
 use serde::{Deserialize, Serialize};
 use symphonia::core::util::clamp;
+use wide::f32x4;
 
 pub fn softmax(layer_values: &[f32]) -> Vec<f32> {
     let max_val = layer_values
@@ -186,7 +187,53 @@ impl Layer {
         activation_outputs
     }
 
-    pub fn calculate_outputs_2(
+    pub fn calculate_outputs_simd(&self, activation_inputs: &[f32]) -> Vec<f32> {
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+
+        assert_eq!(
+            activation_inputs.len(),
+            self.num_in_nodes,
+            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
+            activation_inputs.len(),
+            self.num_in_nodes
+        );
+
+        let chunk_size = 4; // f32x4 has 4 lanes
+
+        for output_node in 0..self.num_out_nodes {
+            let mut sum = f32x4::splat(0.0);
+            let weights = &self.weights[output_node];
+
+            let chunks = activation_inputs.len() / chunk_size;
+            let remainder = activation_inputs.len() % chunk_size;
+
+            for i in 0..chunks {
+                let offset = i * chunk_size;
+
+                let a = f32x4::from(&activation_inputs[offset..offset + chunk_size]);
+                let b = f32x4::from(&weights[offset..offset + chunk_size]);
+
+                sum += a * b;
+            }
+
+            let mut weighted_input = sum.reduce_add();
+
+            // Handle remainder
+            for i in (activation_inputs.len() - remainder)..activation_inputs.len() {
+                weighted_input += activation_inputs[i] * weights[i];
+            }
+
+            weighted_inputs[output_node] = weighted_input + self.biases[output_node];
+        }
+
+        // Apply activation function
+        weighted_inputs
+            .into_iter()
+            .map(|x| activation_function(x))
+            .collect()
+    }
+
+    pub fn calculate_outputs_learn(
         &mut self,
         learn_data: &mut LayerLearnData,
         activation_inputs: &[f32],
@@ -211,6 +258,55 @@ impl Layer {
         }
 
         for i in 0..learn_data.activation_values.len() {
+            learn_data.activation_values[i] = activation_function(learn_data.weighted_inputs[i]);
+        }
+
+        learn_data.activation_values.clone()
+    }
+
+    pub fn calculate_outputs_learn_simd(
+        &mut self,
+        learn_data: &mut LayerLearnData,
+        activation_inputs: &[f32],
+    ) -> Vec<f32> {
+        assert_eq!(
+            activation_inputs.len(),
+            self.num_in_nodes,
+            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
+            activation_inputs.len(),
+            self.num_in_nodes
+        );
+
+        learn_data.inputs.clone_from_slice(activation_inputs);
+
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
+        let chunk_size = 4;
+
+        for output_node in 0..self.num_out_nodes {
+            let mut sum = f32x4::splat(0.0);
+            let weights = &self.weights[output_node];
+
+            let chunks = activation_inputs.len() / chunk_size;
+            let remainder = activation_inputs.len() % chunk_size;
+
+            for i in 0..chunks {
+                let offset = i * chunk_size;
+                let a = f32x4::from(&activation_inputs[offset..offset + chunk_size]);
+                let b = f32x4::from(&weights[offset..offset + chunk_size]);
+                sum += a * b;
+            }
+
+            let mut weighted_input = sum.reduce_add();
+
+            for i in (activation_inputs.len() - remainder)..activation_inputs.len() {
+                weighted_input += activation_inputs[i] * weights[i];
+            }
+
+            weighted_input += self.biases[output_node];
+            learn_data.weighted_inputs[output_node] = weighted_input;
+        }
+
+        for i in 0..self.num_out_nodes {
             learn_data.activation_values[i] = activation_function(learn_data.weighted_inputs[i]);
         }
 

@@ -389,8 +389,8 @@ impl NeuralNetwork {
     fn update_all_cost_gradients(&mut self, datapoint: &DataPoint) {
         let mut current_inputs = datapoint.inputs.to_vec();
         for (i, layer) in self.layers.iter_mut().enumerate() {
-            current_inputs =
-                layer.calculate_outputs_2(&mut self.layer_learn_data[i], &mut current_inputs);
+            current_inputs = layer
+                .calculate_outputs_learn_simd(&mut self.layer_learn_data[i], &mut current_inputs);
         }
 
         // Update for ouput layer
@@ -438,7 +438,7 @@ impl NeuralNetwork {
     pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
         let mut current_inputs = inputs.to_vec();
         for (i, layer) in self.layers.iter().enumerate() {
-            current_inputs = layer.calculate_outputs(&current_inputs);
+            current_inputs = layer.calculate_outputs_simd(&current_inputs);
         }
 
         // TODO: need to fix backpropegation
