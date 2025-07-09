@@ -23,11 +23,9 @@ Support Audio Formats
         * Save/load weights
         * Dropout neurons
         * Cross-validation
-        * MNIST
         * Eigen vectors? (reduce amount of input tensors)
         * Gradient dedcent momentum & decay
         * Add noise
-        * Visualize output over time
     Add chapters to video file
     Gather training data
     Figure out how to train AI
