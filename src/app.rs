@@ -224,15 +224,21 @@ impl eframe::App for ZaoaiApp {
                     TrainingState::Idle => {
                         log::trace!("TrainingState::Idle");
                     }
+
                     TrainingState::StartTraining => {
+                        let training_dataset_dim = self.training_dataset.get_dimensions();
+                        self.training_session
+                            .set_training_data(&self.training_dataset.training_split());
+
                         if let Some(ai) = &self.ai {
                             if (self.training_thread.is_none()) {
                                 if let Some(first_point) =
                                     self.training_session.training_data.first()
                                 {
-                                    if first_point.inputs.len() == ai.graph_structure.input_nodes
-                                        && first_point.expected_outputs.len()
-                                            == ai.graph_structure.output_nodes
+                                    if (
+                                        ai.graph_structure.input_nodes,
+                                        ai.graph_structure.output_nodes,
+                                    ) == training_dataset_dim
                                     {
                                         // Copy the session for TrainingThread to take care of
                                         self.training_thread = Some(TrainingThread::new(
