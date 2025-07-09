@@ -117,7 +117,7 @@ impl WindowTrainingGraph {
 
 pub struct WindowAiCtx<'a> {
     pub ai: &'a mut Option<NeuralNetwork>,
-    pub test_button_training_dataset: &'a Option<TrainingDataset>,
+    pub test_button_training_dataset: &'a Option<&'a TrainingDataset>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -341,17 +341,10 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                     }
                 } else {
                     if ui.button("Begin Training").clicked() {
-                        if state_ctx.training_session.ready() {
-                            *state_ctx.app_state = AppState::Training;
-                            state_ctx
-                                .training_session
-                                .set_state(TrainingState::StartTraining);
-                        } else {
-                            log::error!(
-                                "Could not start training, training_session not ready {:?}",
-                                state_ctx.training_session
-                            );
-                        }
+                        *state_ctx.app_state = AppState::Training;
+                        state_ctx
+                            .training_session
+                            .set_state(TrainingState::StartTraining);
                     }
                 }
             });

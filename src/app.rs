@@ -182,6 +182,12 @@ impl eframe::App for ZaoaiApp {
                 // ));
             }
             AppState::Training => {
+                if !self.training_session.ready() {
+                    self.state = AppState::Idle;
+                    log::trace!("Training session not ready to for AppState::Training");
+                    return;
+                }
+
                 let training_state = self.training_session.get_state();
                 match training_state {
                     TrainingState::Idle => {
@@ -392,13 +398,6 @@ impl ZaoaiApp {
         }
 
         if self.window_data.show_training_session {
-            let vec: Vec<_> = self
-                .training_dataset
-                .get_datapoint_iter()
-                .map(|f| f.clone())
-                .collect();
-            self.training_session.set_training_data(&vec[..]);
-
             self.window_training_session.with_ctx(
                 ctx,
                 &mut WindowTrainingSessionCtx {
@@ -417,7 +416,7 @@ impl ZaoaiApp {
                 ctx,
                 &mut WindowAiCtx {
                     ai: &mut self.ai,
-                    test_button_training_dataset: &Some(self.training_dataset.clone()),
+                    test_button_training_dataset: &Some(&self.training_dataset),
                 },
                 |this, state_ctx| {
                     this.draw_ui(ctx, state_ctx);
