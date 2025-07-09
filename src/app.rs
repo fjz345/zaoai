@@ -213,9 +213,13 @@ impl eframe::App for ZaoaiApp {
                 // ));
             }
             AppState::Training => {
+                let training_dataset_dim = self.training_dataset.get_dimensions();
+                self.training_session
+                    .set_training_data(&self.training_dataset.training_split());
+
                 if !self.training_session.ready() {
                     self.state = AppState::Idle;
-                    log::trace!("Training session not ready to for AppState::Training");
+                    log::debug!("Training session not ready to for AppState::Training");
                     return;
                 }
 
@@ -226,10 +230,6 @@ impl eframe::App for ZaoaiApp {
                     }
 
                     TrainingState::StartTraining => {
-                        let training_dataset_dim = self.training_dataset.get_dimensions();
-                        self.training_session
-                            .set_training_data(&self.training_dataset.training_split());
-
                         if let Some(ai) = &self.ai {
                             if (self.training_thread.is_none()) {
                                 if let Some(first_point) =
