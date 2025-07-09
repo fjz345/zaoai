@@ -489,3 +489,18 @@ pub fn generate_cost_plotpoints_from_training_thread_payloads(
     }
     result
 }
+pub fn generate_loss_plotpoints_from_training_thread_payloads(
+    payloads: &Vec<TrainingThreadPayload>,
+) -> Vec<PlotPoint> {
+    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+
+    for payload in payloads {
+        let last_loss = payload.training_metadata.last_loss;
+        let plotpoint = PlotPoint {
+            x: payload.payload_index as f64,
+            y: last_loss,
+        };
+        result.push(plotpoint);
+    }
+    result
+}

@@ -3,7 +3,8 @@ use std::{cell::RefCell, ops::RangeInclusive, rc::Rc};
 use crate::{
     app::{
         generate_accuracy_plotpoints_from_training_thread_payloads,
-        generate_cost_plotpoints_from_training_thread_payloads, AppState, TrainingDataset,
+        generate_cost_plotpoints_from_training_thread_payloads,
+        generate_loss_plotpoints_from_training_thread_payloads, AppState, TrainingDataset,
     },
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
@@ -56,7 +57,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
             self.cached_plot_points_cost =
                 generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer);
             self.cached_plot_points_last_loss =
-                generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer);
+                generate_loss_plotpoints_from_training_thread_payloads(&payload_buffer);
         }
 
         egui::Window::new("Training Graph").show(ctx, |ui| {
@@ -64,10 +65,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
 
             let plot_accuracy: PlotPoints = Owned(self.cached_plot_points_accuracy.clone());
             let line_accuracy = Line::new("Accuracy", plot_accuracy).color(Color32::LIGHT_GREEN);
-
             let plot_cost: PlotPoints = Owned(self.cached_plot_points_cost.clone());
             let line_cost = Line::new("Cost", plot_cost).color(Color32::LIGHT_RED);
-
             let plot_loss: PlotPoints = Owned(self.cached_plot_points_last_loss.clone());
             let line_loss = Line::new("Loss", plot_loss).color(Color32::LIGHT_YELLOW);
 
@@ -75,6 +74,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
             Self::create_plot_training()
                 .legend(Legend::default().position(Corner::LeftTop))
                 .x_axis_label("Epoch")
+                .include_x(0.0)
                 .show(ui, |plot_ui| {
                     plot_ui.line(line_accuracy);
                     plot_ui.line(line_cost);
