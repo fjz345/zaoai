@@ -49,13 +49,13 @@ fn relu_d(in_value: f32) -> f32 {
 }
 
 pub fn activation_function(in_value: f32) -> f32 {
-    //relu(in_value)
-    sigmoid(in_value)
+    relu(in_value)
+    // sigmoid(in_value)
 }
 
 pub fn activation_function_d(in_value: f32) -> f32 {
-    //relu_d(in_value)
-    sigmoid_d(in_value)
+    relu_d(in_value)
+    // sigmoid_d(in_value)
 }
 // ============================
 
@@ -145,21 +145,38 @@ impl Layer {
     }
 
     fn init_weights_and_biases(&mut self, seed: u64) {
-        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+        // Uniform [0-1]
+        // {
+        //     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
 
-        let min_weight = 0.0;
-        let max_weight = 1.0;
-        let min_bias = min_weight;
-        let max_bias = max_weight;
+        //     let min_weight = 0.0;
+        //     let max_weight = 1.0;
+        //     let min_bias = min_weight;
+        //     let max_bias = max_weight;
 
-        // Initialize weights & biases
-        for i in 0..self.num_out_nodes {
-            let rand_bias: f32 = rng.gen_range(min_weight..max_weight);
-            self.biases[i] = rand_bias;
+        //     // Initialize weights & biases
+        //     for i in 0..self.num_out_nodes {
+        //         let rand_bias: f32 = rng.gen_range(min_weight..max_weight);
+        //         self.biases[i] = rand_bias;
 
-            for j in 0..self.num_in_nodes {
-                let rand_weight: f32 = rng.gen_range(min_bias..max_bias);
-                self.weights[i][j] = rand_weight;
+        //         for j in 0..self.num_in_nodes {
+        //             let rand_weight: f32 = rng.gen_range(min_bias..max_bias);
+        //             self.weights[i][j] = rand_weight;
+        //         }
+        //     }
+        // }
+        // Xavier uniform
+        {
+            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+
+            let limit = (6.0 / (self.num_in_nodes + self.num_out_nodes) as f32).sqrt();
+
+            for i in 0..self.num_out_nodes {
+                self.biases[i] = 0.0; // biases often initialized to zero
+
+                for j in 0..self.num_in_nodes {
+                    self.weights[i][j] = rng.gen_range(-limit..limit);
+                }
             }
         }
     }
