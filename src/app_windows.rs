@@ -11,7 +11,7 @@ use crate::{
         training::{test_nn, TrainingSession, TrainingState},
     },
 };
-use eframe::egui::{self, Button, Color32, Sense, Slider};
+use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider};
 use egui_plot::{Corner, Legend};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,11 @@ pub trait DrawableWindow<'a> {
         f(self, ctx);
     }
 
-    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx);
+    fn draw_ui(
+        &mut self,
+        ctx: &egui::Context,
+        state_ctx: &mut Self::Ctx,
+    ) -> Option<InnerResponse<Option<()>>>;
 }
 
 pub struct WindowTrainingGraphCtx<'a> {
@@ -43,7 +47,11 @@ pub struct WindowTrainingGraph {
 impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
     type Ctx = WindowTrainingGraphCtx<'a>;
 
-    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
+    fn draw_ui(
+        &mut self,
+        ctx: &egui::Context,
+        state_ctx: &mut Self::Ctx,
+    ) -> Option<InnerResponse<Option<()>>> {
         // Update
         if let Some(training_thread) = &state_ctx.training_thread {
             let payload_buffer = &state_ctx.training_thread.as_ref().unwrap().payload_buffer;
@@ -76,7 +84,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     plot_ui.line(line_cost);
                     plot_ui.line(line_loss);
                 });
-        });
+        })
     }
 }
 
@@ -145,7 +153,11 @@ pub struct WindowAi {}
 impl<'a> DrawableWindow<'a> for WindowAi {
     type Ctx = WindowAiCtx<'a>;
 
-    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
+    fn draw_ui(
+        &mut self,
+        ctx: &egui::Context,
+        state_ctx: &mut Self::Ctx,
+    ) -> Option<InnerResponse<Option<()>>> {
         let pos = egui::pos2(999999.0, 0.0);
         egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
             if let Some(ai) = &mut state_ctx.ai {
@@ -166,7 +178,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
             } else {
                 ui.label("NN not set");
             }
-        });
+        })
     }
 }
 
@@ -194,7 +206,11 @@ impl Default for WindowTrainingSet {
 impl<'a> DrawableWindow<'a> for WindowTrainingSet {
     type Ctx = WindowTrainingSetCtx<'a>;
 
-    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
+    fn draw_ui(
+        &mut self,
+        ctx: &egui::Context,
+        state_ctx: &mut Self::Ctx,
+    ) -> Option<InnerResponse<Option<()>>> {
         egui::Window::new("Dataset")
             .default_pos([0.0, 600.0])
             .show(ctx, |ui| {
@@ -270,7 +286,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     self.ui_training_dataset_split_thresholds_0 = state_ctx.training_dataset.get_thresholds()[0];
                     self.ui_training_dataset_split_thresholds_1 = state_ctx.training_dataset.get_thresholds()[1];
                 }
-            });
+            })
     }
 }
 
@@ -286,7 +302,11 @@ pub struct WindowTrainingSession {}
 impl<'a> DrawableWindow<'a> for WindowTrainingSession {
     type Ctx = WindowTrainingSessionCtx<'a>;
 
-    fn draw_ui(&mut self, ctx: &egui::Context, state_ctx: &mut Self::Ctx) {
+    fn draw_ui(
+        &mut self,
+        ctx: &egui::Context,
+        state_ctx: &mut Self::Ctx,
+    ) -> Option<InnerResponse<Option<()>>> {
         let pos = egui::pos2(500.0, 0.0);
         egui::Window::new("Training")
             .default_pos(pos)
@@ -362,7 +382,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                             .set_state(TrainingState::StartTraining);
                     }
                 }
-            });
+            })
     }
 }
 

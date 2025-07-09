@@ -207,11 +207,9 @@ impl eframe::App for ZaoaiApp {
                 self.state = AppState::Idle;
             }
             AppState::Idle => {
-                let response = self.draw_ui(ctx, frame);
+                let (response, rect) = self.draw_ui(ctx, frame);
 
-                // ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
-                //     response.response.rect.size(),
-                // ));
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
             }
             AppState::Training => {
                 match self.training_session.get_state() {
@@ -300,11 +298,9 @@ impl eframe::App for ZaoaiApp {
                     }
                 }
 
-                let response = self.draw_ui(ctx, frame);
+                let (response, rect) = self.draw_ui(ctx, frame);
                 ctx.request_repaint();
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
-                    response.response.rect.size(),
-                ));
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
             }
             AppState::Exit => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -382,7 +378,12 @@ impl ZaoaiApp {
         self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
     }
 
-    fn draw_ui(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) -> InnerResponse<()> {
+    fn draw_ui(
+        &mut self,
+        ctx: &egui::Context,
+        frame: &mut eframe::Frame,
+    ) -> (InnerResponse<InnerResponse<()>>, Rect) {
+        let mut min_rect = Rect::ZERO;
         let response = egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.checkbox(&mut self.window_data.show_ai, "Show AI");
@@ -403,8 +404,9 @@ impl ZaoaiApp {
                 {
                     self.state = AppState::SetupAi;
                 }
-            });
+            })
         });
+        min_rect = min_rect.union(response.inner.response.rect);
 
         // Windows
         if self.window_data.show_traning_dataset {
@@ -414,7 +416,10 @@ impl ZaoaiApp {
                     training_dataset: &mut self.training_dataset,
                 },
                 |this, state_ctx| {
-                    this.draw_ui(ctx, state_ctx);
+                    let response = this.draw_ui(ctx, state_ctx);
+                    if let Some(r) = response {
+                        min_rect = min_rect.union(r.response.rect);
+                    }
                 },
             );
         }
@@ -428,7 +433,10 @@ impl ZaoaiApp {
                     training_thread: &mut self.training_thread,
                 },
                 |this, state_ctx| {
-                    this.draw_ui(ctx, state_ctx);
+                    let response = this.draw_ui(ctx, state_ctx);
+                    if let Some(r) = response {
+                        min_rect = min_rect.union(r.response.rect);
+                    }
                 },
             );
         }
@@ -441,7 +449,10 @@ impl ZaoaiApp {
                     test_button_training_dataset: &Some(&self.training_dataset),
                 },
                 |this, state_ctx| {
-                    this.draw_ui(ctx, state_ctx);
+                    let response = this.draw_ui(ctx, state_ctx);
+                    if let Some(r) = response {
+                        min_rect = min_rect.union(r.response.rect);
+                    }
                 },
             );
         }
@@ -451,9 +462,14 @@ impl ZaoaiApp {
                 &mut WindowTrainingGraphCtx {
                     training_thread: &self.training_thread,
                 },
-                |this, state_ctx| this.draw_ui(ctx, state_ctx),
+                |this, state_ctx| {
+                    let response = this.draw_ui(ctx, state_ctx);
+                    if let Some(r) = response {
+                        min_rect = min_rect.union(r.response.rect);
+                    }
+                },
             );
         }
-        response
+        (response, min_rect)
     }
 }
