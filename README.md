@@ -19,10 +19,6 @@ Support Audio Formats
     * mp4
 
 ## TODO:
-    * fix mnist not lagging
-    * fix WindowTraining____ UI structs
-    * avoid cloning of TrainingDataset
-
     Create ML AI
         * Save/load weights
         * Dropout neurons
