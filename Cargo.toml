@@ -45,7 +45,7 @@ codegen-units = 1
 lto = true
 opt-level = 3
 target-cpu = "native"
-#debug = true
+debug = true
 
 [profile.dev]
 incremental = true

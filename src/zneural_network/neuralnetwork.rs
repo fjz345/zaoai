@@ -243,11 +243,11 @@ impl NeuralNetwork {
         epoch_data_outputs: &Vec<Vec<f32>>,
         new_metadata: &mut AIResultMetadata,
     ) {
-        for data in epoch_data {
-            let output_result = self.calculate_outputs(&data.inputs);
+        for (i, data) in epoch_data.iter().enumerate() {
+            let datapoint_output = &epoch_data_outputs[i];
 
             let (determined_index, determined_value) =
-                Self::determine_output_result(&output_result[..]);
+                Self::determine_output_result(&datapoint_output[..]);
 
             let (determined_expected_index, determined_expected_value) =
                 Self::determine_output_result(&data.expected_outputs);
