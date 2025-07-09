@@ -281,8 +281,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                             &mut state_ctx.training_session.num_epochs,
                             RangeInclusive::new(1, 100),
                         )
-                        .clamping(egui::SliderClamping::Never)
-                        .step_by(1.0),
+                        .step_by(1.0)
+                        .clamping(egui::SliderClamping::Never),
                     )
                     .changed()
                     {
@@ -299,8 +299,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                             &mut state_ctx.training_session.batch_size,
                             RangeInclusive::new(10, 1000),
                         )
-                        .clamping(egui::SliderClamping::Never)
-                        .step_by(1.0),
+                        .step_by(1.0)
+                        .clamping(egui::SliderClamping::Never),
                     )
                     .changed()
                     {

@@ -45,7 +45,7 @@ winapi = { version = "0.3.5", features = ["winnt", "winuser"] }
 codegen-units = 1
 lto = true
 opt-level = 3
-debug = true
+#debug = true
 
 [profile.dev]
 incremental = true
