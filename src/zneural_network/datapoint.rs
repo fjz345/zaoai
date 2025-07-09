@@ -4,7 +4,7 @@ use rand::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DataPoint {
     pub inputs: Vec<f32>,
     pub expected_outputs: Vec<f32>,

@@ -207,45 +207,49 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 {
                     let dataset = create_2x2_test_datapoints(0, 100000 as i32);
                     *state_ctx.training_dataset = TrainingDataset::new(&dataset);
+                    self.ui_training_dataset_split_thresholds_0 = state_ctx.training_dataset.get_thresholds()[0];
+                    self.ui_training_dataset_split_thresholds_1 = state_ctx.training_dataset.get_thresholds()[1];
                 }
                 if ui.button("Load [784, 10] MNIST dataset").clicked()
                 {
                     let mnist = get_mnist();
                     let dataset_train: Vec<DataPoint> = mnist.train_data.iter()
-        .zip(mnist.train_labels.iter())
-        .map(|(image, &label)| {
-            // Normalize pixels to [0.0, 1.0]
-            let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
+                    .zip(mnist.train_labels.iter())
+                    .map(|(image, &label)| {
+                        // Normalize pixels to [0.0, 1.0]
+                        let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
 
-            let one_hot_encode = |label: u8, num_classes: usize| -> Vec<f32> {
-                let mut v = vec![0.0; num_classes];
-                if (label as usize) < num_classes {
-                    v[label as usize] = 1.0;
-                }
-                v
-            };
-            let expected_outputs = one_hot_encode(label, 10);
-            DataPoint { inputs, expected_outputs }
-        })
-        .collect();
-        let dataset_test: Vec<DataPoint> = mnist.train_data.iter()
-        .zip(mnist.train_labels.iter())
-        .map(|(image, &label)| {
-            // Normalize pixels to [0.0, 1.0]
-            let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
+                        let one_hot_encode = |label: u8, num_classes: usize| -> Vec<f32> {
+                            let mut v = vec![0.0; num_classes];
+                            if (label as usize) < num_classes {
+                                v[label as usize] = 1.0;
+                            }
+                            v
+                        };
+                        let expected_outputs = one_hot_encode(label, 10);
+                        DataPoint { inputs, expected_outputs }
+                    })
+                    .collect();
+                    let dataset_test: Vec<DataPoint> = mnist.train_data.iter()
+                    .zip(mnist.train_labels.iter())
+                    .map(|(image, &label)| {
+                        // Normalize pixels to [0.0, 1.0]
+                        let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
 
-            let one_hot_encode = |label: u8, num_classes: usize| -> Vec<f32> {
-                let mut v = vec![0.0; num_classes];
-                if (label as usize) < num_classes {
-                    v[label as usize] = 1.0;
-                }
-                v
-            };
-            let expected_outputs = one_hot_encode(label, 10);
-            DataPoint { inputs, expected_outputs }
-        })
-        .collect();
-                    *state_ctx.training_dataset = TrainingDataset{ full_dataset: vec![], is_split: true, thresholds: [1.0,1.0] };
+                        let one_hot_encode = |label: u8, num_classes: usize| -> Vec<f32> {
+                            let mut v = vec![0.0; num_classes];
+                            if (label as usize) < num_classes {
+                                v[label as usize] = 1.0;
+                            }
+                            v
+                        };
+                        let expected_outputs = one_hot_encode(label, 10);
+                        DataPoint { inputs, expected_outputs }
+                    })
+                    .collect();
+                    *state_ctx.training_dataset = TrainingDataset::new_from_splits(&dataset_train, &vec![], &dataset_test);
+                    self.ui_training_dataset_split_thresholds_0 = state_ctx.training_dataset.get_thresholds()[0];
+                    self.ui_training_dataset_split_thresholds_1 = state_ctx.training_dataset.get_thresholds()[1];
                 }
             });
     }

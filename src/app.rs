@@ -27,7 +27,7 @@ use crate::{
         datapoint::{create_2x2_test_datapoints, split_datapoints, DataPoint},
         neuralnetwork::{GraphStructure, NeuralNetwork},
         thread::{TrainingThread, TrainingThreadPayload},
-        training::{TrainingSession, TrainingState},
+        training::{self, TrainingSession, TrainingState},
     },
 };
 
@@ -52,7 +52,6 @@ struct MenuWindowData {
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct TrainingDataset {
     pub full_dataset: Vec<DataPoint>,
-    pub is_split: bool,
     pub thresholds: [f64; 2],
 }
 
@@ -60,30 +59,60 @@ impl TrainingDataset {
     pub fn new(datapoints: &[DataPoint]) -> Self {
         Self {
             full_dataset: datapoints.to_vec(),
-            is_split: false,
-            thresholds: [0.0; 2],
+            thresholds: [0.6, 0.8],
         }
+    }
+
+    pub fn new_from_splits(
+        training_split: &[DataPoint],
+        validation_split: &[DataPoint],
+        test_split: &[DataPoint],
+    ) -> Self {
+        let training_split_len = training_split.len();
+        let validation_split_len = validation_split.len();
+        let test_split_len = test_split.len();
+
+        let full_dataset: Vec<DataPoint> = training_split
+            .iter()
+            .chain(validation_split.iter())
+            .chain(test_split.iter())
+            .cloned()
+            .collect();
+        let thresholds = [
+            ((training_split_len as f64) / full_dataset.len() as f64),
+            (((training_split_len + validation_split_len) as f64) / full_dataset.len() as f64),
+        ];
+
+        let new_self = Self {
+            full_dataset: full_dataset,
+            thresholds: thresholds,
+        };
+
+        assert_eq!(new_self.training_split(), training_split);
+        assert_eq!(new_self.validation_split(), validation_split);
+        assert_eq!(new_self.test_split(), test_split);
+        new_self
     }
 
     pub fn training_split(&self) -> &[DataPoint] {
         let traning_data_end: usize =
-            (self.thresholds[0] * (self.full_dataset.len() as f64)).floor() as usize;
+            (self.thresholds[0] * (self.full_dataset.len() as f64)) as usize;
 
         &self.full_dataset[0..traning_data_end]
     }
 
     pub fn validation_split(&self) -> &[DataPoint] {
         let traning_data_end: usize =
-            (self.thresholds[0] * (self.full_dataset.len() as f64)).floor() as usize;
+            (self.thresholds[0] * (self.full_dataset.len() as f64)) as usize;
         let validadtion_data_end: usize =
-            (self.thresholds[1] * (self.full_dataset.len() as f64)).floor() as usize;
+            (self.thresholds[1] * (self.full_dataset.len() as f64)) as usize;
 
         &self.full_dataset[traning_data_end..validadtion_data_end]
     }
 
     pub fn test_split(&self) -> &[DataPoint] {
         let validadtion_data_end: usize =
-            (self.thresholds[1] * (self.full_dataset.len() as f64)).floor() as usize;
+            (self.thresholds[1] * (self.full_dataset.len() as f64)) as usize;
         let test_data_end: usize = self.full_dataset.len();
 
         &self.full_dataset[validadtion_data_end..test_data_end]
@@ -94,6 +123,10 @@ impl TrainingDataset {
             .iter()
             .chain(self.validation_split().iter())
             .chain(self.test_split().iter())
+    }
+
+    pub fn get_thresholds(&self) -> [f64; 2] {
+        self.thresholds
     }
 
     // Returns the number of (in, out) nodes needed in layers
