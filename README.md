@@ -4,10 +4,11 @@ Z Anime Opening AI
 ![alt text](img/showcase2.png)
 
 # This project is still in its infancy stage
-At this moment it can only:
-    1. Create neural network that can perform backpropegation
-    2. Train that network
-    3. Provides a interactive UI
+Features at this moment:
+    * Create neural networks with any graph layout
+    * Train that network using backpropegation
+    * Provides a interactive UI
+    * SIMD optimized (30 epochs for [784, 100, 10] network takes a few seconds locally)
 
 # Goal of this application:
 Input a anime video file, add chapter timestamps for it for OP start/end & ED start/end.
