@@ -23,7 +23,7 @@ pub struct AIResultMetadata {
 }
 
 impl AIResultMetadata {
-    pub fn new(dataset_usage: DatasetUsage) -> Self {
+    pub fn new(dataset_usage: DatasetUsage, cost: f64) -> Self {
         Self {
             true_positives: 0,
             true_negatives: 0,
@@ -32,7 +32,7 @@ impl AIResultMetadata {
             positive_instances: 0,
             negative_instances: 0,
             cost: 0.0,
-            num_merged: 0,
+            num_merged: 1,
             dataset_usage,
         }
     }
@@ -50,7 +50,8 @@ impl AIResultMetadata {
         self.false_negatives += other.false_negatives;
         self.positive_instances += other.positive_instances;
         self.negative_instances += other.negative_instances;
-        self.cost = self.cost * (self.num_merged - 1) as f64 / self.num_merged as f64;
+        self.cost =
+            (self.cost * (self.num_merged - 1) as f64 + other.cost) / self.num_merged as f64;
         self
     }
 

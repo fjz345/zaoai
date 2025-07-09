@@ -14,7 +14,8 @@ use crate::{
         training::{test_nn, TrainingSession, TrainingState},
     },
 };
-use eframe::egui::{self, Button, Sense, Slider};
+use eframe::egui::{self, Button, Color32, Sense, Slider};
+use egui_plot::{Corner, Legend};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
 
@@ -59,12 +60,19 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
             use crate::app_windows::PlotPoints::Owned;
 
             let plot_accuracy: PlotPoints = Owned(self.cached_plot_points_accuracy.clone());
-            let line_accuracy: Line = Line::new("Accuracy", plot_accuracy);
-            Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line_accuracy));
+            let line_accuracy = Line::new("Accuracy", plot_accuracy).color(Color32::LIGHT_GREEN);
 
             let plot_cost: PlotPoints = Owned(self.cached_plot_points_cost.clone());
-            let line_cost: Line = Line::new("Cost", plot_cost);
-            Self::create_plot_training().show(ui, |plot_ui| plot_ui.line(line_cost));
+            let line_cost = Line::new("Cost", plot_cost).color(Color32::LIGHT_RED);
+
+            // Create the plot once and add multiple lines inside it
+            Self::create_plot_training()
+                .legend(Legend::default().position(Corner::LeftTop))
+                .x_axis_label("Epoch")
+                .show(ui, |plot_ui| {
+                    plot_ui.line(line_accuracy);
+                    plot_ui.line(line_cost);
+                });
         });
     }
 }

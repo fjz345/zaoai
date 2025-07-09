@@ -149,6 +149,7 @@ impl NeuralNetwork {
         &mut self,
         batch_data: &[DataPoint],
         learn_rate: f32,
+        batch_data_cost: &mut f32,
         print: Option<bool>,
     ) -> Vec<Vec<f32>> {
         // let new_metadata = AIResultMetadata::new(DatasetUsage::Training);
@@ -168,10 +169,10 @@ impl NeuralNetwork {
         self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
         self.clear_all_cost_gradients();
 
+        *batch_data_cost = self.calculate_cost(&batch_data[..]);
         // Print cost
         if (print_enabled) {
-            let cost = self.calculate_cost(&batch_data[..]);
-            log::info!("Cost: {}", cost);
+            log::info!("Cost: {}", batch_data_cost);
         }
 
         batch_data_outputs
@@ -213,11 +214,19 @@ impl NeuralNetwork {
                     );
                 }
 
-                let batch_data_outputs = self.learn_batch(data, learn_rate, print);
+                let mut batch_data_cost = 0.0;
+                let batch_data_outputs =
+                    self.learn_batch(data, learn_rate, &mut batch_data_cost, print);
 
                 if let Some(metadata) = epoch_metadata.as_mut() {
-                    let mut new_metadata = AIResultMetadata::new(DatasetUsage::Training);
-                    self.learn_batch_metadata(data, &batch_data_outputs, &mut new_metadata);
+                    let mut new_metadata =
+                        AIResultMetadata::new(DatasetUsage::Training, batch_data_cost as f64);
+                    self.learn_batch_metadata(
+                        data,
+                        &batch_data_outputs,
+                        batch_data_cost,
+                        &mut new_metadata,
+                    );
                     metadata.merge(&new_metadata);
                 }
             };
@@ -241,6 +250,7 @@ impl NeuralNetwork {
         &self,
         epoch_data: &[DataPoint],
         epoch_data_outputs: &Vec<Vec<f32>>,
+        epoch_data_cost: f32,
         new_metadata: &mut AIResultMetadata,
     ) {
         for (i, data) in epoch_data.iter().enumerate() {
@@ -264,6 +274,8 @@ impl NeuralNetwork {
                 _ => panic!("Fix bug"),
             }
         }
+
+        new_metadata.cost = epoch_data_cost as f64;
     }
 
     pub fn learn(
@@ -290,7 +302,7 @@ impl NeuralNetwork {
                 );
             }
 
-            let mut metadata: AIResultMetadata = AIResultMetadata::new(DatasetUsage::Training);
+            let mut metadata: AIResultMetadata = AIResultMetadata::new(DatasetUsage::Training, 0.0);
             self.learn_epoch(
                 e,
                 &training_data,
@@ -483,7 +495,7 @@ impl NeuralNetwork {
         (max_index, max)
     }
 
-    fn calculate_cost_datapoint(&mut self, datapoint: &DataPoint) -> f32 {
+    fn calculate_cost_datapoint(&self, datapoint: &DataPoint) -> f32 {
         let mut cost: f32 = 0.0;
 
         // Calculate the output of the neural network
@@ -501,7 +513,7 @@ impl NeuralNetwork {
         cost
     }
 
-    pub fn calculate_cost(&mut self, data: &[DataPoint]) -> f32 {
+    pub fn calculate_cost(&self, data: &[DataPoint]) -> f32 {
         if data.len() <= 0 {
             panic!("Input data was len: {}", data.len());
         }
