@@ -213,18 +213,7 @@ impl eframe::App for ZaoaiApp {
                 // ));
             }
             AppState::Training => {
-                let training_dataset_dim = self.training_dataset.get_dimensions();
-                self.training_session
-                    .set_training_data(&self.training_dataset.training_split());
-
-                if !self.training_session.ready() {
-                    self.state = AppState::Idle;
-                    log::debug!("Training session not ready to for AppState::Training");
-                    return;
-                }
-
-                let training_state = self.training_session.get_state();
-                match training_state {
+                match self.training_session.get_state() {
                     TrainingState::Idle => {
                         log::trace!("TrainingState::Idle");
                     }
@@ -232,25 +221,20 @@ impl eframe::App for ZaoaiApp {
                     TrainingState::StartTraining => {
                         if let Some(ai) = &self.ai {
                             if (self.training_thread.is_none()) {
-                                if let Some(first_point) =
-                                    self.training_session.training_data.first()
+                                let training_dataset_dim = self.training_dataset.get_dimensions();
+                                self.training_session
+                                    .set_training_data(&self.training_dataset.training_split());
+                                if (
+                                    ai.graph_structure.input_nodes,
+                                    ai.graph_structure.output_nodes,
+                                ) == training_dataset_dim
                                 {
-                                    if (
-                                        ai.graph_structure.input_nodes,
-                                        ai.graph_structure.output_nodes,
-                                    ) == training_dataset_dim
-                                    {
-                                        // Copy the session for TrainingThread to take care of
-                                        self.training_thread = Some(TrainingThread::new(
-                                            self.training_session.clone(),
-                                        ));
-                                        self.training_session.set_state(TrainingState::Training);
-                                    } else {
-                                        log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, first_point.inputs.len(), first_point.expected_outputs.len());
-                                        self.training_session.set_state(TrainingState::Idle);
-                                    }
+                                    // Copy the session for TrainingThread to take care of
+                                    self.training_thread =
+                                        Some(TrainingThread::new(self.training_session.clone()));
+                                    self.training_session.set_state(TrainingState::Training);
                                 } else {
-                                    log::error!("Cannot start training, datapoint len <= 0");
+                                    log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, training_dataset_dim.0, training_dataset_dim.1);
                                     self.training_session.set_state(TrainingState::Idle);
                                 }
                             } else {
