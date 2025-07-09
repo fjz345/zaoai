@@ -401,6 +401,7 @@ impl NeuralNetwork {
 
     // Backpropegation
     fn update_all_cost_gradients(&mut self, datapoint: &DataPoint) -> Vec<f32> {
+        // Doubt it is the bottleneck, but could reuse a buffer instead of getting a new one each time.
         let mut current_inputs = datapoint.inputs.to_vec();
         for (i, layer) in self.layers.iter_mut().enumerate() {
             current_inputs = layer

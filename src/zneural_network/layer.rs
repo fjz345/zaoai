@@ -1,6 +1,10 @@
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand_chacha;
+use rayon::iter::{
+    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
+    IntoParallelRefMutIterator, ParallelIterator,
+};
 use serde::{Deserialize, Serialize};
 use symphonia::core::util::clamp;
 use wide::f32x8;
@@ -228,6 +232,48 @@ impl Layer {
             .collect()
     }
 
+    pub fn calculate_outputs_simd_rayon(&self, activation_inputs: &[f32]) -> Vec<f32> {
+        assert_eq!(
+            activation_inputs.len(),
+            self.num_in_nodes,
+            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
+            activation_inputs.len(),
+            self.num_in_nodes
+        );
+
+        const CHUNK_SIZE: usize = 8;
+        let chunks = activation_inputs.len() / CHUNK_SIZE;
+        let remainder = activation_inputs.len() % CHUNK_SIZE;
+
+        let biases = &self.biases;
+        let weights = &self.weights;
+        let inputs = activation_inputs;
+
+        (0..self.num_out_nodes)
+            .into_par_iter()
+            .map(|output_node| {
+                let weight_row = &weights[output_node];
+                let mut sum = f32x8::splat(0.0);
+
+                for i in 0..chunks {
+                    let offset = i * CHUNK_SIZE;
+                    let a = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
+                    let b = f32x8::from(&weight_row[offset..offset + CHUNK_SIZE]);
+                    sum += a * b;
+                }
+
+                let mut weighted_input = sum.reduce_add();
+
+                for i in (inputs.len() - remainder)..inputs.len() {
+                    weighted_input += inputs[i] * weight_row[i];
+                }
+
+                weighted_input + biases[output_node]
+            })
+            .map(activation_function)
+            .collect()
+    }
+
     pub fn calculate_outputs_learn(
         &mut self,
         learn_data: &mut LayerLearnData,
@@ -310,6 +356,62 @@ impl Layer {
         learn_data.activation_values.clone()
     }
 
+    pub fn calculate_outputs_learn_simd_rayon(
+        &mut self,
+        learn_data: &mut LayerLearnData,
+        activation_inputs: &[f32],
+    ) -> Vec<f32> {
+        assert_eq!(
+            activation_inputs.len(),
+            self.num_in_nodes,
+            "Num Inputs: {}, NN Num Inputs {}. Maybe data missmatch with output size?",
+            activation_inputs.len(),
+            self.num_in_nodes
+        );
+
+        learn_data.inputs.clone_from_slice(activation_inputs);
+
+        const CHUNK_SIZE: usize = 8;
+        let chunks = activation_inputs.len() / CHUNK_SIZE;
+        let remainder = activation_inputs.len() % CHUNK_SIZE;
+
+        let inputs = activation_inputs;
+        let weights = &self.weights;
+        let biases = &self.biases;
+        let weighted_inputs = &mut learn_data.weighted_inputs;
+        let activations = &mut learn_data.activation_values;
+
+        // Parallel output node computation
+        weighted_inputs
+            .par_iter_mut()
+            .zip(activations.par_iter_mut())
+            .enumerate()
+            .for_each(|(output_node, (weighted_out, activation_out))| {
+                let weight_row = &weights[output_node];
+                let mut sum = f32x8::splat(0.0);
+
+                for i in 0..chunks {
+                    let offset = i * CHUNK_SIZE;
+                    let a = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
+                    let b = f32x8::from(&weight_row[offset..offset + CHUNK_SIZE]);
+                    sum += a * b;
+                }
+
+                let mut weighted_input = sum.reduce_add();
+
+                for i in (inputs.len() - remainder)..inputs.len() {
+                    weighted_input += inputs[i] * weight_row[i];
+                }
+
+                weighted_input += biases[output_node];
+
+                *weighted_out = weighted_input;
+                *activation_out = activation_function(weighted_input);
+            });
+
+        activations.clone()
+    }
+
     pub fn apply_cost_gradient(&mut self, learn_rate: f32) {
         for node_out in 0..self.num_out_nodes {
             self.biases[node_out] -= self.biases_cost_grads[node_out] * learn_rate;
@@ -363,13 +465,45 @@ impl Layer {
             }
 
             // Handle remainder scalarly
-            for i in (self.num_in_nodes - remainder)..self.num_in_nodes {
+            let start = self.num_in_nodes - remainder;
+            for i in start..self.num_in_nodes {
                 weight_grad_row[i] += inputs[i] * node_value;
             }
 
             // Bias gradient scalar
             self.biases_cost_grads[node_out] += node_value;
         }
+    }
+
+    pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
+        const CHUNK_SIZE: usize = 8;
+        let num_in_nodes = self.num_in_nodes;
+        let chunks = num_in_nodes / CHUNK_SIZE;
+        let remainder = num_in_nodes % CHUNK_SIZE;
+
+        self.weights_cost_grads
+            .par_iter_mut()
+            .zip(self.biases_cost_grads.par_iter_mut())
+            .zip(learn_data.node_values.par_iter().copied())
+            .for_each(|((weight_grad_row, bias_grad), node_value)| {
+                let node_value_vec = f32x8::splat(node_value);
+                let inputs = &learn_data.inputs;
+
+                for i in 0..chunks {
+                    let offset = i * CHUNK_SIZE;
+                    let input_vec = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
+                    let mut grad_vec = f32x8::from(&weight_grad_row[offset..offset + CHUNK_SIZE]);
+                    grad_vec += input_vec * node_value_vec;
+                    weight_grad_row[offset..offset + CHUNK_SIZE]
+                        .copy_from_slice(&grad_vec.to_array());
+                }
+
+                for i in (num_in_nodes - remainder)..num_in_nodes {
+                    weight_grad_row[i] += inputs[i] * node_value;
+                }
+
+                *bias_grad += node_value;
+            });
     }
 
     pub fn clear_cost_gradient(&mut self) {
