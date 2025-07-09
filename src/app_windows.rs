@@ -1,17 +1,13 @@
 use std::{cell::RefCell, ops::RangeInclusive, rc::Rc};
 
 use crate::{
-    app::{
-        generate_accuracy_plotpoints_from_training_thread_payloads,
-        generate_cost_plotpoints_from_training_thread_payloads,
-        generate_loss_plotpoints_from_training_thread_payloads, AppState, TrainingDataset,
-    },
+    app::{AppState, TrainingDataset},
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
         datapoint::{create_2x2_test_datapoints, DataPoint},
         neuralnetwork::NeuralNetwork,
-        thread::TrainingThread,
+        thread::{TrainingThread, TrainingThreadPayload},
         training::{test_nn, TrainingSession, TrainingState},
     },
 };
@@ -371,3 +367,50 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
 }
 
 impl WindowTrainingSession {}
+
+pub fn generate_accuracy_plotpoints_from_training_thread_payloads(
+    payloads: &Vec<TrainingThreadPayload>,
+) -> Vec<PlotPoint> {
+    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+
+    for payload in payloads {
+        let accuracy = payload.training_metadata.calc_accuracy();
+        let plotpoint = PlotPoint {
+            x: payload.payload_index as f64,
+            y: accuracy,
+        };
+        result.push(plotpoint);
+    }
+    result
+}
+
+pub fn generate_cost_plotpoints_from_training_thread_payloads(
+    payloads: &Vec<TrainingThreadPayload>,
+) -> Vec<PlotPoint> {
+    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+
+    for payload in payloads {
+        let cost = payload.training_metadata.cost;
+        let plotpoint = PlotPoint {
+            x: payload.payload_index as f64,
+            y: cost,
+        };
+        result.push(plotpoint);
+    }
+    result
+}
+pub fn generate_loss_plotpoints_from_training_thread_payloads(
+    payloads: &Vec<TrainingThreadPayload>,
+) -> Vec<PlotPoint> {
+    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+
+    for payload in payloads {
+        let last_loss = payload.training_metadata.last_loss;
+        let plotpoint = PlotPoint {
+            x: payload.payload_index as f64,
+            y: last_loss,
+        };
+        result.push(plotpoint);
+    }
+    result
+}
