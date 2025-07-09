@@ -145,11 +145,27 @@ impl NeuralNetwork {
         &self.layers
     }
 
+    fn cross_entropy_loss(predicted: &[f32], expected: &[f32]) -> f32 {
+        // Small epsilon to avoid log(0)
+        let epsilon = 1e-12;
+
+        predicted
+            .iter()
+            .zip(expected.iter())
+            .map(|(p, e)| {
+                // Clamp p to avoid log(0)
+                let p_clamped = p.max(epsilon).min(1.0 - epsilon);
+                -e * p_clamped.ln()
+            })
+            .sum()
+    }
+
     pub fn learn_batch(
         &mut self,
         batch_data: &[DataPoint],
         learn_rate: f32,
         batch_data_cost: &mut f32,
+        batch_data_loss: &mut f32,
         print: Option<bool>,
     ) -> Vec<Vec<f32>> {
         // let new_metadata = AIResultMetadata::new(DatasetUsage::Training);
@@ -160,9 +176,14 @@ impl NeuralNetwork {
 
         let print_enabled = print == Some(true);
 
+        let mut total_loss = 0.0;
         let mut batch_data_outputs = Vec::new();
         for datapoint in batch_data {
+            // Todo: make functions forward/backward for simplicity.
             let datapoint_outputs = self.update_all_cost_gradients(datapoint);
+            let loss = Self::cross_entropy_loss(&datapoint_outputs, &datapoint.expected_outputs);
+            total_loss += loss;
+
             batch_data_outputs.push(datapoint_outputs);
         }
         // Adjust weights & biases
@@ -170,6 +191,7 @@ impl NeuralNetwork {
         self.clear_all_cost_gradients();
 
         *batch_data_cost = self.calculate_cost(&batch_data[..]);
+        *batch_data_loss = total_loss;
         // Print cost
         if (print_enabled) {
             log::info!("Cost: {}", batch_data_cost);
@@ -215,12 +237,21 @@ impl NeuralNetwork {
                 }
 
                 let mut batch_data_cost = 0.0;
-                let batch_data_outputs =
-                    self.learn_batch(data, learn_rate, &mut batch_data_cost, print);
+                let mut batch_data_loss = 0.0;
+                let batch_data_outputs = self.learn_batch(
+                    data,
+                    learn_rate,
+                    &mut batch_data_cost,
+                    &mut batch_data_loss,
+                    print,
+                );
 
                 if let Some(metadata) = epoch_metadata.as_mut() {
-                    let mut new_metadata =
-                        AIResultMetadata::new(DatasetUsage::Training, batch_data_cost as f64);
+                    let mut new_metadata = AIResultMetadata::new(
+                        DatasetUsage::Training,
+                        batch_data_cost as f64,
+                        batch_data_loss as f64,
+                    );
                     self.learn_batch_metadata(
                         data,
                         &batch_data_outputs,
@@ -302,7 +333,8 @@ impl NeuralNetwork {
                 );
             }
 
-            let mut metadata: AIResultMetadata = AIResultMetadata::new(DatasetUsage::Training, 0.0);
+            let mut metadata: AIResultMetadata =
+                AIResultMetadata::new(DatasetUsage::Training, 0.0, 0.0);
             self.learn_epoch(
                 e,
                 &training_data,

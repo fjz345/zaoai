@@ -40,6 +40,7 @@ pub struct WindowTrainingGraphCtx<'a> {
 pub struct WindowTrainingGraph {
     cached_plot_points_accuracy: Vec<PlotPoint>,
     cached_plot_points_cost: Vec<PlotPoint>,
+    cached_plot_points_last_loss: Vec<PlotPoint>,
 }
 
 impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
@@ -54,6 +55,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                 generate_accuracy_plotpoints_from_training_thread_payloads(&payload_buffer);
             self.cached_plot_points_cost =
                 generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer);
+            self.cached_plot_points_last_loss =
+                generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer);
         }
 
         egui::Window::new("Training Graph").show(ctx, |ui| {
@@ -65,6 +68,9 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
             let plot_cost: PlotPoints = Owned(self.cached_plot_points_cost.clone());
             let line_cost = Line::new("Cost", plot_cost).color(Color32::LIGHT_RED);
 
+            let plot_loss: PlotPoints = Owned(self.cached_plot_points_last_loss.clone());
+            let line_loss = Line::new("Loss", plot_loss).color(Color32::LIGHT_YELLOW);
+
             // Create the plot once and add multiple lines inside it
             Self::create_plot_training()
                 .legend(Legend::default().position(Corner::LeftTop))
@@ -72,6 +78,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                 .show(ui, |plot_ui| {
                     plot_ui.line(line_accuracy);
                     plot_ui.line(line_cost);
+                    plot_ui.line(line_loss);
                 });
         });
     }
