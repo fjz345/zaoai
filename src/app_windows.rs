@@ -300,7 +300,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                             RangeInclusive::new(10, 1000),
                         )
                         .clamping(egui::SliderClamping::Never)
-                        .step_by(10.0),
+                        .step_by(1.0),
                     )
                     .changed()
                     {

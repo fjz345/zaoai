@@ -145,8 +145,13 @@ impl NeuralNetwork {
         &self.layers
     }
 
-    pub fn learn_batch(&mut self, batch_data: &[DataPoint], learn_rate: f32, print: Option<bool>) {
-        let new_metadata = AIResultMetadata::new(DatasetUsage::Training);
+    pub fn learn_batch(
+        &mut self,
+        batch_data: &[DataPoint],
+        learn_rate: f32,
+        print: Option<bool>,
+    ) -> Vec<Vec<f32>> {
+        // let new_metadata = AIResultMetadata::new(DatasetUsage::Training);
 
         if (batch_data.len() <= 0) {
             panic!("DataPoints length was 0");
@@ -154,8 +159,10 @@ impl NeuralNetwork {
 
         let print_enabled = print == Some(true);
 
+        let mut batch_data_outputs = Vec::new();
         for datapoint in batch_data {
-            self.update_all_cost_gradients(datapoint);
+            let datapoint_outputs = self.update_all_cost_gradients(datapoint);
+            batch_data_outputs.push(datapoint_outputs);
         }
         // Adjust weights & biases
         self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
@@ -166,6 +173,8 @@ impl NeuralNetwork {
             let cost = self.calculate_cost(&batch_data[..]);
             log::info!("Cost: {}", cost);
         }
+
+        batch_data_outputs
     }
 
     pub fn learn_epoch(
@@ -204,11 +213,11 @@ impl NeuralNetwork {
                     );
                 }
 
-                self.learn_batch(data, learn_rate, print);
+                let batch_data_outputs = self.learn_batch(data, learn_rate, print);
 
                 if let Some(metadata) = epoch_metadata.as_mut() {
                     let mut new_metadata = AIResultMetadata::new(DatasetUsage::Training);
-                    self.learn_batch_metadata(data, &mut new_metadata);
+                    self.learn_batch_metadata(data, &batch_data_outputs, &mut new_metadata);
                     metadata.merge(&new_metadata);
                 }
             };
@@ -228,17 +237,22 @@ impl NeuralNetwork {
         }
     }
 
-    fn learn_batch_metadata(&self, epoch_data: &[DataPoint], new_metadata: &mut AIResultMetadata) {
+    fn learn_batch_metadata(
+        &self,
+        epoch_data: &[DataPoint],
+        epoch_data_outputs: &Vec<Vec<f32>>,
+        new_metadata: &mut AIResultMetadata,
+    ) {
         for data in epoch_data {
             let output_result = self.calculate_outputs(&data.inputs);
 
             let (determined_index, determined_value) =
                 Self::determine_output_result(&output_result[..]);
 
-            let (determined_expected_indedx, determined_expected_value) =
+            let (determined_expected_index, determined_expected_value) =
                 Self::determine_output_result(&data.expected_outputs);
 
-            match (determined_index == determined_expected_indedx, false) {
+            match (determined_index == determined_expected_index, false) {
                 (true, false) => {
                     new_metadata.true_positives += 1;
                     new_metadata.positive_instances += 1;
@@ -386,12 +400,14 @@ impl NeuralNetwork {
     }
 
     // Backpropegation
-    fn update_all_cost_gradients(&mut self, datapoint: &DataPoint) {
+    fn update_all_cost_gradients(&mut self, datapoint: &DataPoint) -> Vec<f32> {
         let mut current_inputs = datapoint.inputs.to_vec();
         for (i, layer) in self.layers.iter_mut().enumerate() {
             current_inputs = layer
                 .calculate_outputs_learn_simd(&mut self.layer_learn_data[i], &mut current_inputs);
         }
+
+        let output_inputs = current_inputs;
 
         // Update for ouput layer
         let layer_len = self.layers.len();
@@ -402,7 +418,7 @@ impl NeuralNetwork {
             &mut learn_data_output,
             &datapoint.expected_outputs[..],
         );
-        output_layer.update_cost_gradients(learn_data_output);
+        output_layer.update_cost_gradients_simd(learn_data_output);
 
         // Update for hidden layers
         for i in (0..(self.layers.len() - 1)).rev() {
@@ -419,8 +435,10 @@ impl NeuralNetwork {
             );
 
             let mut_hidden_layer = &mut self.layers[i];
-            mut_hidden_layer.update_cost_gradients(learn_data_hidden);
+            mut_hidden_layer.update_cost_gradients_simd(learn_data_hidden);
         }
+
+        output_inputs
     }
 
     fn apply_all_cost_gradients(&mut self, learn_rate: f32) {
@@ -440,11 +458,6 @@ impl NeuralNetwork {
         for (i, layer) in self.layers.iter().enumerate() {
             current_inputs = layer.calculate_outputs_simd(&current_inputs);
         }
-
-        // TODO: need to fix backpropegation
-        // if self.graph_structure.use_softmax_output {
-        //     current_inputs = softmax(&current_inputs);
-        // }
 
         current_inputs
     }

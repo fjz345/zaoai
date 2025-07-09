@@ -41,7 +41,11 @@ linux-profile = ["dep:pprof"]
 winapi = { version = "0.3.5", features = ["winnt", "winuser"] }
 
 [profile.release]
-debug = true
+codegen-units = 1
+lto = true
+opt-level = 3
+target-cpu = "native"
+#debug = true
 
 [profile.dev]
 incremental = true

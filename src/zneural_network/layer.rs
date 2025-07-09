@@ -3,7 +3,7 @@ use rand::rngs::StdRng;
 use rand_chacha;
 use serde::{Deserialize, Serialize};
 use symphonia::core::util::clamp;
-use wide::f32x4;
+use wide::f32x8;
 
 pub fn softmax(layer_values: &[f32]) -> Vec<f32> {
     let max_val = layer_values
@@ -188,8 +188,6 @@ impl Layer {
     }
 
     pub fn calculate_outputs_simd(&self, activation_inputs: &[f32]) -> Vec<f32> {
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-
         assert_eq!(
             activation_inputs.len(),
             self.num_in_nodes,
@@ -198,27 +196,25 @@ impl Layer {
             self.num_in_nodes
         );
 
-        let chunk_size = 4; // f32x4 has 4 lanes
+        const CHUNK_SIZE: usize = 8;
+        let chunks = activation_inputs.len() / CHUNK_SIZE;
+        let remainder = activation_inputs.len() % CHUNK_SIZE;
+
+        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
 
         for output_node in 0..self.num_out_nodes {
-            let mut sum = f32x4::splat(0.0);
             let weights = &self.weights[output_node];
+            let mut sum = f32x8::splat(0.0);
 
-            let chunks = activation_inputs.len() / chunk_size;
-            let remainder = activation_inputs.len() % chunk_size;
-
-            for i in 0..chunks {
-                let offset = i * chunk_size;
-
-                let a = f32x4::from(&activation_inputs[offset..offset + chunk_size]);
-                let b = f32x4::from(&weights[offset..offset + chunk_size]);
-
+            for i in (0..chunks).step_by(2) {
+                let offset = i * CHUNK_SIZE;
+                let a = f32x8::from(&activation_inputs[offset..offset + CHUNK_SIZE]);
+                let b = f32x8::from(&weights[offset..offset + CHUNK_SIZE]);
                 sum += a * b;
             }
 
             let mut weighted_input = sum.reduce_add();
 
-            // Handle remainder
             for i in (activation_inputs.len() - remainder)..activation_inputs.len() {
                 weighted_input += activation_inputs[i] * weights[i];
             }
@@ -226,10 +222,9 @@ impl Layer {
             weighted_inputs[output_node] = weighted_input + self.biases[output_node];
         }
 
-        // Apply activation function
         weighted_inputs
             .into_iter()
-            .map(|x| activation_function(x))
+            .map(activation_function)
             .collect()
     }
 
@@ -279,20 +274,18 @@ impl Layer {
 
         learn_data.inputs.clone_from_slice(activation_inputs);
 
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-        let chunk_size = 4;
+        const CHUNK_SIZE: usize = 8;
+        let chunks = activation_inputs.len() / CHUNK_SIZE;
+        let remainder = activation_inputs.len() % CHUNK_SIZE;
 
         for output_node in 0..self.num_out_nodes {
-            let mut sum = f32x4::splat(0.0);
             let weights = &self.weights[output_node];
-
-            let chunks = activation_inputs.len() / chunk_size;
-            let remainder = activation_inputs.len() % chunk_size;
+            let mut sum = f32x8::splat(0.0);
 
             for i in 0..chunks {
-                let offset = i * chunk_size;
-                let a = f32x4::from(&activation_inputs[offset..offset + chunk_size]);
-                let b = f32x4::from(&weights[offset..offset + chunk_size]);
+                let offset = i * CHUNK_SIZE;
+                let a = f32x8::from(&activation_inputs[offset..offset + CHUNK_SIZE]);
+                let b = f32x8::from(&weights[offset..offset + CHUNK_SIZE]);
                 sum += a * b;
             }
 
@@ -306,8 +299,12 @@ impl Layer {
             learn_data.weighted_inputs[output_node] = weighted_input;
         }
 
-        for i in 0..self.num_out_nodes {
-            learn_data.activation_values[i] = activation_function(learn_data.weighted_inputs[i]);
+        for (weighted, output) in learn_data
+            .weighted_inputs
+            .iter()
+            .zip(learn_data.activation_values.iter_mut())
+        {
+            *output = activation_function(*weighted);
         }
 
         learn_data.activation_values.clone()
@@ -336,6 +333,42 @@ impl Layer {
             // Bias costs
             let derivative_cost_bias = 1.0 * learn_data.node_values[node_out];
             self.biases_cost_grads[node_out] += derivative_cost_bias;
+        }
+    }
+
+    pub fn update_cost_gradients_simd(&mut self, learn_data: &LayerLearnData) {
+        let CHUNK_SIZE = 4;
+        let chunks = self.num_in_nodes / CHUNK_SIZE;
+        let remainder = self.num_in_nodes % CHUNK_SIZE;
+
+        for node_out in 0..self.num_out_nodes {
+            let node_value = learn_data.node_values[node_out];
+            let node_value_vec = f32x8::splat(node_value);
+
+            let weight_grad_row = &mut self.weights_cost_grads[node_out];
+            let inputs = &learn_data.inputs;
+
+            for i in 0..chunks {
+                let offset = i * CHUNK_SIZE;
+
+                // Load SIMD slices
+                let input_vec = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
+                let mut grad_vec = f32x8::from(&weight_grad_row[offset..offset + CHUNK_SIZE]);
+
+                // Calculate gradients and accumulate
+                grad_vec += input_vec * node_value_vec;
+
+                let arr = grad_vec.to_array();
+                weight_grad_row[offset..offset + CHUNK_SIZE].copy_from_slice(&arr);
+            }
+
+            // Handle remainder scalarly
+            for i in (self.num_in_nodes - remainder)..self.num_in_nodes {
+                weight_grad_row[i] += inputs[i] * node_value;
+            }
+
+            // Bias gradient scalar
+            self.biases_cost_grads[node_out] += node_value;
         }
     }
 
