@@ -423,86 +423,104 @@ impl Layer {
         }
     }
 
-    pub fn update_cost_gradients(&mut self, learn_data: &LayerLearnData) {
-        for node_out in 0..self.num_out_nodes {
-            // Weight costs
-            for node_in in 0..self.num_in_nodes {
-                let derivative_cost_weight =
-                    learn_data.inputs[node_in] * learn_data.node_values[node_out];
-                self.weights_cost_grads[node_out][node_in] += derivative_cost_weight;
-            }
+    fn update_cost_gradient_for_node(
+        weight_grad_row: &mut [f32],
+        bias_grad: &mut f32,
+        node_value: f32,
+        inputs: &[f32],
+        num_in_nodes: usize,
+    ) {
+        for node_in in 0..num_in_nodes {
+            let derivative_cost_weight = inputs[node_in] * node_value;
+            weight_grad_row[node_in] += derivative_cost_weight;
+        }
+        *bias_grad += node_value; // same as 1.0 * node_value
+    }
 
-            // Bias costs
-            let derivative_cost_bias = 1.0 * learn_data.node_values[node_out];
-            self.biases_cost_grads[node_out] += derivative_cost_bias;
+    fn update_cost_gradient_for_node_simd(
+        weight_grad_row: &mut [f32],
+        bias_grad: &mut f32,
+        node_value: f32,
+        inputs: &[f32],
+        num_in_nodes: usize,
+    ) {
+        const CHUNK_SIZE: usize = 8;
+        let chunks = num_in_nodes / CHUNK_SIZE;
+        let remainder = num_in_nodes % CHUNK_SIZE;
+        let node_value_vec = f32x8::splat(node_value);
+
+        // SIMD chunks
+        for i in 0..chunks {
+            let offset = i * CHUNK_SIZE;
+            let input_vec = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
+            let mut grad_vec = f32x8::from(&weight_grad_row[offset..offset + CHUNK_SIZE]);
+            grad_vec += input_vec * node_value_vec;
+            weight_grad_row[offset..offset + CHUNK_SIZE].copy_from_slice(&grad_vec.to_array());
+        }
+
+        // Scalar tail
+        for i in (num_in_nodes - remainder)..num_in_nodes {
+            weight_grad_row[i] += inputs[i] * node_value;
+        }
+
+        // Update bias gradient
+        *bias_grad += node_value;
+    }
+
+    pub fn update_cost_gradients(&mut self, learn_data: &LayerLearnData) {
+        let num_in_nodes = self.num_in_nodes;
+        let inputs = &learn_data.inputs;
+
+        for node_out in 0..self.num_out_nodes {
+            let node_value = learn_data.node_values[node_out];
+            let weight_grad_row = &mut self.weights_cost_grads[node_out];
+            let bias_grad = &mut self.biases_cost_grads[node_out];
+
+            Self::update_cost_gradient_for_node(
+                weight_grad_row,
+                bias_grad,
+                node_value,
+                inputs,
+                num_in_nodes,
+            );
         }
     }
 
     pub fn update_cost_gradients_simd(&mut self, learn_data: &LayerLearnData) {
-        const CHUNK_SIZE: usize = 8;
-        let chunks = self.num_in_nodes / CHUNK_SIZE;
-        let remainder = self.num_in_nodes % CHUNK_SIZE;
+        let num_in_nodes = self.num_in_nodes;
+        let inputs = &learn_data.inputs;
 
         for node_out in 0..self.num_out_nodes {
             let node_value = learn_data.node_values[node_out];
-            let node_value_vec = f32x8::splat(node_value);
-
             let weight_grad_row = &mut self.weights_cost_grads[node_out];
-            let inputs = &learn_data.inputs;
+            let bias_grad = &mut self.biases_cost_grads[node_out];
 
-            for i in 0..chunks {
-                let offset = i * CHUNK_SIZE;
-
-                // Load SIMD slices
-                let input_vec = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
-                let mut grad_vec = f32x8::from(&weight_grad_row[offset..offset + CHUNK_SIZE]);
-
-                // Calculate gradients and accumulate
-                grad_vec += input_vec * node_value_vec;
-
-                let arr = grad_vec.to_array();
-                weight_grad_row[offset..offset + CHUNK_SIZE].copy_from_slice(&arr);
-            }
-
-            // Handle remainder scalarly
-            let start = self.num_in_nodes - remainder;
-            for i in start..self.num_in_nodes {
-                weight_grad_row[i] += inputs[i] * node_value;
-            }
-
-            // Bias gradient scalar
-            self.biases_cost_grads[node_out] += node_value;
+            Self::update_cost_gradient_for_node_simd(
+                weight_grad_row,
+                bias_grad,
+                node_value,
+                inputs,
+                num_in_nodes,
+            );
         }
     }
 
     pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
-        const CHUNK_SIZE: usize = 8;
         let num_in_nodes = self.num_in_nodes;
-        let chunks = num_in_nodes / CHUNK_SIZE;
-        let remainder = num_in_nodes % CHUNK_SIZE;
+        let inputs = &learn_data.inputs;
 
         self.weights_cost_grads
             .par_iter_mut()
             .zip(self.biases_cost_grads.par_iter_mut())
             .zip(learn_data.node_values.par_iter().copied())
             .for_each(|((weight_grad_row, bias_grad), node_value)| {
-                let node_value_vec = f32x8::splat(node_value);
-                let inputs = &learn_data.inputs;
-
-                for i in 0..chunks {
-                    let offset = i * CHUNK_SIZE;
-                    let input_vec = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
-                    let mut grad_vec = f32x8::from(&weight_grad_row[offset..offset + CHUNK_SIZE]);
-                    grad_vec += input_vec * node_value_vec;
-                    weight_grad_row[offset..offset + CHUNK_SIZE]
-                        .copy_from_slice(&grad_vec.to_array());
-                }
-
-                for i in (num_in_nodes - remainder)..num_in_nodes {
-                    weight_grad_row[i] += inputs[i] * node_value;
-                }
-
-                *bias_grad += node_value;
+                Self::update_cost_gradient_for_node_simd(
+                    weight_grad_row,
+                    bias_grad,
+                    node_value,
+                    inputs,
+                    num_in_nodes,
+                );
             });
     }
 
