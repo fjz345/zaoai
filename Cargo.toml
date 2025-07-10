@@ -51,3 +51,4 @@ opt-level = 3
 
 [profile.dev]
 incremental = true
+lto = "off"
