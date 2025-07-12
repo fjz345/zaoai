@@ -191,6 +191,10 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                         log::error!("Training dataset not set, could not train");
                     }
                 }
+                let delete_button = Button::new("Delete").sense(sense);
+                if ui.add(delete_button).clicked() {
+                    *state_ctx.ai = None;
+                }
             } else {
                 ui.label("NN not set");
             }
