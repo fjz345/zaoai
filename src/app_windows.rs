@@ -180,7 +180,13 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                 let test_button = Button::new("Test").sense(sense);
                 if ui.add(test_button).clicked() {
                     if let Some(training_dataset) = &state_ctx.test_button_training_dataset {
-                        test_nn(ai, &training_dataset.test_split());
+                        if training_dataset.test_split().len() >= 1 {
+                            test_nn(ai, &training_dataset.test_split());
+                        } else {
+                            log::error!(
+                                "Could not start test, training data training len was empty"
+                            );
+                        }
                     } else {
                         log::error!("Training dataset not set, could not train");
                     }

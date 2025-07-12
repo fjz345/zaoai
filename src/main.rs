@@ -57,6 +57,7 @@ static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
 
 fn main() -> Result<()> {
+    env::set_var("RUST_BACKTRACE", "1");
     #[cfg(feature = "linux-profile")]
     let guard = pprof::ProfilerGuardBuilder::default()
         .frequency(100)
@@ -67,33 +68,26 @@ fn main() -> Result<()> {
     env::set_var("RUST_LOG", "debug"); // or "info" or "debug"
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-    let path_testdir = String::from("test_files");
-    // let filename = String::from("mp3.mp3");
-    let filename = String::from("test0.mkv");
-    let mut path = std::path::PathBuf::from(path_testdir);
-    path.push(filename);
-    let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
+    // let path_testdir = String::from("test_files");
+    // // let filename = String::from("mp3.mp3");
+    // let filename = String::from("test0.mkv");
+    // let mut path = std::path::PathBuf::from(path_testdir);
+    // path.push(filename);
+    // let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
 
-    // let mut wav = audio::Wav::default();
-    // unsafe {
-    //     wav.load_raw_wav(&samples)?;
-    // }
-    // wav.set_volume(0.2);
-    // preview_sound_file(wav);
+    // // let mut wav = audio::Wav::default();
+    // // unsafe {
+    // //     wav.load_raw_wav(&samples)?;
+    // // }
+    // // wav.set_volume(0.2);
+    // // preview_sound_file(wav);
 
-    save_spectrograph_as_png(
-        &PathBuf::from("").join("test2.png"),
-        &samples,
-        sample_rate,
-        [512, 512],
-    );
-
-    let nn_structure: GraphStructure = GraphStructure::new(&[2, 3, 2]);
-    let mut nntest: NeuralNetwork = NeuralNetwork::new(nn_structure);
-    nntest.validate();
-
-    let graph_params: GenerateGraphParams = GenerateGraphParams { layer_spacing: 2.2 };
-    let graph_layout = generate_nn_graph_layout_string(&nntest.graph_structure, &graph_params);
+    // save_spectrograph_as_png(
+    //     &PathBuf::from("").join("test2.png"),
+    //     &samples,
+    //     sample_rate,
+    //     [512, 512],
+    // );
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([2560.0, 1440.0]),

@@ -72,7 +72,7 @@ impl GraphStructure {
         is_valid
     }
 
-    fn to_string(&self) -> String {
+    pub fn to_string(&self) -> String {
         let mut result_string: String = String::new();
         let mut layer_sizes: Vec<usize> = Vec::new();
         layer_sizes.push(self.input_nodes);

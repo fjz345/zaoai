@@ -34,7 +34,7 @@ use crate::{
 #[derive(Serialize, Deserialize)]
 struct MenuWindowData {
     // Main Menu
-    nn_structure: String,
+    graph_structure_string: String,
     show_ai: bool,
     // Training Graph
     show_training_graph: bool,
@@ -158,6 +158,8 @@ pub struct ZaoaiApp {
     window_ai: WindowAi,
     window_training_set: WindowTrainingSet,
     window_training_session: WindowTrainingSession,
+
+    nn_structure: NeuralNetwork,
 }
 
 impl eframe::App for ZaoaiApp {
@@ -182,7 +184,7 @@ impl eframe::App for ZaoaiApp {
             AppState::SetupAi => {
                 let mut formatted_nn_structure = self
                     .window_data
-                    .nn_structure
+                    .graph_structure_string
                     .split(|c| c == ',' || c == ' ')
                     .collect::<Vec<_>>()
                     .into_iter()
@@ -315,11 +317,12 @@ impl eframe::App for ZaoaiApp {
 
 impl Default for ZaoaiApp {
     fn default() -> Self {
+        let graph_structure = GraphStructure::new(&[2, 3, 2]);
         Self {
             state: AppState::Startup,
             ai: None,
             window_data: MenuWindowData {
-                nn_structure: "2, 3, 2".to_owned(),
+                graph_structure_string: graph_structure.to_string(),
                 show_training_graph: true,
                 show_training_session: true,
                 training_session_num_epochs: 2,
@@ -342,6 +345,7 @@ impl Default for ZaoaiApp {
             window_ai: WindowAi {},
             window_training_set: WindowTrainingSet::default(),
             window_training_session: WindowTrainingSession {},
+            nn_structure: NeuralNetwork::new(graph_structure),
         }
     }
 }
@@ -398,7 +402,7 @@ impl ZaoaiApp {
 
                 let name_label = ui.label("Create new NN with layers");
                 if (ui
-                    .text_edit_singleline(&mut self.window_data.nn_structure)
+                    .text_edit_singleline(&mut self.window_data.graph_structure_string)
                     .labelled_by(name_label.id)
                     .lost_focus())
                 {

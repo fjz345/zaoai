@@ -189,28 +189,38 @@ pub enum TrainingState {
 
 // Returns a TestResult
 pub fn test_nn(nn: &mut NeuralNetwork, test_data: &[DataPoint]) -> TestResults {
-    let mut num_correct = 0;
+    if test_data.len() >= 1 {
+        let mut num_correct = 0;
 
-    for i in 0..test_data.len() {
-        let mut datapoint = &test_data[i];
-        let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
-        let result = NeuralNetwork::determine_output_result(&outputs);
-        let result_expected = NeuralNetwork::determine_output_result(&datapoint.expected_outputs);
+        for i in 0..test_data.len() {
+            let mut datapoint = &test_data[i];
+            let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
+            let result = NeuralNetwork::determine_output_result(&outputs);
+            let result_expected =
+                NeuralNetwork::determine_output_result(&datapoint.expected_outputs);
 
-        let is_correct = result.0 == result_expected.0;
-        if (is_correct) {
-            num_correct += 1;
+            let is_correct = result.0 == result_expected.0;
+            if (is_correct) {
+                num_correct += 1;
+            }
+        }
+
+        let avg_cost = nn.calculate_cost(test_data);
+        let test_result = TestResults {
+            num_datapoints: test_data.len() as i32,
+            num_correct: num_correct,
+            accuracy: (num_correct as f32) / (test_data.len() as f32),
+            cost: avg_cost,
+        };
+
+        nn.last_test_results = test_result;
+        test_result
+    } else {
+        TestResults {
+            num_datapoints: 0,
+            num_correct: 0,
+            accuracy: 0.0,
+            cost: 0.0,
         }
     }
-
-    let avg_cost = nn.calculate_cost(test_data);
-    let test_result = TestResults {
-        num_datapoints: test_data.len() as i32,
-        num_correct: num_correct,
-        accuracy: (num_correct as f32) / (test_data.len() as f32),
-        cost: avg_cost,
-    };
-
-    nn.last_test_results = test_result;
-    test_result
 }
