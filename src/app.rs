@@ -158,8 +158,6 @@ pub struct ZaoaiApp {
     window_ai: WindowAi,
     window_training_set: WindowTrainingSet,
     window_training_session: WindowTrainingSession,
-
-    nn_structure: NeuralNetwork,
 }
 
 impl eframe::App for ZaoaiApp {
@@ -345,7 +343,6 @@ impl Default for ZaoaiApp {
             window_ai: WindowAi {},
             window_training_set: WindowTrainingSet::default(),
             window_training_session: WindowTrainingSession {},
-            nn_structure: NeuralNetwork::new(graph_structure),
         }
     }
 }
@@ -373,7 +370,7 @@ impl ZaoaiApp {
     }
 
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
-        if (nn_structure.validate()) {
+        if self.ai.is_none() && nn_structure.validate() {
             self.ai = Some(NeuralNetwork::new(nn_structure));
         }
         self.training_session.set_nn(self.ai.as_ref().unwrap());
