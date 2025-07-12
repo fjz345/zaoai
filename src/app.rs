@@ -153,7 +153,6 @@ pub struct ZaoaiApp {
     training_session: TrainingSession,
     #[serde(skip)]
     training_thread: Option<TrainingThread>,
-    #[serde(skip)]
     window_training_graph: WindowTrainingGraph,
     window_ai: WindowAi,
     window_training_set: WindowTrainingSet,

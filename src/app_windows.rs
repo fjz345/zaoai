@@ -37,11 +37,29 @@ pub struct WindowTrainingGraphCtx<'a> {
     pub(crate) training_thread: &'a Option<TrainingThread>,
 }
 
-#[derive(Default)]
+#[derive(Clone, Serialize, Deserialize)]
+struct SerdePlotPoint {
+    x: f64,
+    y: f64,
+}
+
+impl From<PlotPoint> for SerdePlotPoint {
+    fn from(p: PlotPoint) -> Self {
+        SerdePlotPoint { x: p.x, y: p.y }
+    }
+}
+
+impl From<SerdePlotPoint> for PlotPoint {
+    fn from(p: SerdePlotPoint) -> Self {
+        PlotPoint::new(p.x, p.y)
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
 pub struct WindowTrainingGraph {
-    cached_plot_points_accuracy: Vec<PlotPoint>,
-    cached_plot_points_cost: Vec<PlotPoint>,
-    cached_plot_points_last_loss: Vec<PlotPoint>,
+    cached_plot_points_accuracy: Vec<SerdePlotPoint>,
+    cached_plot_points_cost: Vec<SerdePlotPoint>,
+    cached_plot_points_last_loss: Vec<SerdePlotPoint>,
 }
 
 impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
@@ -57,15 +75,24 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
             let payload_buffer = &state_ctx.training_thread.as_ref().unwrap().payload_buffer;
 
             self.cached_plot_points_accuracy =
-                generate_accuracy_plotpoints_from_training_thread_payloads(&payload_buffer);
+                generate_accuracy_plotpoints_from_training_thread_payloads(&payload_buffer)
+                    .into_iter()
+                    .map(|f| f.into())
+                    .collect();
             self.cached_plot_points_cost =
-                generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer);
+                generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer)
+                    .into_iter()
+                    .map(|f| f.into())
+                    .collect();
             self.cached_plot_points_last_loss =
-                generate_loss_plotpoints_from_training_thread_payloads(&payload_buffer);
+                generate_loss_plotpoints_from_training_thread_payloads(&payload_buffer)
+                    .into_iter()
+                    .map(|f| f.into())
+                    .collect();
 
             // normalize based on first point
             if self.cached_plot_points_last_loss.len() >= 1 {
-                let first_point = self.cached_plot_points_last_loss[0];
+                let first_point: PlotPoint = self.cached_plot_points_last_loss[0].clone().into();
                 self.cached_plot_points_last_loss
                     .iter_mut()
                     .for_each(|p| p.y /= first_point.y);
@@ -75,11 +102,29 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         egui::Window::new("Training Graph").show(ctx, |ui| {
             use crate::app_windows::PlotPoints::Owned;
 
-            let plot_accuracy: PlotPoints = Owned(self.cached_plot_points_accuracy.clone());
+            let plot_accuracy: PlotPoints = Owned(
+                self.cached_plot_points_accuracy
+                    .clone()
+                    .into_iter()
+                    .map(|f| f.into())
+                    .collect(),
+            );
             let line_accuracy = Line::new("Accuracy", plot_accuracy).color(Color32::LIGHT_GREEN);
-            let plot_cost: PlotPoints = Owned(self.cached_plot_points_cost.clone());
+            let plot_cost: PlotPoints = Owned(
+                self.cached_plot_points_cost
+                    .clone()
+                    .into_iter()
+                    .map(|f| f.into())
+                    .collect(),
+            );
             let line_cost = Line::new("Cost", plot_cost).color(Color32::LIGHT_RED);
-            let plot_loss: PlotPoints = Owned(self.cached_plot_points_last_loss.clone());
+            let plot_loss: PlotPoints = Owned(
+                self.cached_plot_points_last_loss
+                    .clone()
+                    .into_iter()
+                    .map(|f| f.into())
+                    .collect(),
+            );
             let line_loss = Line::new("Loss", plot_loss).color(Color32::LIGHT_YELLOW);
 
             // Create the plot once and add multiple lines inside it
