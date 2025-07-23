@@ -199,13 +199,20 @@ impl NeuralNetwork {
 
         let print_enabled = print == Some(true);
 
+        let mut total_cost = 0.0;
         let mut total_loss = 0.0;
         let mut batch_data_outputs = Vec::new();
         for datapoint in batch_data {
             // Todo: make functions forward/backward for simplicity.
             let datapoint_outputs = self.learn_calculate_outputs(datapoint);
             let loss = Self::cross_entropy_loss(&datapoint_outputs, &datapoint.expected_outputs);
+            let mut cost = 0.0;
+            for (i, datapoint_output) in datapoint_outputs.iter().enumerate() {
+                cost += node_cost(*datapoint_output, datapoint.expected_outputs[i]);
+            }
+
             total_loss += loss;
+            total_cost += cost;
 
             batch_data_outputs.push(datapoint_outputs);
         }
@@ -213,7 +220,7 @@ impl NeuralNetwork {
         self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
         self.clear_all_cost_gradients();
 
-        *batch_data_cost = self.calculate_cost(&batch_data[..]);
+        *batch_data_cost = total_cost;
         *batch_data_loss = total_loss;
         // Print cost
         if (print_enabled) {

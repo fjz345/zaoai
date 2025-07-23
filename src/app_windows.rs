@@ -89,14 +89,6 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     .into_iter()
                     .map(|f| f.into())
                     .collect();
-
-            // normalize based on first point
-            if self.cached_plot_points_last_loss.len() >= 1 {
-                let first_point: PlotPoint = self.cached_plot_points_last_loss[0].clone().into();
-                self.cached_plot_points_last_loss
-                    .iter_mut()
-                    .for_each(|p| p.y /= first_point.y);
-            }
         }
 
         egui::Window::new("Training Graph").show(ctx, |ui| {
@@ -109,7 +101,6 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     .map(|f| f.into())
                     .collect(),
             );
-            let line_accuracy = Line::new("Accuracy", plot_accuracy).color(Color32::LIGHT_GREEN);
             let plot_cost: PlotPoints = Owned(
                 self.cached_plot_points_cost
                     .clone()
@@ -117,7 +108,6 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     .map(|f| f.into())
                     .collect(),
             );
-            let line_cost = Line::new("Cost", plot_cost).color(Color32::LIGHT_RED);
             let plot_loss: PlotPoints = Owned(
                 self.cached_plot_points_last_loss
                     .clone()
@@ -125,7 +115,42 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     .map(|f| f.into())
                     .collect(),
             );
+
+            let plot_cost_percent_first =
+                *(plot_cost.points().first()).unwrap_or(&PlotPoint::new(0.0, 1.0));
+            let plot_cost_percent = PlotPoints::new(
+                plot_cost
+                    .points()
+                    .iter()
+                    .map(|f| {
+                        [
+                            f.x,
+                            f.y / plot_cost
+                                .points()
+                                .first()
+                                .unwrap_or(&PlotPoint::new(0.0, 1.0))
+                                .y,
+                        ]
+                    })
+                    .collect(),
+            );
+            let plot_loss_percent_first =
+                *(plot_loss.points().first()).unwrap_or(&PlotPoint::new(0.0, 1.0));
+            let plot_loss_percent = PlotPoints::new(
+                plot_loss
+                    .points()
+                    .iter()
+                    .map(|f| [f.x, f.y / plot_loss_percent_first.y])
+                    .collect(),
+            );
+
+            let line_accuracy = Line::new("Accuracy %", plot_accuracy).color(Color32::LIGHT_GREEN);
+            let line_cost = Line::new("Cost", plot_cost).color(Color32::LIGHT_RED);
             let line_loss = Line::new("Loss", plot_loss).color(Color32::LIGHT_YELLOW);
+            let line_cost_percent =
+                Line::new("Cost %", plot_cost_percent).color(Color32::LIGHT_RED);
+            let line_loss_percent =
+                Line::new("Loss %", plot_loss_percent).color(Color32::LIGHT_YELLOW);
 
             // Create the plot once and add multiple lines inside it
             Self::create_plot_training()
@@ -136,6 +161,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     plot_ui.line(line_accuracy);
                     plot_ui.line(line_cost);
                     plot_ui.line(line_loss);
+                    plot_ui.line(line_cost_percent);
+                    plot_ui.line(line_loss_percent);
                 });
         })
     }
