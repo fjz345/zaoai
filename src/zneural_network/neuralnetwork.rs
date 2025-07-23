@@ -203,7 +203,7 @@ impl NeuralNetwork {
         let mut batch_data_outputs = Vec::new();
         for datapoint in batch_data {
             // Todo: make functions forward/backward for simplicity.
-            let datapoint_outputs = self.update_all_cost_gradients(datapoint);
+            let datapoint_outputs = self.learn_calculate_outputs(datapoint);
             let loss = Self::cross_entropy_loss(&datapoint_outputs, &datapoint.expected_outputs);
             total_loss += loss;
 
@@ -382,132 +382,50 @@ impl NeuralNetwork {
         }
     }
 
-    // Not recommended for use
-    // First implementation
-    // pub fn learn_slow(
-    //     &mut self,
-    //     training_data: &[DataPoint],
-    //     mut num_epochs: usize,
-    //     learn_rate: f32,
-    //     print: Option<bool>,
-    // ) {
-    //     if (training_data.len() <= 0) {
-    //         panic!("Learn DataPoints length was 0");
-    //     }
-
-    //     let print_enabled = print == Some(true);
-
-    //     num_epochs = num_epochs.min((training_data.len() / num_epochs) + 1);
-
-    //     if print_enabled {
-    //         log::info!(
-    //             "Training...Learn Started [{}, {}]",
-    //             training_data.len(),
-    //             num_epochs
-    //         );
-    //     }
-
-    //     let h: f32 = 0.00001;
-
-    //     let mut cur_index: usize = 0;
-    //     let mut epoch_step = (training_data.len() / num_epochs) + 1;
-    //     if epoch_step > training_data.len() {
-    //         epoch_step = training_data.len();
-    //     }
-
-    //     for i in 0..num_epochs {
-    //         if (cur_index + epoch_step >= (training_data.len())) {
-    //             break;
-    //         }
-
-    //         if print_enabled {
-    //             log::info!(
-    //                 "Training...Epoch [{}/{}] @({} - {})",
-    //                 i,
-    //                 num_epochs,
-    //                 cur_index,
-    //                 cur_index + epoch_step
-    //             );
-    //         }
-
-    //         let epoch_data = &training_data[cur_index..(cur_index + epoch_step)];
-
-    //         let original_cost = self.calculate_cost(&epoch_data[..]);
-
-    //         if print_enabled {
-    //             log::info!("Cost: {}", original_cost);
-    //         }
-
-    //         // Calculate cost gradients for layers
-    //         for i in 0..self.layers.len() {
-    //             // Weights
-    //             for in_node in 0..self.layers[i].num_in_nodes {
-    //                 for out_node in 0..self.layers[i].num_out_nodes {
-    //                     self.layers[i].weights[out_node][in_node] += h;
-    //                     let dcost = self.calculate_cost(&epoch_data[..]) - original_cost;
-    //                     self.layers[i].weights[out_node][in_node] -= h;
-    //                     self.layers[i].weights_cost_grads[out_node][in_node] = dcost / h;
-    //                 }
-    //             }
-
-    //             // Biases
-    //             for bias_index in 0..self.layers[i].biases.len() {
-    //                 self.layers[i].biases[bias_index] += h;
-    //                 let dcost = self.calculate_cost(&epoch_data[..]) - original_cost;
-    //                 self.layers[i].biases[bias_index] -= h;
-    //                 self.layers[i].biases_cost_grads[bias_index] = dcost / h;
-    //             }
-    //         }
-
-    //         // Adjust weights & biases
-    //         self.apply_all_cost_gradients(learn_rate);
-    //         self.clear_all_cost_gradients();
-
-    //         cur_index += epoch_step;
-    //     }
-    // }
-
-    // Backpropegation
-    fn update_all_cost_gradients(&mut self, datapoint: &DataPoint) -> Vec<f32> {
-        // Doubt it is the bottleneck, but could reuse a buffer instead of getting a new one each time.
+    pub fn learn_calculate_outputs(&mut self, datapoint: &DataPoint) -> Vec<f32> {
+        // Forward pass
         let mut current_inputs = datapoint.inputs.to_vec();
         for (i, layer) in self.layers.iter_mut().enumerate() {
             current_inputs = layer
                 .calculate_outputs_learn_simd(&mut self.layer_learn_data[i], &mut current_inputs);
         }
-
         let output_inputs = current_inputs;
 
-        // Update for ouput layer
-        let layer_len = self.layers.len();
-        let mut output_layer = &mut self.layers[layer_len - 1];
-        let mut learn_data_output: &mut LayerLearnData = &mut self.layer_learn_data[layer_len - 1];
+        // Backward pass (backpropagation)
+        self.backpropagation(datapoint);
 
+        output_inputs
+    }
+
+    fn backpropagation(&mut self, datapoint: &DataPoint) {
+        let layer_len = self.layers.len();
+
+        // Output layer error & gradients
+        let output_layer = &mut self.layers[layer_len - 1];
+        let learn_data_output = &mut self.layer_learn_data[layer_len - 1];
         output_layer.calculate_output_layer_node_cost_values(
-            &mut learn_data_output,
-            &datapoint.expected_outputs[..],
+            learn_data_output,
+            &datapoint.expected_outputs,
         );
         output_layer.update_cost_gradients_simd(learn_data_output);
 
-        // Update for hidden layers
-        for i in (0..(self.layers.len() - 1)).rev() {
+        // Hidden layers error & gradients, back to front
+        for i in (0..layer_len - 1).rev() {
             let (left, right) = self.layer_learn_data.split_at_mut(i + 1);
             let learn_data_hidden = &mut left[i];
             let learn_data_hidden_next = &right[0];
 
-            let hidden_layer: &Layer = &self.layers[i];
-            let prev_layer = &self.layers[i + 1];
+            let hidden_layer = &self.layers[i];
+            let next_layer = &self.layers[i + 1];
             hidden_layer.calculate_hidden_layer_node_cost_values(
                 learn_data_hidden,
-                prev_layer,
+                next_layer,
                 &learn_data_hidden_next.node_values,
             );
 
             let mut_hidden_layer = &mut self.layers[i];
             mut_hidden_layer.update_cost_gradients_simd(learn_data_hidden);
         }
-
-        output_inputs
     }
 
     fn apply_all_cost_gradients(&mut self, learn_rate: f32) {
