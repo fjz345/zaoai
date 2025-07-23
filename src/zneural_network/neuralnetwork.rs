@@ -151,7 +151,11 @@ impl NeuralNetwork {
         &self.layers
     }
 
-    fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
+    fn cross_entropy_loss(predicted: &[f32], expected: &[f32]) -> f32 {
+        Self::cross_entropy_loss_multiclass(predicted, expected)
+    }
+
+    fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32 {
         // Small epsilon to avoid log(0)
         let epsilon = 1e-12;
 
@@ -166,7 +170,7 @@ impl NeuralNetwork {
             .sum()
     }
 
-    fn cross_entropy_loss(predicted: &[f32], expected: &[f32]) -> f32 {
+    fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
         let epsilon = 1e-12;
 
         predicted
