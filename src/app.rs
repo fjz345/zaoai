@@ -211,7 +211,15 @@ impl eframe::App for ZaoaiApp {
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         match self.state {
+            AppState::Idle | AppState::Training => {}
+            AppState::Startup | AppState::SetupAi | AppState::Testing | AppState::Exit => {
+                log::info!("{}", &self.state)
+            }
+        }
+
+        match self.state {
             AppState::Startup => {
+                log::trace!("{}", &self.state);
                 self.startup(ctx, frame);
                 self.state = AppState::SetupAi;
             }
@@ -388,7 +396,7 @@ impl Default for ZaoaiApp {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, strum_macros::Display)]
 pub enum AppState {
     #[default]
     Startup,
