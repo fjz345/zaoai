@@ -40,6 +40,11 @@ fn relu(in_value: f32) -> f32 {
     in_value.max(0.0)
 }
 
+fn relu_simd(in_value: f32x8) -> f32x8 {
+    // Fastmax?
+    in_value.max(f32x8::splat(0.0))
+}
+
 fn relu_d(in_value: f32) -> f32 {
     if in_value > 0.0 {
         1.0
@@ -50,6 +55,11 @@ fn relu_d(in_value: f32) -> f32 {
 
 pub fn activation_function(in_value: f32) -> f32 {
     relu(in_value)
+    // sigmoid(in_value)
+}
+
+pub fn activation_function_simd(in_value: f32x8) -> f32x8 {
+    relu_simd(in_value)
     // sigmoid(in_value)
 }
 
@@ -268,6 +278,29 @@ impl Layer {
             .collect()
     }
 
+    pub fn apply_activation_simd(input: &[f32]) -> Vec<f32> {
+        const CHUNK_SIZE: usize = 8;
+
+        let mut result = Vec::with_capacity(input.len());
+
+        let chunks = input.chunks_exact(CHUNK_SIZE);
+        let remainder = chunks.remainder();
+
+        for chunk in chunks {
+            let input_vec = f32x8::from(chunk);
+            let activated_vec = activation_function_simd(input_vec);
+
+            let out: [f32; CHUNK_SIZE] = activated_vec.into();
+            result.extend_from_slice(&out);
+        }
+
+        for &x in remainder {
+            result.push(x.max(0.0)); // Or a scalar fallback version of your activation function
+        }
+
+        result
+    }
+
     fn fill_learn_data(&self, learn_data: &mut LayerLearnData, weighted_inputs: &[f32]) {
         assert_eq!(learn_data.weighted_inputs.len(), self.num_out_nodes);
         assert_eq!(learn_data.activation_values.len(), self.num_out_nodes);
@@ -292,13 +325,13 @@ impl Layer {
     pub fn calculate_outputs_simd(&self, inputs: &[f32]) -> Vec<f32> {
         let mut weighted_inputs = vec![0.0; self.num_out_nodes];
         self.compute_weighted_inputs_simd(inputs, &mut weighted_inputs);
-        Self::apply_activation(&weighted_inputs)
+        Self::apply_activation_simd(&weighted_inputs)
     }
 
     pub fn calculate_outputs_simd_rayon(&self, inputs: &[f32]) -> Vec<f32> {
         let mut weighted_inputs = vec![0.0; self.num_out_nodes];
         self.compute_weighted_inputs_simd_rayon(inputs, &mut weighted_inputs);
-        Self::apply_activation(&weighted_inputs)
+        Self::apply_activation_simd(&weighted_inputs)
     }
 
     pub fn calculate_outputs_learn(
