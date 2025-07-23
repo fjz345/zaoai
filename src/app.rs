@@ -213,13 +213,12 @@ impl eframe::App for ZaoaiApp {
         match self.state {
             AppState::Idle | AppState::Training => {}
             AppState::Startup | AppState::SetupAi | AppState::Testing | AppState::Exit => {
-                log::info!("{}", &self.state)
+                log::info!("AppState::{}", &self.state)
             }
         }
 
         match self.state {
             AppState::Startup => {
-                log::trace!("{}", &self.state);
                 self.startup(ctx, frame);
                 self.state = AppState::SetupAi;
             }
@@ -245,10 +244,15 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
 
-                    if (formatted_nn_structure.len() >= 2) {
-                        self.setup_ai(GraphStructure::new(&formatted_nn_structure));
+                    if formatted_nn_structure.len() >= 2 {
+                        let graph = GraphStructure::new(&formatted_nn_structure);
+                        if graph.validate() {
+                            self.setup_ai(graph);
+                        } else {
+                            log::info!("Graph not valid, setup skipped");
+                        }
                     } else {
-                        log::error!("SetupAI failed, formatted_nn_structure.len() < 2");
+                        log::error!("AI might not be initialized correctly, formatted_nn_structure.len() < 2");
                     }
                 }
 
@@ -429,9 +433,8 @@ impl ZaoaiApp {
     }
 
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
-        if self.ai.is_none() && nn_structure.validate() {
-            self.ai = Some(NeuralNetwork::new(nn_structure));
-        }
+        log::info!("setup_ai");
+        self.ai = Some(NeuralNetwork::new(nn_structure));
         self.training_session.set_nn(self.ai.as_ref().unwrap());
         self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
         self.window_data.training_session_batch_size = self.training_session.get_batch_size();

@@ -27,7 +27,7 @@ impl LayerLearnData {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, bincode::Encode, bincode::Decode)]
 pub struct GraphStructure {
     pub input_nodes: usize,
     pub hidden_layers: Vec<usize>, // contais nodes
