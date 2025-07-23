@@ -489,12 +489,9 @@ impl Layer {
     }
 
     pub fn clear_cost_gradient(&mut self) {
-        for node in 0..self.num_out_nodes {
-            self.biases_cost_grads[node] = 0.0;
-
-            for weight in 0..self.num_in_nodes {
-                self.weights_cost_grads[node][weight] = 0.0;
-            }
+        self.biases_cost_grads.fill(0.0);
+        for row in &mut self.weights_cost_grads {
+            row.fill(0.0);
         }
     }
 
