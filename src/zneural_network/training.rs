@@ -169,7 +169,7 @@ impl TrainingSession {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
 pub struct TestResults {
     pub num_datapoints: i32,
     pub num_correct: i32,

@@ -6,6 +6,8 @@
 /mnist
 
 /Cargo.lock
+/NN
+
 
 *.log
 *.svg

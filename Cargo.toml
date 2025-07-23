@@ -33,6 +33,7 @@ egui_extras = "0.31.1"
 pprof = { version="0.15.0", features = ["flamegraph"], optional = true}
 wide = "0.7.33"
 rayon = "1.10.0"
+bincode = "2.0.1"
 
 [features]
 default = ["serde"]

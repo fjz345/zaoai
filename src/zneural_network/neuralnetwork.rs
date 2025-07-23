@@ -7,6 +7,9 @@ use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand_chacha;
 use serde::{Deserialize, Serialize};
+use std::fs::{create_dir_all, File};
+use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
@@ -23,7 +26,7 @@ impl LayerLearnData {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, bincode::Encode, bincode::Decode)]
 pub struct GraphStructure {
     pub input_nodes: usize,
     pub hidden_layers: Vec<usize>, // contais nodes
@@ -95,15 +98,17 @@ impl GraphStructure {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
     pub last_test_results: TestResults,
     layer_learn_data: Vec<LayerLearnData>,
+    version: u8,
 }
 
 impl NeuralNetwork {
+    const VERSION: u8 = 1;
     pub fn new(graph_structure: GraphStructure) -> NeuralNetwork {
         let mut layers: Vec<Layer> = Vec::new();
         let mut prev_out_size = graph_structure.input_nodes;
@@ -137,6 +142,7 @@ impl NeuralNetwork {
             layers,
             last_test_results: last_results,
             layer_learn_data,
+            version: Self::VERSION,
         }
     }
 
@@ -598,4 +604,31 @@ impl NeuralNetwork {
         log::info!("{}", self.to_string());
         log::info!("----------------------------------\n");
     }
+}
+
+const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
+pub fn save_neural_network<P: AsRef<Path>>(nn: &NeuralNetwork, path: P) -> std::io::Result<()> {
+    // Create parent directories if they don't exist
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent)?;
+    }
+
+    let encoded: Vec<u8> = bincode::encode_to_vec(&nn, BINCODE_CONFIG).unwrap();
+    let mut file = File::create(path)?;
+    file.write(&encoded)?;
+    Ok(())
+}
+
+pub fn load_neural_network(path: &str) -> std::io::Result<NeuralNetwork> {
+    let mut file = File::open(path)?;
+    let mut buffer = Vec::new();
+    file.read_to_end(&mut buffer)?;
+
+    let (decoded, len): (NeuralNetwork, usize) =
+        bincode::decode_from_slice(&buffer[..], BINCODE_CONFIG)
+            .expect("load_neural_network failed, decoding failed.");
+
+    assert_eq!(len, buffer.len()); // read all bytes
+    Ok(decoded)
 }

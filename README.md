@@ -30,7 +30,6 @@ Current plan is to utilize sliced ffts to train from the video with two output l
     * Gather training data
 
 ## AI:
-    * Save/load networks
     * Dropout neurons (Prune network during training)
     * Cross-validation
     * Eigen vectors? (reduce amount of input tensors)

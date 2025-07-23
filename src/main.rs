@@ -20,6 +20,7 @@
 mod app;
 mod app_windows;
 mod egui_ext;
+mod error;
 mod filesystem;
 mod graphviz;
 mod graphviz_examples;
@@ -45,7 +46,6 @@ use crate::zneural_network::*;
 use eframe::egui;
 use soloud::*;
 use std::env;
-use std::error;
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -54,7 +54,7 @@ use std::process::Command;
 static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 
 // Change the alias to `Box<dyn error::Error>`.
-type Result<T> = std::result::Result<T, Box<dyn error::Error>>;
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
     env::set_var("RUST_BACKTRACE", "1");

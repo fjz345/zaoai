@@ -1,6 +1,7 @@
 // hide console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use crate::{error::Result, zneural_network::neuralnetwork::load_neural_network};
 use eframe::{
     egui::{self, style::Widgets, InnerResponse, RawInput, Response, Slider},
     epaint::{Color32, Pos2, Rect},
@@ -12,7 +13,13 @@ use graphviz_rust::{dot_structures::Graph, print};
 use ndarray::{Array2, ArrayBase, Dim, OwnedRepr};
 use serde::{Deserialize, Serialize};
 use std::{
-    ops::RangeInclusive, str::FromStr, sync::mpsc::Receiver, thread::JoinHandle, time::Duration,
+    fs::File,
+    io::{self, Read, Write},
+    ops::RangeInclusive,
+    str::FromStr,
+    sync::mpsc::Receiver,
+    thread::JoinHandle,
+    time::Duration,
 };
 use symphonia::core::conv::IntoSample;
 
@@ -146,7 +153,9 @@ impl TrainingDataset {
 pub struct ZaoaiApp {
     #[serde(skip)]
     state: AppState,
+    #[serde(skip)] // Loaded separately
     ai: Option<NeuralNetwork>,
+    last_ai_filepath: Option<String>,
     window_data: MenuWindowData,
     #[serde(skip)]
     training_dataset: TrainingDataset,
@@ -162,14 +171,42 @@ pub struct ZaoaiApp {
 impl eframe::App for ZaoaiApp {
     #[cfg(not(feature = "linux-profile"))]
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        log::info!("SAVING...");
+        use crate::zneural_network::neuralnetwork::save_neural_network;
+        use std::path::Path;
 
-        #[cfg(feature = "serde")]
-        if let Ok(json) = serde_json::to_string(self) {
-            log::debug!("SAVED with state: {:?}", self.state);
-            storage.set_string(eframe::APP_KEY, json);
+        const NUM_SAVING: usize = 2;
+        log::info!("[0/{NUM_SAVING}] Save Initiated");
+
+        if let Some(nn) = &self.ai {
+            const DEFAULT_NN_FILEPATH: &'static str = "NN/save.znn";
+            let save_nn_filepath = DEFAULT_NN_FILEPATH;
+            log::info!("[1/{NUM_SAVING}] Saving neural network: {save_nn_filepath}");
+            save_neural_network(nn, save_nn_filepath);
+            self.last_ai_filepath = Some(save_nn_filepath.to_owned());
+        } else {
+            log::info!("[1/{NUM_SAVING}] Neural network not saved, not set");
         }
-        log::info!("SAVED!");
+
+        if cfg!(feature = "serde") {
+            #[cfg(feature = "serde")]
+            {
+                let json_result = serde_json::to_string(self);
+                match json_result {
+                    Ok(json) => {
+                        log::info!("[2/{NUM_SAVING}] Saving ZaoaiApp Json to persistant storage");
+                        storage.set_string(eframe::APP_KEY, json);
+                    }
+                    Err(e) => {
+                        log::debug!("[2/{NUM_SAVING}] Persistant storage failed");
+                        log::debug!("{e}");
+                    }
+                }
+            }
+        } else {
+            log::info!("[2/{NUM_SAVING}] Persistant storage not saved (not enabled)");
+        }
+
+        log::info!("[{NUM_SAVING}/{NUM_SAVING}] Save Complete!");
     }
 
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
@@ -179,30 +216,34 @@ impl eframe::App for ZaoaiApp {
                 self.state = AppState::SetupAi;
             }
             AppState::SetupAi => {
-                let mut formatted_nn_structure = self
-                    .window_data
-                    .graph_structure_string
-                    .split(|c| c == ',' || c == ' ')
-                    .collect::<Vec<_>>()
-                    .into_iter()
-                    .map(|str| -> usize {
-                        let ret = FromStr::from_str(str).unwrap_or(0);
-                        ret
-                    })
-                    .collect::<Vec<_>>();
+                // Todo: make a function to format nn_structure
+                {
+                    let mut formatted_nn_structure = self
+                        .window_data
+                        .graph_structure_string
+                        .split(|c| c == ',' || c == ' ')
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .map(|str| -> usize {
+                            let ret = FromStr::from_str(str).unwrap_or(0);
+                            ret
+                        })
+                        .collect::<Vec<_>>();
 
-                for i in (0..formatted_nn_structure.len()).rev() {
-                    let nr = formatted_nn_structure[i];
-                    if nr == 0 {
-                        formatted_nn_structure.remove(i);
+                    for i in (0..formatted_nn_structure.len()).rev() {
+                        let nr = formatted_nn_structure[i];
+                        if nr == 0 {
+                            formatted_nn_structure.remove(i);
+                        }
+                    }
+
+                    if (formatted_nn_structure.len() >= 2) {
+                        self.setup_ai(GraphStructure::new(&formatted_nn_structure));
+                    } else {
+                        log::error!("SetupAI failed, formatted_nn_structure.len() < 2");
                     }
                 }
 
-                if (formatted_nn_structure.len() >= 2) {
-                    self.setup_ai(GraphStructure::new(&formatted_nn_structure));
-                } else {
-                    log::error!("SetupAI failed, formatted_nn_structure.len() < 2");
-                }
                 self.state = AppState::Idle;
             }
             AppState::Idle => {
@@ -342,6 +383,7 @@ impl Default for ZaoaiApp {
             window_ai: WindowAi {},
             window_training_set: WindowTrainingSet::default(),
             window_training_session: WindowTrainingSession {},
+            last_ai_filepath: None,
         }
     }
 }
@@ -362,7 +404,17 @@ impl ZaoaiApp {
         Self::default()
     }
 
+    // Should only be called once per application launch
     fn startup(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Try load NN from disk
+        if let Some(last_ai_filepath) = &self.last_ai_filepath {
+            log::info!("Loading neural network from: {last_ai_filepath}...");
+            match load_neural_network(&last_ai_filepath) {
+                Ok(r) => log::info!("Loaded neural network from: {last_ai_filepath}"),
+                Err(e) => log::error!("{e}"),
+            }
+        }
+
         let mut visuals: egui::Visuals = egui::Visuals::dark();
         // visuals.panel_fill = Color32::from_rgba_unmultiplied(24, 36, 41, 255);
         ctx.set_visuals(visuals);
