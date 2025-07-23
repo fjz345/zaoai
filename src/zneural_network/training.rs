@@ -205,7 +205,7 @@ pub fn test_nn(nn: &mut NeuralNetwork, test_data: &[DataPoint]) -> TestResults {
             }
         }
 
-        let avg_cost = nn.calculate_cost(test_data);
+        let avg_cost = nn.calculate_costs(test_data);
         let test_result = TestResults {
             num_datapoints: test_data.len() as i32,
             num_correct: num_correct,

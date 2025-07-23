@@ -14,6 +14,7 @@ use std::sync::mpsc::Receiver;
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
 use symphonia::core::util::clamp;
+use wide::f32x8;
 
 impl LayerLearnData {
     fn new(layer: &Layer) -> LayerLearnData {
@@ -365,88 +366,89 @@ impl NeuralNetwork {
     }
 
     // Not recommended for use
-    pub fn learn_slow(
-        &mut self,
-        training_data: &[DataPoint],
-        mut num_epochs: usize,
-        learn_rate: f32,
-        print: Option<bool>,
-    ) {
-        if (training_data.len() <= 0) {
-            panic!("Learn DataPoints length was 0");
-        }
+    // First implementation
+    // pub fn learn_slow(
+    //     &mut self,
+    //     training_data: &[DataPoint],
+    //     mut num_epochs: usize,
+    //     learn_rate: f32,
+    //     print: Option<bool>,
+    // ) {
+    //     if (training_data.len() <= 0) {
+    //         panic!("Learn DataPoints length was 0");
+    //     }
 
-        let print_enabled = print == Some(true);
+    //     let print_enabled = print == Some(true);
 
-        num_epochs = num_epochs.min((training_data.len() / num_epochs) + 1);
+    //     num_epochs = num_epochs.min((training_data.len() / num_epochs) + 1);
 
-        if print_enabled {
-            log::info!(
-                "Training...Learn Started [{}, {}]",
-                training_data.len(),
-                num_epochs
-            );
-        }
+    //     if print_enabled {
+    //         log::info!(
+    //             "Training...Learn Started [{}, {}]",
+    //             training_data.len(),
+    //             num_epochs
+    //         );
+    //     }
 
-        let h: f32 = 0.00001;
+    //     let h: f32 = 0.00001;
 
-        let mut cur_index: usize = 0;
-        let mut epoch_step = (training_data.len() / num_epochs) + 1;
-        if epoch_step > training_data.len() {
-            epoch_step = training_data.len();
-        }
+    //     let mut cur_index: usize = 0;
+    //     let mut epoch_step = (training_data.len() / num_epochs) + 1;
+    //     if epoch_step > training_data.len() {
+    //         epoch_step = training_data.len();
+    //     }
 
-        for i in 0..num_epochs {
-            if (cur_index + epoch_step >= (training_data.len())) {
-                break;
-            }
+    //     for i in 0..num_epochs {
+    //         if (cur_index + epoch_step >= (training_data.len())) {
+    //             break;
+    //         }
 
-            if print_enabled {
-                log::info!(
-                    "Training...Epoch [{}/{}] @({} - {})",
-                    i,
-                    num_epochs,
-                    cur_index,
-                    cur_index + epoch_step
-                );
-            }
+    //         if print_enabled {
+    //             log::info!(
+    //                 "Training...Epoch [{}/{}] @({} - {})",
+    //                 i,
+    //                 num_epochs,
+    //                 cur_index,
+    //                 cur_index + epoch_step
+    //             );
+    //         }
 
-            let epoch_data = &training_data[cur_index..(cur_index + epoch_step)];
+    //         let epoch_data = &training_data[cur_index..(cur_index + epoch_step)];
 
-            let original_cost = self.calculate_cost(&epoch_data[..]);
+    //         let original_cost = self.calculate_cost(&epoch_data[..]);
 
-            if print_enabled {
-                log::info!("Cost: {}", original_cost);
-            }
+    //         if print_enabled {
+    //             log::info!("Cost: {}", original_cost);
+    //         }
 
-            // Calculate cost gradients for layers
-            for i in 0..self.layers.len() {
-                // Weights
-                for in_node in 0..self.layers[i].num_in_nodes {
-                    for out_node in 0..self.layers[i].num_out_nodes {
-                        self.layers[i].weights[out_node][in_node] += h;
-                        let dcost = self.calculate_cost(&epoch_data[..]) - original_cost;
-                        self.layers[i].weights[out_node][in_node] -= h;
-                        self.layers[i].weights_cost_grads[out_node][in_node] = dcost / h;
-                    }
-                }
+    //         // Calculate cost gradients for layers
+    //         for i in 0..self.layers.len() {
+    //             // Weights
+    //             for in_node in 0..self.layers[i].num_in_nodes {
+    //                 for out_node in 0..self.layers[i].num_out_nodes {
+    //                     self.layers[i].weights[out_node][in_node] += h;
+    //                     let dcost = self.calculate_cost(&epoch_data[..]) - original_cost;
+    //                     self.layers[i].weights[out_node][in_node] -= h;
+    //                     self.layers[i].weights_cost_grads[out_node][in_node] = dcost / h;
+    //                 }
+    //             }
 
-                // Biases
-                for bias_index in 0..self.layers[i].biases.len() {
-                    self.layers[i].biases[bias_index] += h;
-                    let dcost = self.calculate_cost(&epoch_data[..]) - original_cost;
-                    self.layers[i].biases[bias_index] -= h;
-                    self.layers[i].biases_cost_grads[bias_index] = dcost / h;
-                }
-            }
+    //             // Biases
+    //             for bias_index in 0..self.layers[i].biases.len() {
+    //                 self.layers[i].biases[bias_index] += h;
+    //                 let dcost = self.calculate_cost(&epoch_data[..]) - original_cost;
+    //                 self.layers[i].biases[bias_index] -= h;
+    //                 self.layers[i].biases_cost_grads[bias_index] = dcost / h;
+    //             }
+    //         }
 
-            // Adjust weights & biases
-            self.apply_all_cost_gradients(learn_rate);
-            self.clear_all_cost_gradients();
+    //         // Adjust weights & biases
+    //         self.apply_all_cost_gradients(learn_rate);
+    //         self.clear_all_cost_gradients();
 
-            cur_index += epoch_step;
-        }
-    }
+    //         cur_index += epoch_step;
+    //     }
+    // }
 
     // Backpropegation
     fn update_all_cost_gradients(&mut self, datapoint: &DataPoint) -> Vec<f32> {
@@ -512,10 +514,10 @@ impl NeuralNetwork {
         current_inputs
     }
 
-    pub fn calculate_outputs_softmax(&mut self, inputs: &[f32]) -> Vec<f32> {
-        let mut current_inputs = self.calculate_outputs(inputs);
-        softmax(&current_inputs)
-    }
+    // pub fn calculate_outputs_softmax(&mut self, inputs: &[f32]) -> Vec<f32> {
+    //     let mut current_inputs = self.calculate_outputs(inputs);
+    //     softmax(&current_inputs)
+    // }
 
     // returns index of max value, max value
     pub fn determine_output_result(inputs: &[f32]) -> (usize, f32) {
@@ -550,17 +552,54 @@ impl NeuralNetwork {
         cost
     }
 
-    pub fn calculate_cost(&self, data: &[DataPoint]) -> f32 {
+    pub fn calculate_costs(&self, data: &[DataPoint]) -> f32 {
         if data.len() <= 0 {
             panic!("Input data was len: {}", data.len());
         }
 
+        self.calculate_cost_simd(data)
+    }
+
+    fn calculate_cost(&self, data: &[DataPoint]) -> f32 {
         let mut cost: f32 = 0.0;
         for datapoint in &data[..] {
             cost += self.calculate_cost_datapoint(datapoint);
         }
 
         cost / (data.len() as f32)
+    }
+
+    fn calculate_cost_simd(&self, data: &[DataPoint]) -> f32 {
+        let mut total_cost = 0.0;
+        let output_layer = self.layers.last().unwrap();
+        let num_outputs = output_layer.num_out_nodes;
+
+        for datapoint in data {
+            let output = self.calculate_outputs(&datapoint.inputs);
+
+            let mut i = 0;
+            let mut sum = f32x8::splat(0.0);
+            while i + 8 <= num_outputs {
+                let pred = f32x8::from(&output[i..i + 8]);
+                let expected = f32x8::from(&datapoint.expected_outputs[i..i + 8]);
+                let delta = pred - expected;
+                sum += delta * delta;
+                i += 8;
+            }
+
+            // Horizontal sum for SIMD part
+            let mut cost = sum.reduce_add();
+
+            // Tail values (non-multiple of 8)
+            while i < num_outputs {
+                cost += node_cost(output[i], datapoint.expected_outputs[i]);
+                i += 1;
+            }
+
+            total_cost += cost;
+        }
+
+        total_cost / (data.len() as f32)
     }
 
     pub fn validate(&self) -> bool {
