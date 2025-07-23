@@ -145,8 +145,30 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
             );
 
             let line_accuracy = Line::new("Accuracy %", plot_accuracy).color(Color32::LIGHT_GREEN);
-            let line_cost = Line::new("Cost", plot_cost).color(Color32::LIGHT_RED);
-            let line_loss = Line::new("Loss", plot_loss).color(Color32::LIGHT_YELLOW);
+            let line_cost = Line::new(
+                format!(
+                    "Cost {:.0}",
+                    (*plot_cost
+                        .points()
+                        .last()
+                        .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
+                    .y
+                ),
+                plot_cost,
+            )
+            .color(Color32::LIGHT_RED);
+            let line_loss = Line::new(
+                format!(
+                    "Loss {:.0}",
+                    (*plot_loss
+                        .points()
+                        .last()
+                        .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
+                    .y
+                ),
+                plot_loss,
+            )
+            .color(Color32::LIGHT_YELLOW);
             let line_cost_percent =
                 Line::new("Cost %", plot_cost_percent).color(Color32::LIGHT_RED);
             let line_loss_percent =
