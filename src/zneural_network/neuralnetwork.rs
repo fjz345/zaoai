@@ -151,7 +151,7 @@ impl NeuralNetwork {
         &self.layers
     }
 
-    fn cross_entropy_loss(predicted: &[f32], expected: &[f32]) -> f32 {
+    fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
         // Small epsilon to avoid log(0)
         let epsilon = 1e-12;
 
@@ -162,6 +162,19 @@ impl NeuralNetwork {
                 // Clamp p to avoid log(0)
                 let p_clamped = p.max(epsilon).min(1.0 - epsilon);
                 -e * p_clamped.ln()
+            })
+            .sum()
+    }
+
+    fn cross_entropy_loss(predicted: &[f32], expected: &[f32]) -> f32 {
+        let epsilon = 1e-12;
+
+        predicted
+            .iter()
+            .zip(expected.iter())
+            .map(|(p, e)| {
+                let p_clamped = p.max(epsilon).min(1.0 - epsilon);
+                -(e * p_clamped.ln() + (1.0 - e) * (1.0 - p_clamped).ln())
             })
             .sum()
     }
