@@ -85,7 +85,7 @@ impl eframe::App for ZaoaiApp {
         use crate::zneural_network::neuralnetwork::save_neural_network;
         use std::path::Path;
 
-        const NUM_SAVING: usize = 2;
+        const NUM_SAVING: usize = 3;
         log::info!("[0/{NUM_SAVING}] Save Initiated");
 
         if let Some(nn) = &self.ai {
