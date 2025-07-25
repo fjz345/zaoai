@@ -1,11 +1,13 @@
 use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc};
 
 use crate::{
-    app::{AppState, TrainingDataset},
+    app::AppState,
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
-        datapoint::{create_2x2_test_datapoints, create_test_spectogram, DataPoint},
+        datapoint::{
+            create_2x2_test_datapoints, create_test_spectogram, DataPoint, TrainingDataset,
+        },
         neuralnetwork::NeuralNetwork,
         thread::{TrainingThread, TrainingThreadPayload},
         training::{test_nn, TrainingSession, TrainingState},
