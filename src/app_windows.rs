@@ -6,7 +6,8 @@ use crate::{
     mnist::get_mnist,
     zneural_network::{
         datapoint::{
-            create_2x2_test_datapoints, create_test_spectogram, DataPoint, TrainingDataset,
+            create_2x2_test_datapoints, create_test_spectogram, DataPoint, TrainingData,
+            TrainingDataset,
         },
         neuralnetwork::NeuralNetwork,
         thread::{TrainingThread, TrainingThreadPayload},
@@ -250,7 +251,7 @@ impl WindowTrainingGraph {
 
 pub struct WindowAiCtx<'a> {
     pub ai: &'a mut Option<NeuralNetwork>,
-    pub test_button_training_dataset: &'a Option<&'a TrainingDataset>,
+    pub test_button_training_data: &'a Option<&'a TrainingData>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -269,15 +270,15 @@ impl<'a> DrawableWindow<'a> for WindowAi {
             if let Some(ai) = &mut state_ctx.ai {
                 ui.label(ai.to_string());
 
-                let sense = match state_ctx.test_button_training_dataset {
+                let sense = match state_ctx.test_button_training_data {
                     Some(_) => Sense::click(),
                     None => Sense::empty(),
                 };
                 let test_button = Button::new("Test").sense(sense);
                 if ui.add(test_button).clicked() {
-                    if let Some(training_dataset) = &state_ctx.test_button_training_dataset {
-                        if training_dataset.test_split().len() >= 1 {
-                            test_nn(ai, &training_dataset.test_split());
+                    if let Some(training_data) = state_ctx.test_button_training_data {
+                        if training_data.test_split().len() >= 1 {
+                            test_nn(ai, &training_data.test_split());
                         } else {
                             log::error!(
                                 "Could not start test, training data training len was empty"
@@ -301,7 +302,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
 impl WindowAi {}
 
 pub struct WindowTrainingSetCtx<'a> {
-    pub training_dataset: &'a mut TrainingDataset, // Probably should store on heap to avoid copy, not an issue for now
+    pub training_data: &'a mut TrainingData, // Probably should store on heap to avoid copy, not an issue for now
 }
 
 #[derive(Serialize, Deserialize)]
@@ -335,31 +336,30 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     &mut self.ui_training_dataset_split_thresholds_1,
                     RangeInclusive::new(0.0, 1.0),
                 ));
-                state_ctx.training_dataset.thresholds[0] = self.ui_training_dataset_split_thresholds_0;
-                state_ctx.training_dataset.thresholds[1] = self.ui_training_dataset_split_thresholds_1;
+                state_ctx.training_data.set_thresholds(self.ui_training_dataset_split_thresholds_0, self.ui_training_dataset_split_thresholds_1);
 
                 ui.heading("Current Dataset");
                 ui.label(format!("Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
-                state_ctx.training_dataset.training_split().len(),
-                100.0 * state_ctx.training_dataset.thresholds[0],
-                state_ctx.training_dataset.validation_split().len(),
-                100.0 * (state_ctx.training_dataset.thresholds[1] - state_ctx.training_dataset.thresholds[0]),
-                state_ctx.training_dataset.test_split().len(),
-                100.0 * (1.0 - state_ctx.training_dataset.thresholds[1]),
-                state_ctx.training_dataset.full_dataset.len(),
-                (state_ctx.training_dataset.training_split().len()
-                    + state_ctx.training_dataset.validation_split().len()
-                    + state_ctx.training_dataset.test_split().len()) as f64
-                    / state_ctx.training_dataset.full_dataset.len().max(1) as f64,
+                state_ctx.training_data.training_split().len(),
+                100.0 * state_ctx.training_data.get_thresholds()[0],
+                state_ctx.training_data.validation_split().len(),
+                100.0 * (state_ctx.training_data.get_thresholds()[1] - state_ctx.training_data.get_thresholds()[0]),
+                state_ctx.training_data.test_split().len(),
+                100.0 * (1.0 - state_ctx.training_data.get_thresholds()[1]),
+                state_ctx.training_data.len(),
+                (state_ctx.training_data.training_split().len()
+                    + state_ctx.training_data.validation_split().len()
+                    + state_ctx.training_data.test_split().len()) as f64
+                    / state_ctx.training_data.len().max(1) as f64,
                 ));
 
-                ui.label(format!("Dimensions: ({}, {})", state_ctx.training_dataset.get_dimensions().0, state_ctx.training_dataset.get_dimensions().1));
+                ui.label(format!("Dimensions: ({}, {})", state_ctx.training_data.get_dimensions().0, state_ctx.training_data.get_dimensions().1));
                 if ui.button("Load [2, 2] test dataset").clicked()
                 {
                     let dataset = create_2x2_test_datapoints(0, 100000 as i32);
-                    *state_ctx.training_dataset = TrainingDataset::new(&dataset);
-                    self.ui_training_dataset_split_thresholds_0 = state_ctx.training_dataset.get_thresholds()[0];
-                    self.ui_training_dataset_split_thresholds_1 = state_ctx.training_dataset.get_thresholds()[1];
+                    *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
+                    self.ui_training_dataset_split_thresholds_0 = state_ctx.training_data.get_thresholds()[0];
+                    self.ui_training_dataset_split_thresholds_1 = state_ctx.training_data.get_thresholds()[1];
                 }
                 if ui.button("Load [784, 10] MNIST dataset").clicked()
                 {
@@ -398,9 +398,9 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                         DataPoint { inputs, expected_outputs }
                     })
                     .collect();
-                    *state_ctx.training_dataset = TrainingDataset::new_from_splits(&dataset_train, &vec![], &dataset_test);
-                    self.ui_training_dataset_split_thresholds_0 = state_ctx.training_dataset.get_thresholds()[0];
-                    self.ui_training_dataset_split_thresholds_1 = state_ctx.training_dataset.get_thresholds()[1];
+                    *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new_from_splits(&dataset_train, &vec![], &dataset_test));
+                    self.ui_training_dataset_split_thresholds_0 = state_ctx.training_data.get_thresholds()[0];
+                    self.ui_training_dataset_split_thresholds_1 = state_ctx.training_data.get_thresholds()[1];
                 }
                 const SPECTOGRAM_WIDTH: usize = 512;
                 const SPECTOGRAM_HEIGHT: usize = 512;
@@ -408,9 +408,17 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 {
                     let dataset_anime = create_test_spectogram(&PathBuf::from("test_files/test0.mkv"));
                     let dataset: Vec<_> = dataset_anime.into_iter().map(|a|a.into_data_point(SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)).collect();
-                    *state_ctx.training_dataset = TrainingDataset::new(&dataset);
-                    state_ctx.training_dataset.thresholds[0] = 1.0;
-                    state_ctx.training_dataset.thresholds[1] = 1.0;
+                    *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
+                    state_ctx.training_data.set_thresholds(1.0, 1.0);
+                }
+
+
+                if ui.button(format!("Load [{}, {}] ZaoaiLabels", 1337, 2)).clicked()
+                {
+                    let dataset_anime = create_test_spectogram(&PathBuf::from("test_files/test0.mkv"));
+                    let dataset: Vec<_> = dataset_anime.into_iter().map(|a|a.into_data_point(SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)).collect();
+                    *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
+                    state_ctx.training_data.set_thresholds(1.0, 1.0);
                 }
             })
     }

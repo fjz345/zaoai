@@ -44,8 +44,9 @@ impl TrainingThread {
             if nn_option.is_some() {
                 let mut nn: NeuralNetwork = nn_option.unwrap();
 
+                let training_data_vec = training_data.training_split();
                 nn.learn(
-                    &training_data[..],
+                    &training_data_vec[..],
                     num_epochs,
                     batch_size,
                     learn_rate,

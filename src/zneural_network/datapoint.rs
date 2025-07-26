@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, usize};
 
 use crate::{
     neuralnetwork::*,
@@ -126,9 +126,111 @@ pub fn split_datapoints(
     datapoints[validadtion_data_end..test_data_end].clone_into(out_test_datapoints);
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum TrainingData {
     Physical(TrainingDataset),
     Virtual(VirtualTrainingDataset), // indirect Training data
+}
+
+impl TrainingData {
+    pub fn get_thresholds(&self) -> [f64; 2] {
+        match self {
+            TrainingData::Physical(training_dataset) => training_dataset.thresholds,
+            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset.thresholds,
+        }
+    }
+    pub fn set_thresholds(&mut self, t0: f64, t1: f64) {
+        match self {
+            TrainingData::Physical(training_dataset) => training_dataset.thresholds = [t0, t1],
+            TrainingData::Virtual(virtual_training_dataset) => {
+                virtual_training_dataset.thresholds = [t0, t1]
+            }
+        }
+    }
+    pub fn get_dimensions(&self) -> (usize, usize) {
+        match self {
+            TrainingData::Physical(training_dataset) => training_dataset.get_dimensions(),
+            TrainingData::Virtual(virtual_training_dataset) => {
+                virtual_training_dataset.get_dimensions()
+            }
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        let len = match self {
+            TrainingData::Physical(training_dataset) => training_dataset.full_dataset.len(),
+            TrainingData::Virtual(virtual_training_dataset) => {
+                virtual_training_dataset.virtual_dataset.len()
+            }
+        };
+
+        assert_eq!(
+            len,
+            self.training_split_len() + self.validation_split_len() + self.test_split_len()
+        );
+        len
+    }
+
+    pub fn training_split(&self) -> Vec<DataPoint> {
+        match self {
+            TrainingData::Physical(training_dataset) => training_dataset.training_split().to_vec(),
+            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset
+                .training_batch_iter(usize::MAX)
+                .flatten()
+                .collect(),
+        }
+    }
+
+    pub fn validation_split(&self) -> Vec<DataPoint> {
+        match self {
+            TrainingData::Physical(training_dataset) => {
+                training_dataset.validation_split().to_vec()
+            }
+            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset
+                .validation_batch_iter(usize::MAX)
+                .flatten()
+                .collect(),
+        }
+    }
+
+    pub fn test_split(&self) -> Vec<DataPoint> {
+        match self {
+            TrainingData::Physical(training_dataset) => training_dataset.test_split().to_vec(),
+            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset
+                .test_batch_iter(usize::MAX)
+                .flatten()
+                .collect(),
+        }
+    }
+
+    pub fn training_split_len(&self) -> usize {
+        match self {
+            TrainingData::Physical(training_dataset) => training_dataset.training_split().len(),
+            TrainingData::Virtual(virtual_training_dataset) => {
+                virtual_training_dataset.training_len()
+            }
+        }
+    }
+    pub fn validation_split_len(&self) -> usize {
+        match self {
+            TrainingData::Physical(training_dataset) => training_dataset.validation_split().len(),
+            TrainingData::Virtual(virtual_training_dataset) => {
+                virtual_training_dataset.validation_len()
+            }
+        }
+    }
+    pub fn test_split_len(&self) -> usize {
+        match self {
+            TrainingData::Physical(training_dataset) => training_dataset.test_split().len(),
+            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset.test_len(),
+        }
+    }
+}
+
+impl Default for TrainingData {
+    fn default() -> Self {
+        TrainingData::Physical(TrainingDataset::default())
+    }
 }
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
@@ -177,42 +279,78 @@ fn zaoai_label_to_datapoint(label: &ZaoaiLabel) -> DataPoint {
 }
 
 impl VirtualTrainingDataset {
-    pub fn training_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
-        let traning_data_end: usize =
-            (self.thresholds[0] * (self.virtual_dataset.len() as f64)) as usize;
+    // Returns the number of (in, out) nodes needed in layers
+    pub fn get_dimensions(&self) -> (usize, usize) {
+        if self.virtual_dataset.len() >= 1 {
+            const SPECTOGRAM_WIDTH: usize = 512;
+            const SPECTOGRAM_HEIGHT: usize = 512;
 
-        VirtualTrainingBatchIter {
-            dataset: self,
-            batch_size,
-            index: 0,
-            end: traning_data_end,
+            (SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)
+        } else {
+            (0, 0)
         }
     }
 
-    pub fn validation_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
+    fn get_training_start_end(&self) -> (usize, usize) {
+        let traning_data_end: usize =
+            (self.thresholds[0] * (self.virtual_dataset.len() as f64)) as usize;
+
+        (0, traning_data_end)
+    }
+    fn get_validation_start_end(&self) -> (usize, usize) {
         let traning_data_end: usize =
             (self.thresholds[0] * (self.virtual_dataset.len() as f64)) as usize;
         let validadtion_data_end: usize =
             (self.thresholds[1] * (self.virtual_dataset.len() as f64)) as usize;
 
-        VirtualTrainingBatchIter {
-            dataset: self,
-            batch_size,
-            index: validadtion_data_end,
-            end: traning_data_end,
-        }
+        (traning_data_end, validadtion_data_end)
     }
-
-    pub fn test_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
+    fn get_test_start_end(&self) -> (usize, usize) {
         let validadtion_data_end: usize =
             (self.thresholds[1] * (self.virtual_dataset.len() as f64)) as usize;
         let test_data_end: usize = self.virtual_dataset.len();
 
+        (validadtion_data_end, test_data_end)
+    }
+
+    pub fn training_len(&self) -> usize {
+        let (start, end) = self.get_training_start_end();
+        end - start
+    }
+    pub fn validation_len(&self) -> usize {
+        let (start, end) = self.get_validation_start_end();
+        end - start
+    }
+    pub fn test_len(&self) -> usize {
+        let (start, end) = self.get_test_start_end();
+        end - start
+    }
+
+    pub fn training_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
+        let (data_start, data_end) = self.get_training_start_end();
         VirtualTrainingBatchIter {
             dataset: self,
             batch_size,
-            index: validadtion_data_end,
-            end: test_data_end,
+            index: data_start,
+            end: data_end,
+        }
+    }
+    pub fn validation_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
+        let (data_start, data_end) = self.get_validation_start_end();
+        VirtualTrainingBatchIter {
+            dataset: self,
+            batch_size,
+            index: data_start,
+            end: data_end,
+        }
+    }
+    pub fn test_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
+        let (data_start, data_end) = self.get_test_start_end();
+        VirtualTrainingBatchIter {
+            dataset: self,
+            batch_size,
+            index: data_start,
+            end: data_end,
         }
     }
 }

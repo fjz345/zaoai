@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::zneural_network::{datapoint::DataPoint, neuralnetwork::NeuralNetwork};
+use crate::zneural_network::{
+    datapoint::{DataPoint, TrainingData},
+    neuralnetwork::NeuralNetwork,
+};
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum DatasetUsage {
@@ -93,7 +96,7 @@ pub struct TrainingSession {
     pub num_epochs: usize,
     pub batch_size: usize,
     pub learn_rate: f32,
-    pub training_data: Vec<DataPoint>,
+    pub training_data: TrainingData,
 }
 
 impl Default for TrainingSession {
@@ -104,7 +107,7 @@ impl Default for TrainingSession {
             num_epochs: 2,
             batch_size: 1000,
             learn_rate: 0.2,
-            training_data: Vec::new(),
+            training_data: TrainingData::default(),
         }
     }
 }
@@ -112,7 +115,7 @@ impl Default for TrainingSession {
 impl TrainingSession {
     pub fn new(
         nn: Option<&NeuralNetwork>,
-        training_data: &[DataPoint],
+        training_data: TrainingData,
         num_epochs: usize,
         batch_size: usize,
         learn_rate: f32,
@@ -128,7 +131,7 @@ impl TrainingSession {
             num_epochs: num_epochs,
             batch_size: batch_size,
             learn_rate: learn_rate,
-            training_data: training_data.to_vec(),
+            training_data: training_data,
         }
     }
 
@@ -156,13 +159,14 @@ impl TrainingSession {
         self.learn_rate
     }
 
-    pub fn set_training_data(&mut self, in_data: &[DataPoint]) {
-        self.training_data = in_data.to_vec();
+    pub fn set_training_data(&mut self, in_data: TrainingData) {
+        self.training_data = in_data;
     }
 
     pub fn ready(&self) -> bool {
         self.nn.is_some()
-            && self.training_data.len() > 0
+            && self.training_data.get_dimensions().0 > 0
+            && self.training_data.get_dimensions().1 > 0
             && self.num_epochs > 0
             && self.batch_size > 0
             && self.learn_rate > 0.0

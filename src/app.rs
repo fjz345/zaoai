@@ -3,7 +3,10 @@
 
 use crate::{
     error::Result,
-    zneural_network::{datapoint::TrainingDataset, neuralnetwork::load_neural_network},
+    zneural_network::{
+        datapoint::{TrainingData, TrainingDataset},
+        neuralnetwork::load_neural_network,
+    },
 };
 use eframe::{
     egui::{self, style::Widgets, InnerResponse, RawInput, Response, Slider},
@@ -69,7 +72,7 @@ pub struct ZaoaiApp {
     last_ai_filepath: Option<String>,
     window_data: MenuWindowData,
     #[serde(skip)]
-    training_dataset: TrainingDataset,
+    training_data: TrainingData,
     training_session: TrainingSession,
     #[serde(skip)]
     training_thread: Option<TrainingThread>,
@@ -183,9 +186,9 @@ impl eframe::App for ZaoaiApp {
                     TrainingState::StartTraining => {
                         if let Some(ai) = &self.ai {
                             if (self.training_thread.is_none()) {
-                                let training_dataset_dim = self.training_dataset.get_dimensions();
+                                let training_dataset_dim = self.training_data.get_dimensions();
                                 self.training_session
-                                    .set_training_data(&self.training_dataset.training_split());
+                                    .set_training_data(self.training_data.clone());
                                 if (
                                     ai.graph_structure.input_nodes,
                                     ai.graph_structure.output_nodes,
@@ -294,12 +297,12 @@ impl Default for ZaoaiApp {
                 training_dataset_split_thresholds_1: 0.9,
                 show_ai: true,
             },
-            training_dataset: TrainingDataset::new(
+            training_data: TrainingData::Physical(TrainingDataset::new(
                 &[DataPoint {
                     inputs: vec![0.0; 2],
                     expected_outputs: vec![0.0; 2],
                 }; 0],
-            ),
+            )),
             training_session: TrainingSession::default(),
             window_training_graph: WindowTrainingGraph::default(),
             training_thread: None,
@@ -387,7 +390,7 @@ impl ZaoaiApp {
             self.window_training_set.with_ctx(
                 ctx,
                 &mut WindowTrainingSetCtx {
-                    training_dataset: &mut self.training_dataset,
+                    training_data: &mut self.training_data,
                 },
                 |this, state_ctx| {
                     let response = this.draw_ui(ctx, state_ctx);
@@ -420,7 +423,7 @@ impl ZaoaiApp {
                 ctx,
                 &mut WindowAiCtx {
                     ai: &mut self.ai,
-                    test_button_training_dataset: &Some(&self.training_dataset),
+                    test_button_training_data: &Some(&self.training_data),
                 },
                 |this, state_ctx| {
                     let response = this.draw_ui(ctx, state_ctx);
