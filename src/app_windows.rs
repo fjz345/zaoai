@@ -7,7 +7,7 @@ use crate::{
     zneural_network::{
         datapoint::{
             create_2x2_test_datapoints, create_test_spectogram, DataPoint, TrainingData,
-            TrainingDataset,
+            TrainingDataset, VirtualTrainingDataset,
         },
         neuralnetwork::NeuralNetwork,
         thread::{TrainingThread, TrainingThreadPayload},
@@ -18,6 +18,7 @@ use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider
 use egui_plot::{Corner, Legend};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
+use zaoai_types::ai_labels::ZaoaiLabelsLoader;
 
 pub trait DrawableWindow<'a> {
     type Ctx;
@@ -412,13 +413,12 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     state_ctx.training_data.set_thresholds(1.0, 1.0);
                 }
 
-
-                if ui.button(format!("Load [{}, {}] ZaoaiLabels", 1337, 2)).clicked()
+                // Todo: avoid constructing this each frame
+                let zaoai_label_loader = ZaoaiLabelsLoader::new("training_data\\firstoutputlabels\\zaoai_labels").expect("Zaoailablesloader::new");
+                if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2, zaoai_label_loader.len)).clicked()
                 {
-                    let dataset_anime = create_test_spectogram(&PathBuf::from("test_files/test0.mkv"));
-                    let dataset: Vec<_> = dataset_anime.into_iter().map(|a|a.into_data_point(SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)).collect();
-                    *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
-                    state_ctx.training_data.set_thresholds(1.0, 1.0);
+                    let zaoai_labels = zaoai_label_loader.load_zaoai_labels().expect("failed to load zaoai_labels");
+                    *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset{ virtual_dataset: zaoai_labels, thresholds: [1.0, 1.0] });
                 }
             })
     }

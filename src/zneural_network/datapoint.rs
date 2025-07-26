@@ -174,10 +174,14 @@ impl TrainingData {
     pub fn training_split(&self) -> Vec<DataPoint> {
         match self {
             TrainingData::Physical(training_dataset) => training_dataset.training_split().to_vec(),
-            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset
-                .training_batch_iter(usize::MAX)
-                .flatten()
-                .collect(),
+            TrainingData::Virtual(virtual_training_dataset) => {
+                let (start, end) = virtual_training_dataset.get_training_start_end();
+                virtual_training_dataset.virtual_dataset[start..end]
+                    .to_vec()
+                    .iter()
+                    .map(|f| zaoai_label_to_datapoint(f))
+                    .collect()
+            }
         }
     }
 
@@ -186,20 +190,28 @@ impl TrainingData {
             TrainingData::Physical(training_dataset) => {
                 training_dataset.validation_split().to_vec()
             }
-            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset
-                .validation_batch_iter(usize::MAX)
-                .flatten()
-                .collect(),
+            TrainingData::Virtual(virtual_training_dataset) => {
+                let (start, end) = virtual_training_dataset.get_validation_start_end();
+                virtual_training_dataset.virtual_dataset[start..end]
+                    .to_vec()
+                    .iter()
+                    .map(|f| zaoai_label_to_datapoint(f))
+                    .collect()
+            }
         }
     }
 
     pub fn test_split(&self) -> Vec<DataPoint> {
         match self {
             TrainingData::Physical(training_dataset) => training_dataset.test_split().to_vec(),
-            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset
-                .test_batch_iter(usize::MAX)
-                .flatten()
-                .collect(),
+            TrainingData::Virtual(virtual_training_dataset) => {
+                let (start, end) = virtual_training_dataset.get_test_start_end();
+                virtual_training_dataset.virtual_dataset[start..end]
+                    .to_vec()
+                    .iter()
+                    .map(|f| zaoai_label_to_datapoint(f))
+                    .collect()
+            }
         }
     }
 
@@ -239,13 +251,13 @@ pub struct VirtualTrainingDataset {
     pub thresholds: [f64; 2],
 }
 
+#[derive(Debug)]
 pub struct VirtualTrainingBatchIter<'a> {
     dataset: &'a VirtualTrainingDataset,
     batch_size: usize,
     index: usize,
     end: usize,
 }
-
 impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
     type Item = Vec<DataPoint>;
 
@@ -257,6 +269,9 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
         }
 
         let batch_end = (self.index + self.batch_size).min(len);
+        if self.index == 2255 && batch_end == 2254 {
+            dbg!(&self);
+        }
         let slice = &self.dataset.virtual_dataset[self.index..batch_end];
 
         // Convert the slice of ZaoaiLabel to Vec<DataPoint>
@@ -285,7 +300,7 @@ impl VirtualTrainingDataset {
             const SPECTOGRAM_WIDTH: usize = 512;
             const SPECTOGRAM_HEIGHT: usize = 512;
 
-            (SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)
+            (SPECTOGRAM_WIDTH * SPECTOGRAM_HEIGHT, 2)
         } else {
             (0, 0)
         }
