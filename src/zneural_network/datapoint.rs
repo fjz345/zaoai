@@ -1,10 +1,16 @@
-use std::{path::PathBuf, usize};
+use std::{
+    fs::File,
+    path::{Path, PathBuf},
+    usize,
+};
 
 use crate::{
     neuralnetwork::*,
     sound::{decode_samples_from_file, S_SPECTOGRAM_NUM_BINS},
+    zneural_network::spectrogram::generate_spectogram,
 };
 
+use anyhow::Result;
 use rand::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
@@ -79,18 +85,6 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
     }
 
     result
-}
-
-pub fn generate_spectogram(path: &PathBuf) -> Spectrogram {
-    let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
-
-    let mut spectrobuilder = SpecOptionsBuilder::new(S_SPECTOGRAM_NUM_BINS)
-        .load_data_from_memory_f32(samples, sample_rate)
-        .build()
-        .unwrap();
-    let mut spectogram = spectrobuilder.compute();
-
-    spectrobuilder.compute()
 }
 
 pub fn split_datapoints(
@@ -304,7 +298,9 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
 
 // Probably should multithread so speed this up...
 fn zaoai_label_to_datapoint(label: &ZaoaiLabel, spectogram_dim: [usize; 2]) -> DataPoint {
-    let spectogram = generate_spectogram(&label.path);
+    todo!("Move generate spectogram code");
+
+    let spectogram = generate_spectogram(&label.path, S_SPECTOGRAM_NUM_BINS);
 
     let new_point = AnimeDataPoint {
         path: label.path.clone(),

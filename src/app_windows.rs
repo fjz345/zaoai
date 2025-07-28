@@ -4,12 +4,14 @@ use crate::{
     app::AppState,
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
+    sound::S_SPECTOGRAM_NUM_BINS,
     zneural_network::{
         datapoint::{
-            create_2x2_test_datapoints, generate_spectogram, AnimeDataPoint, DataPoint,
-            TrainingData, TrainingDataset, VirtualTrainingDataset,
+            create_2x2_test_datapoints, AnimeDataPoint, DataPoint, TrainingData, TrainingDataset,
+            VirtualTrainingDataset,
         },
         neuralnetwork::NeuralNetwork,
+        spectrogram::generate_spectogram,
         thread::{TrainingThread, TrainingThreadPayload},
         training::{test_nn, TrainingSession, TrainingState},
     },
@@ -408,7 +410,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 if ui.button(format!("Load [{}, {}] spectogram test", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2)).clicked()
                 {
                     let path = "test_files/test0.mkv";
-                    let spectogram = generate_spectogram(&PathBuf::from(path));
+                    let spectogram = generate_spectogram(&PathBuf::from(path), S_SPECTOGRAM_NUM_BINS);
                     let new_point = AnimeDataPoint {
                         path: PathBuf::from(path),
                         spectogram,
