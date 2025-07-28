@@ -19,7 +19,9 @@ use egui_plot::{Corner, Legend};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
 use zaoai_types::{
-    ai_labels::ZaoaiLabelsLoader, sound::S_SPECTOGRAM_NUM_BINS, spectrogram::generate_spectogram,
+    ai_labels::ZaoaiLabelsLoader,
+    sound::S_SPECTOGRAM_NUM_BINS,
+    spectrogram::{generate_spectogram, SPECTOGRAM_HEIGHT, SPECTOGRAM_WIDTH},
 };
 
 pub trait DrawableWindow<'a> {
@@ -405,8 +407,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     self.ui_training_dataset_split_thresholds_0 = state_ctx.training_data.get_thresholds()[0];
                     self.ui_training_dataset_split_thresholds_1 = state_ctx.training_data.get_thresholds()[1];
                 }
-                const SPECTOGRAM_WIDTH: usize = 512;
-                const SPECTOGRAM_HEIGHT: usize = 512;
+
                 if ui.button(format!("Load [{}, {}] spectogram test", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2)).clicked()
                 {
                     let path = "test_files/test0.mkv";
