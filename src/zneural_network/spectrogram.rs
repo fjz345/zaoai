@@ -22,7 +22,7 @@ pub fn generate_spectogram(path: &PathBuf, num_spectogram_bins: usize) -> Spectr
 }
 
 const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
-pub fn save_spectogram(
+pub fn save_spectrogram(
     spectogram: &Spectrogram,
     width: usize,
     height: usize,
