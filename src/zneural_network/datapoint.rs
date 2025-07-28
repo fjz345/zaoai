@@ -309,7 +309,7 @@ fn zaoai_label_to_datapoint(label: &ZaoaiLabel, spectogram_dim: [usize; 2]) -> D
     let new_point = AnimeDataPoint {
         path: label.path.clone(),
         spectogram,
-        expected_outputs: vec![0.08936, 0.1510],
+        expected_outputs: label.expected_outputs(),
     };
 
     new_point.into_data_point(spectogram_dim[0], spectogram_dim[1])
