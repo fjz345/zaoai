@@ -4,18 +4,15 @@ use std::{
     usize,
 };
 
-use crate::{
-    neuralnetwork::*,
-    sound::{decode_samples_from_file, S_SPECTOGRAM_NUM_BINS},
-    zneural_network::spectrogram::generate_spectogram,
-};
+use crate::neuralnetwork::*;
 
 use anyhow::Result;
 use rand::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use sonogram::{SpecOptionsBuilder, Spectrogram};
-use zaoai_types::ai_labels::ZaoaiLabel;
+use zaoai_types::sound::{decode_samples_from_file, S_SPECTOGRAM_NUM_BINS};
+use zaoai_types::{ai_labels::ZaoaiLabel, spectrogram::generate_spectogram};
 
 pub struct AnimeDataPoint {
     pub path: PathBuf,

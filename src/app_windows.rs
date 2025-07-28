@@ -4,14 +4,12 @@ use crate::{
     app::AppState,
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
-    sound::S_SPECTOGRAM_NUM_BINS,
     zneural_network::{
         datapoint::{
             create_2x2_test_datapoints, AnimeDataPoint, DataPoint, TrainingData, TrainingDataset,
             VirtualTrainingDataset,
         },
         neuralnetwork::NeuralNetwork,
-        spectrogram::generate_spectogram,
         thread::{TrainingThread, TrainingThreadPayload},
         training::{test_nn, TrainingSession, TrainingState},
     },
@@ -20,7 +18,9 @@ use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider
 use egui_plot::{Corner, Legend};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
-use zaoai_types::ai_labels::ZaoaiLabelsLoader;
+use zaoai_types::{
+    ai_labels::ZaoaiLabelsLoader, sound::S_SPECTOGRAM_NUM_BINS, spectrogram::generate_spectogram,
+};
 
 pub trait DrawableWindow<'a> {
     type Ctx;
