@@ -6,8 +6,8 @@ use crate::{
     mnist::get_mnist,
     zneural_network::{
         datapoint::{
-            create_2x2_test_datapoints, create_test_spectogram, DataPoint, TrainingData,
-            TrainingDataset, VirtualTrainingDataset,
+            create_2x2_test_datapoints, generate_spectogram, AnimeDataPoint, DataPoint,
+            TrainingData, TrainingDataset, VirtualTrainingDataset,
         },
         neuralnetwork::NeuralNetwork,
         thread::{TrainingThread, TrainingThreadPayload},
@@ -407,8 +407,15 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 const SPECTOGRAM_HEIGHT: usize = 512;
                 if ui.button(format!("Load [{}, {}] spectogram test", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2)).clicked()
                 {
-                    let dataset_anime = create_test_spectogram(&PathBuf::from("test_files/test0.mkv"));
-                    let dataset: Vec<_> = dataset_anime.into_iter().map(|a|a.into_data_point(SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)).collect();
+                    let path = "test_files/test0.mkv";
+                    let spectogram = generate_spectogram(&PathBuf::from(path));
+                    let new_point = AnimeDataPoint {
+                        path: PathBuf::from(path),
+                        spectogram,
+                        expected_outputs: vec![0.08936, 0.1510],
+                    };
+
+                    let dataset: Vec<_> = vec![new_point.into_data_point(SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)];
                     *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
                     state_ctx.training_data.set_thresholds(1.0, 1.0);
                 }

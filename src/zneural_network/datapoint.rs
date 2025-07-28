@@ -81,7 +81,7 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
     result
 }
 
-pub fn create_test_spectogram(path: &PathBuf) -> Vec<AnimeDataPoint> {
+pub fn generate_spectogram(path: &PathBuf) -> Spectrogram {
     let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
 
     let mut spectrobuilder = SpecOptionsBuilder::new(S_SPECTOGRAM_NUM_BINS)
@@ -90,13 +90,7 @@ pub fn create_test_spectogram(path: &PathBuf) -> Vec<AnimeDataPoint> {
         .unwrap();
     let mut spectogram = spectrobuilder.compute();
 
-    let new_point = AnimeDataPoint {
-        path: path.to_path_buf(),
-        spectogram,
-        expected_outputs: vec![0.08936, 0.1510],
-    };
-
-    vec![new_point]
+    spectrobuilder.compute()
 }
 
 pub fn split_datapoints(
@@ -133,6 +127,9 @@ pub enum TrainingData {
 }
 
 impl TrainingData {
+    const SPECTOGRAM_WIDTH: usize = 512;
+    const SPECTOGRAM_HEIGHT: usize = 512;
+
     pub fn get_thresholds(&self) -> [f64; 2] {
         match self {
             TrainingData::Physical(training_dataset) => training_dataset.thresholds,
@@ -171,6 +168,7 @@ impl TrainingData {
         len
     }
 
+    // If out of memory is an issue, need to change return to delay zaoai_label_to_datapoint before learn_batch
     pub fn training_split(&self) -> Vec<DataPoint> {
         match self {
             TrainingData::Physical(training_dataset) => training_dataset.training_split().to_vec(),
@@ -179,7 +177,12 @@ impl TrainingData {
                 virtual_training_dataset.virtual_dataset[start..end]
                     .to_vec()
                     .iter()
-                    .map(|f| zaoai_label_to_datapoint(f))
+                    .map(|f| {
+                        zaoai_label_to_datapoint(
+                            f,
+                            [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
+                        )
+                    })
                     .collect()
             }
         }
@@ -195,7 +198,12 @@ impl TrainingData {
                 virtual_training_dataset.virtual_dataset[start..end]
                     .to_vec()
                     .iter()
-                    .map(|f| zaoai_label_to_datapoint(f))
+                    .map(|f| {
+                        zaoai_label_to_datapoint(
+                            f,
+                            [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
+                        )
+                    })
                     .collect()
             }
         }
@@ -209,7 +217,12 @@ impl TrainingData {
                 virtual_training_dataset.virtual_dataset[start..end]
                     .to_vec()
                     .iter()
-                    .map(|f| zaoai_label_to_datapoint(f))
+                    .map(|f| {
+                        zaoai_label_to_datapoint(
+                            f,
+                            [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
+                        )
+                    })
                     .collect()
             }
         }
@@ -274,10 +287,13 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
         }
         let slice = &self.dataset.virtual_dataset[self.index..batch_end];
 
+        const SPECTOGRAM_WIDTH: usize = 512;
+        const SPECTOGRAM_HEIGHT: usize = 512;
+
         // Convert the slice of ZaoaiLabel to Vec<DataPoint>
         let batch: Vec<DataPoint> = slice
             .iter()
-            .map(|label| zaoai_label_to_datapoint(label))
+            .map(|label| zaoai_label_to_datapoint(label, [SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT]))
             .collect();
 
         self.index = batch_end;
@@ -286,11 +302,17 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
     }
 }
 
-fn zaoai_label_to_datapoint(label: &ZaoaiLabel) -> DataPoint {
-    DataPoint {
-        inputs: vec![],
-        expected_outputs: vec![],
-    }
+// Probably should multithread so speed this up...
+fn zaoai_label_to_datapoint(label: &ZaoaiLabel, spectogram_dim: [usize; 2]) -> DataPoint {
+    let spectogram = generate_spectogram(&label.path);
+
+    let new_point = AnimeDataPoint {
+        path: label.path.clone(),
+        spectogram,
+        expected_outputs: vec![0.08936, 0.1510],
+    };
+
+    new_point.into_data_point(spectogram_dim[0], spectogram_dim[1])
 }
 
 impl VirtualTrainingDataset {
