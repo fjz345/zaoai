@@ -6,7 +6,7 @@ use crate::{
     mnist::get_mnist,
     zneural_network::{
         datapoint::{
-            create_2x2_test_datapoints, AnimeDataPoint, DataPoint, TrainingData, TrainingDataset,
+            create_2x2_test_datapoints,  DataPoint, TrainingData, TrainingDataset,
             VirtualTrainingDataset,
         },
         neuralnetwork::NeuralNetwork,
@@ -19,7 +19,7 @@ use egui_plot::{Corner, Legend};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 use serde::{Deserialize, Serialize};
 use zaoai_types::{
-    ai_labels::ZaoaiLabelsLoader,
+    ai_labels::{AnimeDataPoint, ZaoaiLabelsLoader},
     sound::S_SPECTOGRAM_NUM_BINS,
     spectrogram::{generate_spectogram, SPECTOGRAM_HEIGHT, SPECTOGRAM_WIDTH},
 };
@@ -420,7 +420,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                         expected_outputs: vec![0.08936, 0.1510],
                     };
 
-                    let dataset: Vec<_> = vec![new_point.into_data_point(SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)];
+                    let dataset: Vec<_> = vec![DataPoint::from_anime_data_point(new_point, SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)];
                     *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
                     state_ctx.training_data.set_thresholds(1.0, 1.0);},
                         Err(e) => log::error!("{:?}", e),

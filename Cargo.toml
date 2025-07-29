@@ -7,20 +7,10 @@ edition = "2021"
 
 [dependencies]
 zaoai-types = { path = "../zaoai-types" }
-zaoai-helper = { path = "../zaoai-helper"  }
 
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-soloud = { version="1.1.1" }
-wav = "1.0.0"
-symphonia = {version = "0.5.0", features = ["mp3", "mkv", "pcm", "aac"]}
-symphonia-bundle-mp3 = "0.5.0"
-symphonia-format-mkv = "0.5.0"
-symphonia-codec-aac = "0.5.0"
-symphonia-codec-pcm = "0.5.0"
-plotlib = "0.5.1"
 # tensorflow = { version = "0.18.0", features = ["tensorflow_gpu"] }
-sonogram = "0.7.1"
 graphviz-rust = "0.6.2"
 eframe = {version = "0.31.0", features = ["serde", "persistence"]}
 env_logger = "0.10"
@@ -35,7 +25,6 @@ pprof = { version="0.15.0", features = ["flamegraph"], optional = true}
 wide = "0.7.33"
 rayon = "1.10.0"
 bincode = "2.0.1"
-strum = "0.27.2"
 strum_macros = "0.27.2"
 anyhow = "1.0.98"
 

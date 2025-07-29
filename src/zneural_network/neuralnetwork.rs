@@ -13,7 +13,6 @@ use std::path::Path;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
-use symphonia::core::util::clamp;
 use wide::f32x8;
 
 impl LayerLearnData {

@@ -10,35 +10,38 @@ use anyhow::{Context, Result};
 use rand::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
-use sonogram::{SpecOptionsBuilder, Spectrogram};
-use zaoai_types::{ai_labels::ZaoaiLabel, file::relative_after, spectrogram::generate_spectogram};
+use zaoai_types::{
+    ai_labels::{AnimeDataPoint, ZaoaiLabel},
+    file::relative_after,
+    spectrogram::generate_spectogram,
+    FrequencyScale,
+};
 use zaoai_types::{
     sound::{decode_samples_from_file, S_SPECTOGRAM_NUM_BINS},
     spectrogram::load_spectrogram,
 };
 
-pub struct AnimeDataPoint {
-    pub path: PathBuf,
-    pub spectogram: Spectrogram,
-    pub expected_outputs: Vec<f32>,
-}
-
-impl AnimeDataPoint {
-    pub fn into_data_point(self, img_width: usize, img_height: usize) -> DataPoint {
-        let buffer =
-            self.spectogram
-                .to_buffer(sonogram::FrequencyScale::Log, img_width, img_height);
-        DataPoint {
-            inputs: buffer,
-            expected_outputs: self.expected_outputs,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct DataPoint {
     pub inputs: Vec<f32>,
     pub expected_outputs: Vec<f32>,
+}
+
+impl DataPoint {
+    pub fn from_anime_data_point(
+        anime_data_point: AnimeDataPoint,
+        img_width: usize,
+        img_height: usize,
+    ) -> DataPoint {
+        let buffer =
+            anime_data_point
+                .spectogram
+                .to_buffer(FrequencyScale::Log, img_width, img_height);
+        DataPoint {
+            inputs: buffer,
+            expected_outputs: anime_data_point.expected_outputs,
+        }
+    }
 }
 
 fn calculate_y_for_datapoint(x1: f32, x2: f32) -> (f32, f32) {
@@ -340,7 +343,11 @@ fn zaoai_label_to_datapoint(
         expected_outputs: label.expected_outputs(),
     };
 
-    Ok(new_point.into_data_point(spectogram_dim[0], spectogram_dim[1]))
+    Ok(DataPoint::from_anime_data_point(
+        new_point,
+        spectogram_dim[0],
+        spectogram_dim[1],
+    ))
 }
 
 impl VirtualTrainingDataset {

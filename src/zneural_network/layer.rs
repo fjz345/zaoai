@@ -6,7 +6,6 @@ use rayon::iter::{
     IntoParallelRefMutIterator, ParallelIterator,
 };
 use serde::{Deserialize, Serialize};
-use symphonia::core::util::clamp;
 use wide::f32x8;
 
 pub fn softmax(layer_values: &[f32]) -> Vec<f32> {
