@@ -3,6 +3,7 @@ use std::fmt::Display;
 #[derive(Debug)]
 pub enum ZError {
     FileError(std::io::Error),
+    #[cfg(feature = "serde")]
     JsonError(serde_json::Error),
     Message(String),
     BincodeEncode(bincode::error::EncodeError),
@@ -13,6 +14,7 @@ impl Display for ZError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             ZError::FileError(ref err) => std::fmt::Display::fmt(&err, f),
+            #[cfg(feature = "serde")]
             ZError::JsonError(ref err) => std::fmt::Display::fmt(&err, f),
             ZError::Message(ref err) => std::fmt::Display::fmt(&err, f),
             ZError::BincodeEncode(ref err) => std::fmt::Display::fmt(&err, f),
@@ -27,6 +29,7 @@ impl From<std::io::Error> for ZError {
     }
 }
 
+#[cfg(feature = "serde")]
 impl From<serde_json::Error> for ZError {
     fn from(err: serde_json::Error) -> ZError {
         ZError::JsonError(err)
