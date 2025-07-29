@@ -10,6 +10,8 @@
 
 *.mm_profdata
 
+memprofile.txt
+
 *.log
 *.svg
 *.jpg
