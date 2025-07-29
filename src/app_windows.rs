@@ -412,23 +412,29 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 {
                     let path = "test_files/test0.mkv";
                     let spectogram = generate_spectogram(&PathBuf::from(path), S_SPECTOGRAM_NUM_BINS);
-                    let new_point = AnimeDataPoint {
+                    match spectogram
+                    {
+                        Ok(o) => { let new_point = AnimeDataPoint {
                         path: PathBuf::from(path),
-                        spectogram,
+                        spectogram: o,
                         expected_outputs: vec![0.08936, 0.1510],
                     };
 
                     let dataset: Vec<_> = vec![new_point.into_data_point(SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)];
                     *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
-                    state_ctx.training_data.set_thresholds(1.0, 1.0);
+                    state_ctx.training_data.set_thresholds(1.0, 1.0);},
+                        Err(e) => log::error!("{:?}", e),
+                    }
+                   
                 }
 
                 // Todo: avoid constructing this each frame
-                let zaoai_label_loader = ZaoaiLabelsLoader::new("training_data\\firstoutputlabels\\zaoai_labels").expect("Zaoailablesloader::new");
+                let zaoai_label_path  = "training_data\\firstoutputlabels\\zaoai_labels";
+                let zaoai_label_loader = ZaoaiLabelsLoader::new(&zaoai_label_path).expect("Zaoailablesloader::new");
                 if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2, zaoai_label_loader.len)).clicked()
                 {
                     let zaoai_labels = zaoai_label_loader.load_zaoai_labels().expect("failed to load zaoai_labels");
-                    *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset{ virtual_dataset: zaoai_labels, thresholds: [1.0, 1.0] });
+                    *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset{ path: PathBuf::from(zaoai_label_path), virtual_dataset: zaoai_labels, thresholds: [1.0, 1.0]});
                 }
             })
     }

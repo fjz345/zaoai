@@ -20,7 +20,7 @@ symphonia-codec-aac = "0.5.0"
 symphonia-codec-pcm = "0.5.0"
 plotlib = "0.5.1"
 # tensorflow = { version = "0.18.0", features = ["tensorflow_gpu"] }
-sonogram = "0.6.2"
+sonogram = "0.7.1"
 graphviz-rust = "0.6.2"
 eframe = {version = "0.31.0", features = ["serde", "persistence"]}
 env_logger = "0.10"
@@ -37,6 +37,7 @@ rayon = "1.10.0"
 bincode = "2.0.1"
 strum = "0.27.2"
 strum_macros = "0.27.2"
+anyhow = "1.0.98"
 
 [features]
 default = ["serde"]
@@ -51,7 +52,7 @@ winapi = { version = "0.3.5", features = ["winnt", "winuser"] }
 codegen-units = 1
 lto = true
 opt-level = 3
-#debug = true
+debug = true
 
 [profile.dev]
 incremental = true

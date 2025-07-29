@@ -6,13 +6,16 @@ use std::{
 
 use crate::neuralnetwork::*;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rand::*;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use sonogram::{SpecOptionsBuilder, Spectrogram};
-use zaoai_types::sound::{decode_samples_from_file, S_SPECTOGRAM_NUM_BINS};
-use zaoai_types::{ai_labels::ZaoaiLabel, spectrogram::generate_spectogram};
+use zaoai_types::{ai_labels::ZaoaiLabel, file::relative_after, spectrogram::generate_spectogram};
+use zaoai_types::{
+    sound::{decode_samples_from_file, S_SPECTOGRAM_NUM_BINS},
+    spectrogram::load_spectrogram,
+};
 
 pub struct AnimeDataPoint {
     pub path: PathBuf,
@@ -170,9 +173,14 @@ impl TrainingData {
                     .iter()
                     .map(|f| {
                         zaoai_label_to_datapoint(
+                            virtual_training_dataset.path.clone(),
                             f,
                             [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
                         )
+                        .with_context(|| {
+                            format!("failed to zaoai_label_to_datapoint \nDatapoint\n{:?}", f)
+                        })
+                        .unwrap()
                     })
                     .collect()
             }
@@ -191,9 +199,11 @@ impl TrainingData {
                     .iter()
                     .map(|f| {
                         zaoai_label_to_datapoint(
+                            virtual_training_dataset.path.clone(),
                             f,
                             [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
                         )
+                        .expect("failed to zaoai_label_to_datapoint")
                     })
                     .collect()
             }
@@ -210,9 +220,11 @@ impl TrainingData {
                     .iter()
                     .map(|f| {
                         zaoai_label_to_datapoint(
+                            virtual_training_dataset.path.clone(),
                             f,
                             [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
                         )
+                        .expect("failed to zaoai_label_to_datapoint")
                     })
                     .collect()
             }
@@ -251,6 +263,7 @@ impl Default for TrainingData {
 
 #[derive(Serialize, Deserialize, Default, Clone, Debug)]
 pub struct VirtualTrainingDataset {
+    pub path: PathBuf,
     pub virtual_dataset: Vec<ZaoaiLabel>,
     pub thresholds: [f64; 2],
 }
@@ -284,7 +297,14 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
         // Convert the slice of ZaoaiLabel to Vec<DataPoint>
         let batch: Vec<DataPoint> = slice
             .iter()
-            .map(|label| zaoai_label_to_datapoint(label, [SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT]))
+            .map(|label| {
+                zaoai_label_to_datapoint(
+                    self.dataset.path.clone(),
+                    label,
+                    [SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT],
+                )
+                .expect("failed to zaoai_label_to_datapoint")
+            })
             .collect();
 
         self.index = batch_end;
@@ -294,10 +314,25 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
 }
 
 // Probably should multithread so speed this up...
-fn zaoai_label_to_datapoint(label: &ZaoaiLabel, spectogram_dim: [usize; 2]) -> DataPoint {
-    todo!("Move generate spectogram code");
+fn zaoai_label_to_datapoint(
+    source_path: impl AsRef<Path>,
+    label: &ZaoaiLabel,
+    spectogram_dim: [usize; 2],
+) -> Result<DataPoint> {
+    let relative_path = relative_after(&label.path, &label.path_source).unwrap();
+    let mut spectrogram_path = source_path.as_ref().join(relative_path);
+    let succeess = spectrogram_path.set_extension("spectrogram");
+    assert!(succeess);
+    if !spectrogram_path.is_file() {
+        log::error!("not a file: {}", spectrogram_path.display());
+    }
 
-    let spectogram = generate_spectogram(&label.path, S_SPECTOGRAM_NUM_BINS);
+    let mut width = 0;
+    let mut height = 0;
+    let spectogram = load_spectrogram(spectrogram_path, &mut width, &mut height)?;
+
+    assert_eq!(width, spectogram_dim[0], "dim missmatch");
+    assert_eq!(height, spectogram_dim[1], "dim missmatch");
 
     let new_point = AnimeDataPoint {
         path: label.path.clone(),
@@ -305,7 +340,7 @@ fn zaoai_label_to_datapoint(label: &ZaoaiLabel, spectogram_dim: [usize; 2]) -> D
         expected_outputs: label.expected_outputs(),
     };
 
-    new_point.into_data_point(spectogram_dim[0], spectogram_dim[1])
+    Ok(new_point.into_data_point(spectogram_dim[0], spectogram_dim[1]))
 }
 
 impl VirtualTrainingDataset {
