@@ -17,7 +17,10 @@ use eframe::{
 use egui_plot::PlotPoint;
 use graphviz_rust::{dot_structures::Graph, print};
 use ndarray::{Array2, ArrayBase, Dim, OwnedRepr};
+
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
 use std::{
     fs::File,
     io::{self, Read, Write},
@@ -44,7 +47,7 @@ use crate::{
     },
 };
 
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 struct MenuWindowData {
     // Main Menu
     graph_structure_string: String,
@@ -62,18 +65,18 @@ struct MenuWindowData {
     training_dataset_split_thresholds_1: f64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ZaoaiApp {
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     state: AppState,
-    #[serde(skip)] // Loaded separately
+    #[cfg_attr(feature = "serde", serde(skip))]
     ai: Option<NeuralNetwork>,
     last_ai_filepath: Option<String>,
     window_data: MenuWindowData,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     training_data: TrainingData,
     training_session: TrainingSession,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     training_thread: Option<TrainingThread>,
     window_training_graph: WindowTrainingGraph,
     window_ai: WindowAi,
@@ -313,7 +316,8 @@ impl Default for ZaoaiApp {
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, strum_macros::Display)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Default, Debug, Clone, Copy, PartialEq, strum_macros::Display)]
 pub enum AppState {
     #[default]
     Startup,

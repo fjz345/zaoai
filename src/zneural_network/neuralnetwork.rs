@@ -6,6 +6,7 @@ use super::datapoint::DataPoint;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand_chacha;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
@@ -26,7 +27,8 @@ impl LayerLearnData {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Debug, bincode::Encode, bincode::Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Debug, bincode::Encode, bincode::Decode)]
 pub struct GraphStructure {
     pub input_nodes: usize,
     pub hidden_layers: Vec<usize>, // contais nodes
@@ -98,7 +100,8 @@ impl GraphStructure {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, bincode::Encode, bincode::Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,

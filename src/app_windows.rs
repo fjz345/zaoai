@@ -17,7 +17,10 @@ use crate::{
 use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider};
 use egui_plot::{Corner, Legend};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
+
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabelsLoader},
     sound::S_SPECTOGRAM_NUM_BINS,
@@ -45,7 +48,8 @@ pub struct WindowTrainingGraphCtx<'a> {
     pub(crate) training_thread: &'a Option<TrainingThread>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
 struct SerdePlotPoint {
     x: f64,
     y: f64,
@@ -63,7 +67,8 @@ impl From<SerdePlotPoint> for PlotPoint {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Default)]
 pub struct WindowTrainingGraph {
     cached_plot_points_accuracy: Vec<SerdePlotPoint>,
     cached_plot_points_cost: Vec<SerdePlotPoint>,
@@ -259,7 +264,7 @@ pub struct WindowAiCtx<'a> {
     pub test_button_training_data: &'a Option<&'a TrainingData>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WindowAi {}
 
 impl<'a> DrawableWindow<'a> for WindowAi {
@@ -310,7 +315,7 @@ pub struct WindowTrainingSetCtx<'a> {
     pub training_data: &'a mut TrainingData, // Probably should store on heap to avoid copy, not an issue for now
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WindowTrainingSet {
     ui_training_dataset_split_thresholds_0: f64,
     ui_training_dataset_split_thresholds_1: f64,
@@ -446,7 +451,7 @@ pub struct WindowTrainingSessionCtx<'a> {
     pub training_thread: &'a mut Option<TrainingThread>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WindowTrainingSession {}
 
 impl<'a> DrawableWindow<'a> for WindowTrainingSession {

@@ -9,6 +9,7 @@ use crate::neuralnetwork::*;
 use anyhow::{Context, Result};
 use rand::*;
 use rand_chacha::ChaCha8Rng;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabel},
@@ -21,7 +22,8 @@ use zaoai_types::{
     spectrogram::load_spectrogram,
 };
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DataPoint {
     pub inputs: Vec<f32>,
     pub expected_outputs: Vec<f32>,
@@ -117,7 +119,8 @@ pub fn split_datapoints(
     datapoints[validadtion_data_end..test_data_end].clone_into(out_test_datapoints);
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
 pub enum TrainingData {
     Physical(TrainingDataset),
     Virtual(VirtualTrainingDataset), // indirect Training data
@@ -264,7 +267,8 @@ impl Default for TrainingData {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Default, Clone, Debug)]
 pub struct VirtualTrainingDataset {
     pub path: PathBuf,
     pub virtual_dataset: Vec<ZaoaiLabel>,
@@ -427,7 +431,8 @@ impl VirtualTrainingDataset {
     }
 }
 
-#[derive(Serialize, Deserialize, Default, Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Default, Clone, Debug)]
 pub struct TrainingDataset {
     pub full_dataset: Vec<DataPoint>,
     pub thresholds: [f64; 2],

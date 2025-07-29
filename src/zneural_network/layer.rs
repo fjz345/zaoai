@@ -5,6 +5,7 @@ use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
     IntoParallelRefMutIterator, ParallelIterator,
 };
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use wide::f32x8;
 
@@ -82,7 +83,8 @@ pub fn node_cost_d(output_activation: f32, expected_activation: f32) -> f32 {
 }
 // ============================
 
-#[derive(Clone, Serialize, Deserialize, Debug, bincode::Encode, bincode::Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct Layer {
     pub num_in_nodes: usize,
     pub num_out_nodes: usize,
@@ -92,7 +94,8 @@ pub struct Layer {
     pub biases_cost_grads: Vec<f32>,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, bincode::Encode, bincode::Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct LayerLearnData {
     pub inputs: Vec<f32>,
     pub weighted_inputs: Vec<f32>,

@@ -27,11 +27,12 @@ pprof = { version="0.15.0", features = ["flamegraph"], optional = true}
 wide = "0.7.33"
 rayon = "1.10.0"
 bincode = "2.0.1"
+strum = "0.27.2"
 strum_macros = "0.27.2"
 anyhow = "1.0.98"
 
 [features]
-default = ["serde"]
+default = []
 serde = ["dep:serde"]
 accesskit = []
 linux-profile = ["dep:pprof"]

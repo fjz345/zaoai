@@ -1,3 +1,4 @@
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::zneural_network::{
@@ -5,14 +6,16 @@ use crate::zneural_network::{
     neuralnetwork::NeuralNetwork,
 };
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, PartialEq, Debug)]
 pub enum DatasetUsage {
     Training,
     Validation,
     Test,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
 pub struct AIResultMetadata {
     pub true_positives: usize,
     pub true_negatives: usize,
@@ -88,10 +91,11 @@ impl AIResultMetadata {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug)]
 pub struct TrainingSession {
     pub nn: Option<NeuralNetwork>,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub state: TrainingState,
     pub num_epochs: usize,
     pub batch_size: usize,
@@ -173,7 +177,8 @@ impl TrainingSession {
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Copy, Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct TestResults {
     pub num_datapoints: i32,
     pub num_correct: i32,

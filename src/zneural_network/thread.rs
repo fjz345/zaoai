@@ -3,6 +3,7 @@ use std::{
     thread::JoinHandle,
 };
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::zneural_network::{
@@ -10,22 +11,23 @@ use crate::zneural_network::{
     training::{AIResultMetadata, TrainingSession},
 };
 
-#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone)]
 pub struct TrainingThreadPayload {
     pub payload_index: usize,
     pub payload_max_index: usize,
     pub training_metadata: AIResultMetadata,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct TrainingThread {
     pub id: u64,
     pub payload_buffer: Vec<TrainingThreadPayload>,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub handle: Option<JoinHandle<()>>,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub rx_neuralnetwork: Option<Receiver<NeuralNetwork>>,
-    #[serde(skip)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     pub rx_payload: Option<Receiver<TrainingThreadPayload>>,
 }
 

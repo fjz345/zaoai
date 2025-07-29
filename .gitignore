@@ -8,6 +8,7 @@
 /Cargo.lock
 /NN
 
+*.mm_profdata
 
 *.log
 *.svg
