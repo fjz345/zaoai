@@ -350,15 +350,14 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
 
                 ui.heading("Current Dataset");
                 ui.label(format!("Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
-                state_ctx.training_data.training_split().len(),
+                state_ctx.training_data.training_split_len(),
                 100.0 * state_ctx.training_data.get_thresholds()[0],
                 state_ctx.training_data.validation_split().len(),
                 100.0 * (state_ctx.training_data.get_thresholds()[1] - state_ctx.training_data.get_thresholds()[0]),
                 state_ctx.training_data.test_split().len(),
                 100.0 * (1.0 - state_ctx.training_data.get_thresholds()[1]),
                 state_ctx.training_data.len(),
-                (state_ctx.training_data.training_split().len()
-                    + state_ctx.training_data.validation_split().len()
+                (state_ctx.training_data.training_split_len() + state_ctx.training_data.validation_split().len()
                     + state_ctx.training_data.test_split().len()) as f64
                     / state_ctx.training_data.len().max(1) as f64,
                 ));
