@@ -42,7 +42,6 @@ impl ActivationFunctionType {
     pub fn apply_softmax(layer_values: &[f32]) -> Vec<f32> {
         // Optimized SIMD version — mock example
         // You'd use something like `faster`, `wide`, `packed_simd`, or `std::simd`
-        use std::simd::{f32x8, SimdFloat};
 
         let len = layer_values.len();
         let mut output = vec![0.0f32; len];
@@ -58,10 +57,9 @@ impl ActivationFunctionType {
         let remainder = chunks.remainder();
 
         for chunk in chunks {
-            let v = f32x8::from_slice(chunk);
+            let v = f32x8::from(chunk);
             let e = (v - f32x8::splat(max_val)).exp();
-            let mut temp = [0.0; 8];
-            e.write_to_slice(&mut temp);
+            let temp = e.to_array();
             for val in temp {
                 sum += val as f64;
             }
@@ -109,10 +107,32 @@ impl ActivationFunctionType {
         }
     }
 
+    #[cfg(feature = "simd")]
+    pub fn activate_simd(&self, x: f32x8) -> f32x8 {
+        match self {
+            ActivationFunctionType::ReLU => relu_simd(x),
+            ActivationFunctionType::Sigmoid => sigmoid_simd(x),
+            ActivationFunctionType::Softmax => {
+                unreachable!("Softmax needs full vector context, use apply_softmax()")
+            }
+        }
+    }
+
     pub fn activate_derivative(&self, x: f32) -> f32 {
         match self {
             ActivationFunctionType::ReLU => relu_d(x),
             ActivationFunctionType::Sigmoid => sigmoid_d(x),
+            ActivationFunctionType::Softmax => {
+                unreachable!("Softmax derivative needs vector context")
+            }
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    pub fn activate_derivative_simd(&self, x: f32x8) -> f32x8 {
+        match self {
+            ActivationFunctionType::ReLU => relu_d_simd(x),
+            ActivationFunctionType::Sigmoid => sigmoid_d_simd(x),
             ActivationFunctionType::Softmax => {
                 unreachable!("Softmax derivative needs vector context")
             }
@@ -146,13 +166,24 @@ fn sigmoid_d(in_value: f32) -> f32 {
     f * (1.0 - f)
 }
 
-#[cfg(not(feature = "simd"))]
+#[cfg(feature = "simd")]
+fn sigmoid_simd(x: f32x8) -> f32x8 {
+    let one = f32x8::splat(1.0);
+    one / (one + (-x).exp())
+}
+
+#[cfg(feature = "simd")]
+fn sigmoid_d_simd(x: f32x8) -> f32x8 {
+    let fx = sigmoid_simd(x);
+    fx * (f32x8::splat(1.0) - fx)
+}
+
 fn relu(in_value: f32) -> f32 {
     in_value.max(0.0)
 }
 
 #[cfg(feature = "simd")]
-fn relu(in_value: f32x8) -> f32x8 {
+fn relu_simd(in_value: f32x8) -> f32x8 {
     // Fastmax?
     in_value.max(f32x8::splat(0.0))
 }
@@ -165,6 +196,15 @@ fn relu_d(in_value: f32) -> f32 {
     }
 }
 
+#[cfg(feature = "simd")]
+fn relu_d_simd(x: f32x8) -> f32x8 {
+    let a: Vec<f32> = x.to_array().iter_mut().map(|f| relu_d(*f)).collect();
+    return f32x8::from(&a[..]);
+
+    // think this is correct?, no was wrong...
+    use wide::CmpGt;
+    x.cmp_gt(f32x8::splat(0.0))
+}
 // ============================
 
 // ============================
@@ -178,6 +218,18 @@ pub fn node_cost(output_activation: f32, expected_activation: f32) -> f32 {
 
 pub fn node_cost_d(output_activation: f32, expected_activation: f32) -> f32 {
     (output_activation - expected_activation)
+}
+
+#[cfg(feature = "simd")]
+pub fn node_cost_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
+    let error = output_activation - expected_activation;
+    // 0.5 * error^2
+    f32x8::splat(0.5) * error * error
+}
+
+#[cfg(feature = "simd")]
+pub fn node_cost_d_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
+    output_activation - expected_activation
 }
 // ============================
 
@@ -391,7 +443,8 @@ impl Layer {
 
         for chunk in chunks {
             let input_vec = f32x8::from(chunk);
-            let activated_vec = activation_function_simd(input_vec, t);
+
+            let activated_vec = t.activate_simd(input_vec);
 
             let out: [f32; CHUNK_SIZE] = activated_vec.into();
             result.extend_from_slice(&out);
@@ -404,6 +457,7 @@ impl Layer {
         result
     }
 
+    #[cfg(not(feature = "simd"))]
     fn fill_learn_data(&self, learn_data: &mut LayerLearnData, weighted_inputs: &[f32]) {
         assert_eq!(learn_data.weighted_inputs.len(), self.num_out_nodes);
         assert_eq!(learn_data.activation_values.len(), self.num_out_nodes);
@@ -416,6 +470,51 @@ impl Layer {
             .zip(learn_data.activation_values.iter_mut())
         {
             *act = self.activation_type.activate(*w_in);
+        }
+    }
+
+    // not tested
+    #[cfg(feature = "simd")]
+    fn fill_learn_data(&self, learn_data: &mut LayerLearnData, weighted_inputs: &[f32]) {
+        use wide::f32x8;
+
+        assert_eq!(learn_data.weighted_inputs.len(), self.num_out_nodes);
+        assert_eq!(learn_data.activation_values.len(), self.num_out_nodes);
+
+        learn_data.weighted_inputs.copy_from_slice(weighted_inputs);
+
+        const CHUNK_SIZE: usize = 8;
+
+        let len = learn_data.weighted_inputs.len();
+        let chunks = learn_data.weighted_inputs.chunks_exact(CHUNK_SIZE);
+        let remainder = chunks.remainder();
+
+        learn_data.activation_values.clear();
+        learn_data.activation_values.reserve(len);
+
+        // Process full chunks with SIMD activate_simd
+        for chunk in chunks {
+            let input_vec = f32x8::from(chunk);
+            let activated_vec = self.activation_type.activate_simd(input_vec);
+            let out: [f32; CHUNK_SIZE] = activated_vec.into();
+            learn_data.activation_values.extend_from_slice(&out);
+        }
+
+        // Process remainder with SIMD (zero-padded)
+        if !remainder.is_empty() {
+            // Create an array of zeros first
+            let mut padded = [0.0f32; CHUNK_SIZE];
+            // Copy remainder slice into beginning of padded
+            padded[..remainder.len()].copy_from_slice(remainder);
+            // Load into SIMD vector
+            let input_vec = f32x8::from(padded);
+            // Activate SIMD
+            let activated_vec = self.activation_type.activate_simd(input_vec);
+            let out: [f32; CHUNK_SIZE] = activated_vec.into();
+            // Copy only the valid elements (remainder.len())
+            learn_data
+                .activation_values
+                .extend_from_slice(&out[..remainder.len()]);
         }
     }
 
@@ -605,6 +704,7 @@ impl Layer {
         }
     }
 
+    #[cfg(not(feature = "simd"))]
     pub fn calculate_output_layer_node_cost_values(
         &self,
         learn_data: &mut LayerLearnData,
@@ -616,6 +716,67 @@ impl Layer {
                 .activation_type
                 .activate_derivative(learn_data.weighted_inputs[i]);
             learn_data.node_values[i] = dactivation * dcost;
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    pub fn calculate_output_layer_node_cost_values(
+        &self,
+        learn_data: &mut LayerLearnData,
+        expected_outputs: &[f32],
+    ) {
+        use wide::f32x8;
+
+        const CHUNK_SIZE: usize = 8;
+        let len = learn_data.node_values.len();
+
+        let activation_vals = &learn_data.activation_values;
+        let weighted_inputs = &learn_data.weighted_inputs;
+        let node_vals = &mut learn_data.node_values;
+
+        let chunks_activation = activation_vals.chunks_exact(CHUNK_SIZE);
+        let chunks_weighted = weighted_inputs.chunks_exact(CHUNK_SIZE);
+        let chunks_expected = expected_outputs.chunks_exact(CHUNK_SIZE);
+        let mut chunks_node_vals = node_vals.chunks_exact_mut(CHUNK_SIZE);
+
+        // Save remainders *before* consuming the iterators
+        let remainder_activation = chunks_activation.remainder();
+        let remainder_weighted = chunks_weighted.remainder();
+        let remainder_expected = chunks_expected.remainder();
+        // For chunks_node_vals, we have to consume it before calling into_remainder()
+        // So no remainder here yet
+
+        // Use .by_ref() to iterate chunks_node_vals without moving it
+        for ((chunk_activation, chunk_weighted), (chunk_expected, chunk_node_vals)) in
+            chunks_activation
+                .zip(chunks_weighted)
+                .zip(chunks_expected.zip(chunks_node_vals.by_ref()))
+        {
+            let act_vec = f32x8::from(chunk_activation);
+            let weighted_vec = f32x8::from(chunk_weighted);
+            let expected_vec = f32x8::from(chunk_expected);
+
+            let dcost = node_cost_d_simd(act_vec, expected_vec);
+            let dactivation = self.activation_type.activate_derivative_simd(weighted_vec);
+
+            let result = dactivation * dcost;
+
+            let result_arr: [f32; CHUNK_SIZE] = result.into();
+            chunk_node_vals.copy_from_slice(&result_arr);
+        }
+
+        // Now get the remainder from chunks_node_vals *after* the loop
+        let remainder_node_vals = chunks_node_vals.into_remainder();
+
+        // Handle remainder scalars (fallback)
+        if !remainder_activation.is_empty() {
+            for i in 0..remainder_activation.len() {
+                let dcost = node_cost_d(remainder_activation[i], remainder_expected[i]);
+                let dactivation = self
+                    .activation_type
+                    .activate_derivative(remainder_weighted[i]);
+                remainder_node_vals[i] = dactivation * dcost;
+            }
         }
     }
 
