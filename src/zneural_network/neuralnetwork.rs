@@ -397,8 +397,18 @@ impl NeuralNetwork {
         // Forward pass
         let mut current_inputs = datapoint.inputs.to_vec();
         for (i, layer) in self.layers.iter_mut().enumerate() {
-            current_inputs = layer
-                .calculate_outputs_learn_simd(&mut self.layer_learn_data[i], &mut current_inputs);
+            #[cfg(feature = "simd")]
+            {
+                current_inputs = layer.calculate_outputs_learn_simd(
+                    &mut self.layer_learn_data[i],
+                    &mut current_inputs,
+                );
+            }
+            #[cfg(not(feature = "simd"))]
+            {
+                current_inputs = layer
+                    .calculate_outputs_learn(&mut self.layer_learn_data[i], &mut current_inputs);
+            }
         }
         let output_inputs = current_inputs;
 
@@ -454,7 +464,14 @@ impl NeuralNetwork {
     pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
         let mut current_inputs = inputs.to_vec();
         for (i, layer) in self.layers.iter().enumerate() {
-            current_inputs = layer.calculate_outputs_simd(&current_inputs);
+            #[cfg(feature = "simd")]
+            {
+                current_inputs = layer.calculate_outputs_simd(&current_inputs);
+            }
+            #[cfg(not(feature = "simd"))]
+            {
+                current_inputs = layer.calculate_outputs(&current_inputs);
+            }
         }
 
         if self.is_softmax_output {

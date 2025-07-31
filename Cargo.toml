@@ -33,6 +33,7 @@ anyhow = "1.0.98"
 
 [features]
 default = ["serde"]
+simd = []
 serde = ["dep:serde", "dep:serde_derive", "dep:serde_json", "dep:humantime-serde"]
 accesskit = []
 linux-profile = ["dep:pprof"]

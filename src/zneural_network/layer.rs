@@ -34,7 +34,92 @@ pub enum ActivationFunctionType {
     #[default]
     ReLU,
     Sigmoid,
+    Softmax,
 }
+
+impl ActivationFunctionType {
+    #[cfg(feature = "simd")]
+    pub fn apply_softmax(layer_values: &[f32]) -> Vec<f32> {
+        // Optimized SIMD version — mock example
+        // You'd use something like `faster`, `wide`, `packed_simd`, or `std::simd`
+        use std::simd::{f32x8, SimdFloat};
+
+        let len = layer_values.len();
+        let mut output = vec![0.0f32; len];
+
+        let max_val = layer_values
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        // SIMD chunking
+        let mut sum = 0.0f64;
+        let chunks = layer_values.chunks_exact(8);
+        let remainder = chunks.remainder();
+
+        for chunk in chunks {
+            let v = f32x8::from_slice(chunk);
+            let e = (v - f32x8::splat(max_val)).exp();
+            let mut temp = [0.0; 8];
+            e.write_to_slice(&mut temp);
+            for val in temp {
+                sum += val as f64;
+            }
+        }
+
+        for &val in remainder {
+            sum += (val - max_val).exp() as f64;
+        }
+
+        let sum_f32 = sum as f32;
+
+        // Normalize
+        for (i, &val) in layer_values.iter().enumerate() {
+            output[i] = ((val - max_val).exp() / sum_f32);
+        }
+
+        output
+    }
+
+    #[cfg(not(feature = "simd"))]
+    pub fn apply_softmax(layer_values: &[f32]) -> Vec<f32> {
+        let max_val = layer_values
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        let mut sum = 0.0f64;
+        for &value in layer_values {
+            sum += (value - max_val).exp() as f64;
+        }
+
+        layer_values
+            .iter()
+            .map(|&v| ((v - max_val).exp() as f64 / sum) as f32)
+            .collect()
+    }
+
+    pub fn activate(&self, x: f32) -> f32 {
+        match self {
+            ActivationFunctionType::ReLU => relu(x),
+            ActivationFunctionType::Sigmoid => sigmoid(x),
+            ActivationFunctionType::Softmax => {
+                unreachable!("Softmax needs full vector context, use apply_softmax()")
+            }
+        }
+    }
+
+    pub fn activate_derivative(&self, x: f32) -> f32 {
+        match self {
+            ActivationFunctionType::ReLU => relu_d(x),
+            ActivationFunctionType::Sigmoid => sigmoid_d(x),
+            ActivationFunctionType::Softmax => {
+                unreachable!("Softmax derivative needs vector context")
+            }
+        }
+    }
+}
+
 impl std::fmt::Display for ActivationFunctionType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -43,6 +128,7 @@ impl std::fmt::Display for ActivationFunctionType {
             match self {
                 ActivationFunctionType::ReLU => "ReLU",
                 ActivationFunctionType::Sigmoid => "Sigmoid",
+                ActivationFunctionType::Softmax => "Softmax",
                 // ActivationFunctionType::Tanh => "Tanh",
                 // ActivationFunctionType::LeakyReLU => "Leaky ReLU",
                 // ActivationFunctionType::Softmax => "Softmax",
@@ -60,11 +146,13 @@ fn sigmoid_d(in_value: f32) -> f32 {
     f * (1.0 - f)
 }
 
+#[cfg(not(feature = "simd"))]
 fn relu(in_value: f32) -> f32 {
     in_value.max(0.0)
 }
 
-fn relu_simd(in_value: f32x8) -> f32x8 {
+#[cfg(feature = "simd")]
+fn relu(in_value: f32x8) -> f32x8 {
     // Fastmax?
     in_value.max(f32x8::splat(0.0))
 }
@@ -77,29 +165,6 @@ fn relu_d(in_value: f32) -> f32 {
     }
 }
 
-pub fn activation_function(in_value: f32, t: ActivationFunctionType) -> f32 {
-    match t {
-        ActivationFunctionType::ReLU => relu(in_value),
-        ActivationFunctionType::Sigmoid => sigmoid(in_value),
-    }
-}
-
-pub fn activation_function_simd(in_value: f32x8, t: ActivationFunctionType) -> f32x8 {
-    match t {
-        ActivationFunctionType::ReLU => relu_simd(in_value),
-        ActivationFunctionType::Sigmoid => {
-            log::debug!("_simd not implemented for sigmoid");
-            unimplemented!("_simd not implemented for sigmoid")
-        }
-    }
-}
-
-pub fn activation_function_d(in_value: f32, t: ActivationFunctionType) -> f32 {
-    match t {
-        ActivationFunctionType::ReLU => relu_d(in_value),
-        ActivationFunctionType::Sigmoid => sigmoid_d(in_value),
-    }
-}
 // ============================
 
 // ============================
@@ -242,6 +307,7 @@ impl Layer {
         }
     }
 
+    #[cfg(feature = "simd")]
     fn compute_weighted_inputs_simd(&self, inputs: &[f32], output_buf: &mut [f32]) {
         assert_eq!(inputs.len(), self.num_in_nodes);
         assert_eq!(output_buf.len(), self.num_out_nodes);
@@ -271,6 +337,7 @@ impl Layer {
         }
     }
 
+    #[cfg(feature = "simd")]
     fn compute_weighted_inputs_simd_rayon(&self, inputs: &[f32], output_buf: &mut [f32]) {
         use rayon::prelude::*;
 
@@ -308,14 +375,13 @@ impl Layer {
             });
     }
 
-    fn apply_activation(weighted_inputs: &[f32], t: ActivationFunctionType) -> Vec<f32> {
-        weighted_inputs
-            .iter()
-            .map(|&x| activation_function(x, t))
-            .collect()
+    #[cfg(not(feature = "simd"))]
+    pub fn apply_activation(weighted_inputs: &[f32], t: ActivationFunctionType) -> Vec<f32> {
+        weighted_inputs.iter().map(|&x| t.activate(x)).collect()
     }
 
-    pub fn apply_activation_simd(input: &[f32], t: ActivationFunctionType) -> Vec<f32> {
+    #[cfg(feature = "simd")]
+    pub fn apply_activation(input: &[f32], t: ActivationFunctionType) -> Vec<f32> {
         const CHUNK_SIZE: usize = 8;
 
         let mut result = Vec::with_capacity(input.len());
@@ -349,7 +415,7 @@ impl Layer {
             .iter()
             .zip(learn_data.activation_values.iter_mut())
         {
-            *act = activation_function(*w_in, self.activation_type);
+            *act = self.activation_type.activate(*w_in);
         }
     }
 
@@ -359,16 +425,18 @@ impl Layer {
         Self::apply_activation(&weighted_inputs, self.activation_type)
     }
 
+    #[cfg(feature = "simd")]
     pub fn calculate_outputs_simd(&self, inputs: &[f32]) -> Vec<f32> {
         let mut weighted_inputs = vec![0.0; self.num_out_nodes];
         self.compute_weighted_inputs_simd(inputs, &mut weighted_inputs);
-        Self::apply_activation_simd(&weighted_inputs, self.activation_type)
+        Self::apply_activation(&weighted_inputs, self.activation_type)
     }
 
+    #[cfg(feature = "simd")]
     pub fn calculate_outputs_simd_rayon(&self, inputs: &[f32]) -> Vec<f32> {
         let mut weighted_inputs = vec![0.0; self.num_out_nodes];
         self.compute_weighted_inputs_simd_rayon(inputs, &mut weighted_inputs);
-        Self::apply_activation_simd(&weighted_inputs, self.activation_type)
+        Self::apply_activation(&weighted_inputs, self.activation_type)
     }
 
     pub fn calculate_outputs_learn(
@@ -385,6 +453,7 @@ impl Layer {
         learn_data.activation_values.clone()
     }
 
+    #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd(
         &mut self,
         learn_data: &mut LayerLearnData,
@@ -399,6 +468,7 @@ impl Layer {
         learn_data.activation_values.clone()
     }
 
+    #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd_rayon(
         &mut self,
         learn_data: &mut LayerLearnData,
@@ -539,8 +609,9 @@ impl Layer {
     ) {
         for i in 0..learn_data.node_values.len() {
             let dcost = node_cost_d(learn_data.activation_values[i], expected_outputs[i]);
-            let dactivation =
-                activation_function_d(learn_data.weighted_inputs[i], self.activation_type);
+            let dactivation = self
+                .activation_type
+                .activate_derivative(learn_data.weighted_inputs[i]);
             learn_data.node_values[i] = dactivation * dcost;
         }
     }
@@ -557,10 +628,10 @@ impl Layer {
                 let weighted_input_d = prev_layer.weights[prev_node_index][new_node_index];
                 new_node_value += weighted_input_d * prev_node_cost_values[prev_node_index];
             }
-            new_node_value *= activation_function_d(
-                learn_data.weighted_inputs[new_node_index],
-                self.activation_type,
-            );
+
+            new_node_value *= self
+                .activation_type
+                .activate_derivative(learn_data.weighted_inputs[new_node_index]);
             learn_data.node_values[new_node_index] = new_node_value;
         }
     }
