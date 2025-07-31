@@ -14,11 +14,11 @@ use serde::{Deserialize, Serialize};
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabel},
     file::relative_after,
-    spectrogram::generate_spectogram,
+    spectrogram::generate_spectrogram,
     FrequencyScale,
 };
 use zaoai_types::{
-    sound::{decode_samples_from_file, S_SPECTOGRAM_NUM_BINS},
+    sound::{decode_samples_from_file, S_SPECTROGRAM_NUM_BINS},
     spectrogram::load_spectrogram,
 };
 
@@ -37,7 +37,7 @@ impl DataPoint {
     ) -> DataPoint {
         let buffer =
             anime_data_point
-                .spectogram
+                .spectrogram
                 .to_buffer(FrequencyScale::Log, img_width, img_height);
         DataPoint {
             inputs: buffer,
@@ -127,8 +127,8 @@ pub enum TrainingData {
 }
 
 impl TrainingData {
-    const SPECTOGRAM_WIDTH: usize = 512;
-    const SPECTOGRAM_HEIGHT: usize = 512;
+    const SPECTROGRAM_WIDTH: usize = 512;
+    const SPECTROGRAM_HEIGHT: usize = 512;
 
     pub fn get_thresholds(&self) -> [f64; 2] {
         match self {
@@ -180,7 +180,7 @@ impl TrainingData {
                     zaoai_label_to_datapoint(
                         virtual_training_dataset.path.clone(),
                         f,
-                        [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
+                        [Self::SPECTROGRAM_WIDTH, Self::SPECTROGRAM_HEIGHT],
                     )
                     .with_context(|| {
                         format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
@@ -206,7 +206,7 @@ impl TrainingData {
                         zaoai_label_to_datapoint(
                             virtual_training_dataset.path.clone(),
                             f,
-                            [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
+                            [Self::SPECTROGRAM_WIDTH, Self::SPECTROGRAM_HEIGHT],
                         )
                         .expect("failed to zaoai_label_to_datapoint")
                     })
@@ -227,7 +227,7 @@ impl TrainingData {
                         zaoai_label_to_datapoint(
                             virtual_training_dataset.path.clone(),
                             f,
-                            [Self::SPECTOGRAM_WIDTH, Self::SPECTOGRAM_HEIGHT],
+                            [Self::SPECTROGRAM_WIDTH, Self::SPECTROGRAM_HEIGHT],
                         )
                         .expect("failed to zaoai_label_to_datapoint")
                     })
@@ -297,8 +297,8 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
         }
         let slice = &self.dataset.virtual_dataset[self.index..batch_end];
 
-        const SPECTOGRAM_WIDTH: usize = 512;
-        const SPECTOGRAM_HEIGHT: usize = 512;
+        const SPECTROGRAM_WIDTH: usize = 512;
+        const SPECTROGRAM_HEIGHT: usize = 512;
 
         // Convert the slice of ZaoaiLabel to Vec<DataPoint>
         let batch: Vec<DataPoint> = slice
@@ -307,7 +307,7 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
                 zaoai_label_to_datapoint(
                     self.dataset.path.clone(),
                     label,
-                    [SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT],
+                    [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
                 )
                 .expect("failed to zaoai_label_to_datapoint")
             })
@@ -323,7 +323,7 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
 fn zaoai_label_to_datapoint(
     source_path: impl AsRef<Path>,
     label: &ZaoaiLabel,
-    spectogram_dim: [usize; 2],
+    spectrogram_dim: [usize; 2],
 ) -> Result<DataPoint> {
     let relative_path = relative_after(&label.path, &label.path_source).unwrap();
     let mut spectrogram_path = source_path.as_ref().join(relative_path);
@@ -335,21 +335,21 @@ fn zaoai_label_to_datapoint(
 
     let mut width = 0;
     let mut height = 0;
-    let spectogram = load_spectrogram(spectrogram_path, &mut width, &mut height)?;
+    let spectrogram = load_spectrogram(spectrogram_path, &mut width, &mut height)?;
 
-    assert_eq!(width, spectogram_dim[0], "dim missmatch");
-    assert_eq!(height, spectogram_dim[1], "dim missmatch");
+    assert_eq!(width, spectrogram_dim[0], "dim missmatch");
+    assert_eq!(height, spectrogram_dim[1], "dim missmatch");
 
     let new_point = AnimeDataPoint {
         path: label.path.clone(),
-        spectogram,
+        spectrogram: spectrogram,
         expected_outputs: label.expected_outputs(),
     };
 
     Ok(DataPoint::from_anime_data_point(
         new_point,
-        spectogram_dim[0],
-        spectogram_dim[1],
+        spectrogram_dim[0],
+        spectrogram_dim[1],
     ))
 }
 
@@ -357,10 +357,10 @@ impl VirtualTrainingDataset {
     // Returns the number of (in, out) nodes needed in layers
     pub fn get_dimensions(&self) -> (usize, usize) {
         if self.virtual_dataset.len() >= 1 {
-            const SPECTOGRAM_WIDTH: usize = 512;
-            const SPECTOGRAM_HEIGHT: usize = 512;
+            const SPECTROGRAM_WIDTH: usize = 512;
+            const SPECTROGRAM_HEIGHT: usize = 512;
 
-            (SPECTOGRAM_WIDTH * SPECTOGRAM_HEIGHT, 2)
+            (SPECTROGRAM_WIDTH * SPECTROGRAM_HEIGHT, 2)
         } else {
             (0, 0)
         }

@@ -23,8 +23,8 @@ use serde::{Deserialize, Serialize};
 
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabelsLoader},
-    sound::S_SPECTOGRAM_NUM_BINS,
-    spectrogram::{generate_spectogram, SPECTOGRAM_HEIGHT, SPECTOGRAM_WIDTH},
+    sound::S_SPECTROGRAM_NUM_BINS,
+    spectrogram::{generate_spectrogram, SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH},
 };
 
 pub trait DrawableWindow<'a> {
@@ -414,19 +414,19 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     self.ui_training_dataset_split_thresholds_1 = state_ctx.training_data.get_thresholds()[1];
                 }
 
-                if ui.button(format!("Load [{}, {}] spectogram test", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2)).clicked()
+                if ui.button(format!("Load [{}, {}] spectrogram test", SPECTROGRAM_WIDTH*SPECTROGRAM_HEIGHT, 2)).clicked()
                 {
                     let path = "test_files/test0.mkv";
-                    let spectogram = generate_spectogram(&PathBuf::from(path), S_SPECTOGRAM_NUM_BINS);
-                    match spectogram
+                    let spectrogram = generate_spectrogram(&PathBuf::from(path), S_SPECTROGRAM_NUM_BINS);
+                    match spectrogram
                     {
                         Ok(o) => { let new_point = AnimeDataPoint {
                         path: PathBuf::from(path),
-                        spectogram: o,
+                        spectrogram: o,
                         expected_outputs: vec![0.08936, 0.1510],
                     };
 
-                    let dataset: Vec<_> = vec![DataPoint::from_anime_data_point(new_point, SPECTOGRAM_WIDTH, SPECTOGRAM_HEIGHT)];
+                    let dataset: Vec<_> = vec![DataPoint::from_anime_data_point(new_point, SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT)];
                     *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
                     state_ctx.training_data.set_thresholds(1.0, 1.0);},
                         Err(e) => log::error!("{:?}", e),
@@ -441,7 +441,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 }
                 if let  Some(zaoai_label_loader) = &self.cached_zaoai_loader 
                 {
-                if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2, zaoai_label_loader.len)).clicked()
+                if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTROGRAM_WIDTH*SPECTROGRAM_HEIGHT, 2, zaoai_label_loader.len)).clicked()
                 {
                     let zaoai_labels = zaoai_label_loader.load_zaoai_labels().expect("failed to load zaoai_labels");
                     *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset{ path: PathBuf::from(zaoai_label_path), virtual_dataset: zaoai_labels, thresholds: [1.0, 1.0]});
