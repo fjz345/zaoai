@@ -319,6 +319,7 @@ pub struct WindowTrainingSetCtx<'a> {
 pub struct WindowTrainingSet {
     ui_training_dataset_split_thresholds_0: f64,
     ui_training_dataset_split_thresholds_1: f64,
+    cached_zaoai_loader: Option<ZaoaiLabelsLoader>
 }
 
 impl Default for WindowTrainingSet {
@@ -326,6 +327,7 @@ impl Default for WindowTrainingSet {
         Self {
             ui_training_dataset_split_thresholds_0: 1.0,
             ui_training_dataset_split_thresholds_1: 1.0,
+            cached_zaoai_loader: None,
         }
     }
 }
@@ -432,14 +434,20 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                    
                 }
 
-                // Todo: avoid constructing this each frame
                 let zaoai_label_path  = "training_data\\firstoutputlabels\\zaoai_labels";
-                let zaoai_label_loader = ZaoaiLabelsLoader::new(&zaoai_label_path).expect("Zaoailablesloader::new");
+                if self.cached_zaoai_loader.is_none()
+                {
+                    self.cached_zaoai_loader = Some(ZaoaiLabelsLoader::new(&zaoai_label_path).expect("Zaoailablesloader::new"));
+                }
+                if let  Some(zaoai_label_loader) = &self.cached_zaoai_loader 
+                {
                 if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTOGRAM_WIDTH*SPECTOGRAM_HEIGHT, 2, zaoai_label_loader.len)).clicked()
                 {
                     let zaoai_labels = zaoai_label_loader.load_zaoai_labels().expect("failed to load zaoai_labels");
                     *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset{ path: PathBuf::from(zaoai_label_path), virtual_dataset: zaoai_labels, thresholds: [1.0, 1.0]});
                 }
+                }
+
             })
     }
 }
