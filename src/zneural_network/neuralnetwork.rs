@@ -109,11 +109,15 @@ pub struct NeuralNetwork {
     pub is_softmax_output: bool,
     layer_learn_data: Vec<LayerLearnData>,
     version: u8,
+    layer_activation_function: ActivationFunctionType,
 }
 
 impl NeuralNetwork {
     const VERSION: u8 = 1;
-    pub fn new(graph_structure: GraphStructure) -> NeuralNetwork {
+    pub fn new(
+        graph_structure: GraphStructure,
+        layer_activation: ActivationFunctionType,
+    ) -> NeuralNetwork {
         let mut layers: Vec<Layer> = Vec::new();
         let mut prev_out_size = graph_structure.input_nodes;
 
@@ -121,12 +125,16 @@ impl NeuralNetwork {
 
         // Create Hidden layers
         for i in &graph_structure.hidden_layers[..] {
-            layers.push(Layer::new(prev_out_size, *i));
+            layers.push(Layer::new(prev_out_size, *i, layer_activation));
             prev_out_size = *i;
         }
 
         // Create Output layer
-        layers.push(Layer::new(prev_out_size, graph_structure.output_nodes));
+        layers.push(Layer::new(
+            prev_out_size,
+            graph_structure.output_nodes,
+            layer_activation,
+        ));
 
         let last_results = TestResults {
             num_datapoints: 0,
@@ -148,6 +156,7 @@ impl NeuralNetwork {
             layer_learn_data,
             version: Self::VERSION,
             is_softmax_output: false,
+            layer_activation_function: layer_activation,
         }
     }
 

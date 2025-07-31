@@ -220,7 +220,7 @@ pub fn node_cost_d_simd(output_activation: f32x8, expected_activation: f32x8) ->
 // ============================
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Default, Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct Layer {
     pub num_in_nodes: usize,
     pub num_out_nodes: usize,
@@ -243,7 +243,11 @@ pub struct LayerLearnData {
 }
 
 impl Layer {
-    pub fn new(num_in_nodes: usize, num_out_nodes: usize) -> Layer {
+    pub fn new(
+        num_in_nodes: usize,
+        num_out_nodes: usize,
+        activation_type: ActivationFunctionType,
+    ) -> Layer {
         // Validate Inputs
         if num_in_nodes <= 0 {
             panic!(
@@ -286,7 +290,7 @@ impl Layer {
             biases,
             weights_cost_grads,
             biases_cost_grads,
-            ..Default::default()
+            activation_type,
         };
 
         new_layer.init_weights_and_biases(0);

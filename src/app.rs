@@ -361,7 +361,10 @@ impl ZaoaiApp {
 
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
         log::info!("setup_ai");
-        self.ai = Some(NeuralNetwork::new(nn_structure));
+        self.ai = Some(NeuralNetwork::new(
+            nn_structure,
+            self.window_data.ai_activation_function,
+        ));
         self.training_session.set_nn(self.ai.as_ref().unwrap());
         self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
         self.window_data.training_session_batch_size = self.training_session.get_batch_size();
@@ -395,8 +398,14 @@ impl ZaoaiApp {
                     self.state = AppState::SetupAi;
                 }
 
-                ui.checkbox(&mut self.window_data.ai_use_softmax, "Use softmax");
-                egui::ComboBox::from_label("Activation Function")
+                if ui
+                    .checkbox(&mut self.window_data.ai_use_softmax, "Use softmax")
+                    .changed()
+                {
+                    self.state = AppState::SetupAi;
+                }
+                let act_before = self.window_data.ai_activation_function;
+                let combo_response = egui::ComboBox::from_label("Activation Function")
                     .selected_text(self.window_data.ai_activation_function.to_string())
                     .show_ui(ui, |ui| {
                         for variant in [
@@ -410,6 +419,10 @@ impl ZaoaiApp {
                             );
                         }
                     });
+
+                if act_before != self.window_data.ai_activation_function {
+                    self.state = AppState::SetupAi;
+                }
             })
         });
         min_rect = min_rect.union(response.inner.response.rect);
