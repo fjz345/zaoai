@@ -85,6 +85,10 @@ pub struct ZaoaiApp {
 }
 
 impl eframe::App for ZaoaiApp {
+    fn auto_save_interval(&self) -> std::time::Duration {
+        std::time::Duration::from_secs(60 * 3)
+    }
+
     #[cfg(not(feature = "linux-profile"))]
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         use crate::zneural_network::neuralnetwork::save_neural_network;
