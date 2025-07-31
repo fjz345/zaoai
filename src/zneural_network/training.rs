@@ -198,7 +198,10 @@ pub enum TrainingState {
 
 // Returns a TestResult
 pub fn test_nn(nn: &mut NeuralNetwork, test_data: &[DataPoint]) -> TestResults {
-    if test_data.len() >= 1 {
+    if test_data.len() >= 1
+        && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
+        && test_data.first().unwrap().expected_outputs.len() == nn.graph_structure.output_nodes
+    {
         let mut num_correct = 0;
 
         for i in 0..test_data.len() {

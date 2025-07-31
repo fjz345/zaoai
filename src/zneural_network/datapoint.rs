@@ -194,17 +194,19 @@ impl TrainingData {
             TrainingData::Virtual(virtual_training_dataset) => {
                 let (start, end) = virtual_training_dataset.get_validation_start_end();
                 virtual_training_dataset.virtual_dataset[start..end]
-                    .to_vec()
-                    .iter()
-                    .map(|f| {
-                        zaoai_label_to_datapoint(
-                            virtual_training_dataset.path.clone(),
-                            f,
-                            [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
-                        )
-                        .expect("failed to zaoai_label_to_datapoint")
+                .iter()
+                .filter_map(|f| {
+                    zaoai_label_to_datapoint(
+                        virtual_training_dataset.path.clone(),
+                        f,
+                        [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
+                    )
+                    .with_context(|| {
+                        format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
                     })
-                    .collect()
+                    .ok() // convert Result<DataPoint, _> to Option<DataPoint>, skipping errors
+                })
+                .collect()
             }
         }
     }
@@ -215,17 +217,19 @@ impl TrainingData {
             TrainingData::Virtual(virtual_training_dataset) => {
                 let (start, end) = virtual_training_dataset.get_test_start_end();
                 virtual_training_dataset.virtual_dataset[start..end]
-                    .to_vec()
-                    .iter()
-                    .map(|f| {
-                        zaoai_label_to_datapoint(
-                            virtual_training_dataset.path.clone(),
-                            f,
-                            [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
-                        )
-                        .expect("failed to zaoai_label_to_datapoint")
+                .iter()
+                .filter_map(|f| {
+                    zaoai_label_to_datapoint(
+                        virtual_training_dataset.path.clone(),
+                        f,
+                        [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
+                    )
+                    .with_context(|| {
+                        format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
                     })
-                    .collect()
+                    .ok() // convert Result<DataPoint, _> to Option<DataPoint>, skipping errors
+                })
+                .collect()
             }
         }
     }
