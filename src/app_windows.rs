@@ -287,7 +287,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                 let test_button = Button::new("Test").sense(sense);
                 if ui.add(test_button).clicked() {
                     if let Some(training_data) = state_ctx.test_button_training_data {
-                        if training_data.test_split().len() >= 1 {
+                        if training_data.test_split_len() >= 1 {
                             test_nn(ai, &training_data.test_split());
                         } else {
                             log::error!(
@@ -357,11 +357,11 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 100.0 * state_ctx.training_data.get_thresholds()[0],
                 state_ctx.training_data.validation_split().len(),
                 100.0 * (state_ctx.training_data.get_thresholds()[1] - state_ctx.training_data.get_thresholds()[0]),
-                state_ctx.training_data.test_split().len(),
+                state_ctx.training_data.test_split_len(),
                 100.0 * (1.0 - state_ctx.training_data.get_thresholds()[1]),
                 state_ctx.training_data.len(),
                 (state_ctx.training_data.training_split_len() + state_ctx.training_data.validation_split().len()
-                    + state_ctx.training_data.test_split().len()) as f64
+                    + state_ctx.training_data.test_split_len()) as f64
                     / state_ctx.training_data.len().max(1) as f64,
                 ));
 

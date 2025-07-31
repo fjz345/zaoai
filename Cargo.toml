@@ -32,7 +32,7 @@ strum_macros = "0.27.2"
 anyhow = "1.0.98"
 
 [features]
-default = ["serde"]
+default = ["serde", "simd"]
 simd = []
 serde = ["dep:serde", "dep:serde_derive", "dep:serde_json", "dep:humantime-serde"]
 accesskit = []
