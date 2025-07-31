@@ -106,6 +106,7 @@ pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
     pub last_test_results: TestResults,
+    pub is_softmax_output: bool,
     layer_learn_data: Vec<LayerLearnData>,
     version: u8,
 }
@@ -146,6 +147,7 @@ impl NeuralNetwork {
             last_test_results: last_results,
             layer_learn_data,
             version: Self::VERSION,
+            is_softmax_output: false,
         }
     }
 
@@ -455,13 +457,11 @@ impl NeuralNetwork {
             current_inputs = layer.calculate_outputs_simd(&current_inputs);
         }
 
+        if self.is_softmax_output {
+            current_inputs = softmax(&current_inputs)
+        }
         current_inputs
     }
-
-    // pub fn calculate_outputs_softmax(&mut self, inputs: &[f32]) -> Vec<f32> {
-    //     let mut current_inputs = self.calculate_outputs(inputs);
-    //     softmax(&current_inputs)
-    // }
 
     // returns index of max value, max value
     pub fn determine_output_result(inputs: &[f32]) -> (usize, f32) {

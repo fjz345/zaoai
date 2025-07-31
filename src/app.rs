@@ -5,6 +5,7 @@ use crate::{
     error::Result,
     zneural_network::{
         datapoint::{TrainingData, TrainingDataset},
+        layer::ActivationFunctionType,
         neuralnetwork::load_neural_network,
     },
 };
@@ -63,6 +64,9 @@ struct MenuWindowData {
     show_traning_dataset: bool,
     training_dataset_split_thresholds_0: f64,
     training_dataset_split_thresholds_1: f64,
+    // AI options
+    ai_use_softmax: bool,
+    ai_activation_function: ActivationFunctionType,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -302,6 +306,8 @@ impl Default for ZaoaiApp {
                 training_dataset_split_thresholds_0: 0.75,
                 training_dataset_split_thresholds_1: 0.9,
                 show_ai: true,
+                ai_use_softmax: false,
+                ai_activation_function: ActivationFunctionType::ReLU,
             },
             training_data: TrainingData::Physical(TrainingDataset::new(
                 &[DataPoint {
@@ -388,6 +394,22 @@ impl ZaoaiApp {
                 {
                     self.state = AppState::SetupAi;
                 }
+
+                ui.checkbox(&mut self.window_data.ai_use_softmax, "Use softmax");
+                egui::ComboBox::from_label("Activation Function")
+                    .selected_text(self.window_data.ai_activation_function.to_string())
+                    .show_ui(ui, |ui| {
+                        for variant in [
+                            ActivationFunctionType::ReLU,
+                            ActivationFunctionType::Sigmoid,
+                        ] {
+                            ui.selectable_value(
+                                &mut self.window_data.ai_activation_function,
+                                variant,
+                                variant.to_string(),
+                            );
+                        }
+                    });
             })
         });
         min_rect = min_rect.union(response.inner.response.rect);
