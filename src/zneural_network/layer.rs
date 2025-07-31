@@ -9,21 +9,6 @@ use rayon::iter::{
 use serde::{Deserialize, Serialize};
 use wide::f32x8;
 
-pub fn softmax(layer_values: &[f32]) -> Vec<f32> {
-    let max_val = layer_values
-        .iter()
-        .cloned()
-        .fold(f32::NEG_INFINITY, f32::max);
-    let mut sum = 0.0f64;
-    for &value in layer_values {
-        sum += (value - max_val).exp() as f64;
-    }
-    layer_values
-        .iter()
-        .map(|&v| ((v - max_val).exp() as f64 / sum) as f32)
-        .collect()
-}
-
 // ============================
 // Activation Functions
 // ============================
@@ -198,12 +183,13 @@ fn relu_d(in_value: f32) -> f32 {
 
 #[cfg(feature = "simd")]
 fn relu_d_simd(x: f32x8) -> f32x8 {
+    // temp fix
     let a: Vec<f32> = x.to_array().iter_mut().map(|f| relu_d(*f)).collect();
     return f32x8::from(&a[..]);
 
     // think this is correct?, no was wrong...
-    use wide::CmpGt;
-    x.cmp_gt(f32x8::splat(0.0))
+    // use wide::CmpGt;
+    // x.cmp_gt(f32x8::splat(0.0))
 }
 // ============================
 

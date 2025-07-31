@@ -479,18 +479,18 @@ impl NeuralNetwork {
     pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
         let mut current_inputs = inputs.to_vec();
         for (i, layer) in self.layers.iter().enumerate() {
-            // #[cfg(feature = "simd")]
-            // {
-            //     current_inputs = layer.calculate_outputs_simd(&current_inputs);
-            // }
-            // #[cfg(not(feature = "simd"))]
+            #[cfg(feature = "simd")]
+            {
+                current_inputs = layer.calculate_outputs_simd(&current_inputs);
+            }
+            #[cfg(not(feature = "simd"))]
             {
                 current_inputs = layer.calculate_outputs(&current_inputs);
             }
         }
 
         if self.is_softmax_output {
-            current_inputs = softmax(&current_inputs)
+            current_inputs = ActivationFunctionType::apply_softmax(&current_inputs)
         }
         current_inputs
     }
