@@ -428,7 +428,14 @@ impl NeuralNetwork {
             learn_data_output,
             &datapoint.expected_outputs,
         );
-        output_layer.update_cost_gradients_simd(learn_data_output);
+        #[cfg(feature = "simd")]
+        {
+            output_layer.update_cost_gradients_simd(learn_data_output);
+        }
+        #[cfg(not(feature = "simd"))]
+        {
+            output_layer.update_cost_gradients(learn_data_output);
+        }
 
         // Hidden layers error & gradients, back to front
         for i in (0..layer_len - 1).rev() {
@@ -445,7 +452,15 @@ impl NeuralNetwork {
             );
 
             let mut_hidden_layer = &mut self.layers[i];
-            mut_hidden_layer.update_cost_gradients_simd(learn_data_hidden);
+
+            #[cfg(feature = "simd")]
+            {
+                mut_hidden_layer.update_cost_gradients_simd(learn_data_hidden);
+            }
+            #[cfg(not(feature = "simd"))]
+            {
+                mut_hidden_layer.update_cost_gradients(learn_data_hidden);
+            }
         }
     }
 
@@ -518,7 +533,14 @@ impl NeuralNetwork {
             panic!("Input data was len: {}", data.len());
         }
 
-        self.calculate_cost_simd(data)
+        #[cfg(feature = "simd")]
+        {
+            self.calculate_cost_simd(data)
+        }
+        #[cfg(not(feature = "simd"))]
+        {
+            self.calculate_cost(data)
+        }
     }
 
     fn calculate_cost(&self, data: &[DataPoint]) -> f32 {
@@ -530,6 +552,7 @@ impl NeuralNetwork {
         cost / (data.len() as f32)
     }
 
+    #[cfg(feature = "simd")]
     fn calculate_cost_simd(&self, data: &[DataPoint]) -> f32 {
         let mut total_cost = 0.0;
         let output_layer = self.layers.last().unwrap();

@@ -508,6 +508,7 @@ impl Layer {
         *bias_grad += node_value; // same as 1.0 * node_value
     }
 
+    #[cfg(feature = "simd")]
     fn update_cost_gradient_for_node_simd(
         weight_grad_row: &mut [f32],
         bias_grad: &mut f32,
@@ -557,6 +558,7 @@ impl Layer {
         }
     }
 
+    #[cfg(feature = "simd")]
     pub fn update_cost_gradients_simd(&mut self, learn_data: &LayerLearnData) {
         let num_in_nodes = self.num_in_nodes;
         let inputs = &learn_data.inputs;
@@ -576,6 +578,7 @@ impl Layer {
         }
     }
 
+    #[cfg(feature = "simd")]
     pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
         let num_in_nodes = self.num_in_nodes;
         let inputs = &learn_data.inputs;
