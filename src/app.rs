@@ -196,7 +196,8 @@ impl eframe::App for ZaoaiApp {
                     TrainingState::StartTraining => {
                         if let Some(ai) = &self.ai {
                             if (self.training_thread.is_none()) {
-                                let training_dataset_dim = self.training_data.get_dimensions();
+                                let training_dataset_dim =
+                                    self.training_data.get_in_out_dimensions();
                                 self.training_session
                                     .set_training_data(self.training_data.clone());
                                 if (

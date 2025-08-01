@@ -140,12 +140,17 @@ impl TrainingData {
             }
         }
     }
-    pub fn get_dimensions(&self) -> (usize, usize) {
+    // Input, Output dimensions
+    pub fn get_in_out_dimensions(&self) -> (usize, usize) {
         match self {
             TrainingData::Physical(training_dataset) => training_dataset.get_dimensions(),
-            TrainingData::Virtual(virtual_training_dataset) => {
-                virtual_training_dataset.get_dimensions()
-            }
+            TrainingData::Virtual(virtual_training_dataset) => virtual_training_dataset
+                .virtual_dataset_input_desiered_dim
+                .and_then(|f| Some((f[0] * f[1], virtual_training_dataset.get_dimensions().1)))
+                .unwrap_or((
+                    virtual_training_dataset.get_dimensions().0,
+                    virtual_training_dataset.get_dimensions().1,
+                )),
         }
     }
 
@@ -380,7 +385,7 @@ impl VirtualTrainingDataset {
     pub fn set_thresholds(&mut self, thresholds: [f64; 2]) {
         self.thresholds = thresholds;
     }
-    pub fn set_desiered_dim(&mut self, dim: [usize; 2]) {
+    pub fn set_desiered_input_dim(&mut self, dim: [usize; 2]) {
         self.virtual_dataset_input_desiered_dim = Some(dim);
     }
     // Returns the number of (in, out) nodes needed in layers

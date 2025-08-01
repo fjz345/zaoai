@@ -324,7 +324,7 @@ pub struct WindowTrainingSet {
     cached_zaoai_loader: Option<ZaoaiLabelsLoader>,
     #[cfg_attr(feature = "serde", serde(skip))]
     resize_text: String,
-    cached_resize_dim: Vec<usize>,
+    cached_resize_input_dim: Vec<usize>,
 }
 
 impl Default for WindowTrainingSet {
@@ -334,7 +334,7 @@ impl Default for WindowTrainingSet {
             ui_training_dataset_split_thresholds_1: 1.0,
             cached_zaoai_loader: None,
             resize_text: String::new(),
-            cached_resize_dim: Vec::with_capacity(2),
+            cached_resize_input_dim: Vec::with_capacity(2),
         }
     }
 }
@@ -371,7 +371,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     / state_ctx.training_data.len().max(1) as f64,
                 ));
 
-                ui.label(format!("Dimensions: ({}, {})", state_ctx.training_data.get_dimensions().0, state_ctx.training_data.get_dimensions().1));
+                ui.label(format!("Dimensions: ({}, {})", state_ctx.training_data.get_in_out_dimensions().0, state_ctx.training_data.get_in_out_dimensions().1));
                 if ui.button("Load [2, 2] test dataset").clicked()
                 {
                     let dataset = create_2x2_test_datapoints(0, 100000 as i32);
@@ -470,29 +470,28 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                                 .resize_text.split(|c| c == ',' || c == ' ')
                                 .collect::<Vec<_>>()
                                 .into_iter()
-                                .map(|str| -> usize {
-                                    let ret = FromStr::from_str(str).unwrap_or(0);
-                                    ret
+                                .filter_map(|str| {
+                                    FromStr::from_str(str).ok()
                                 })
                                 .collect::<Vec<_>>();
 
-                            self.cached_resize_dim = parsed_resize_dim;
+                            self.cached_resize_input_dim = parsed_resize_dim;
                         }
                     });
                 }
 
             });
 
-        if self.cached_resize_dim.len() >= 2
+        if self.cached_resize_input_dim.len() >= 2
         {
-            if state_ctx.training_data.get_dimensions() != (self.cached_resize_dim[0], self.cached_resize_dim[1])
+            if state_ctx.training_data.get_in_out_dimensions().0 * state_ctx.training_data.get_in_out_dimensions().1 != (self.cached_resize_input_dim[0] * self.cached_resize_input_dim[1])
             {
                 match state_ctx.training_data
                 {
                     TrainingData::Physical(training_dataset) => {},
                     TrainingData::Virtual(virtual_training_dataset) => {
-                        log::info!("Set virtual trainingdata desiered dim: [{},{}]", self.cached_resize_dim[0], self.cached_resize_dim[1]);
-                        virtual_training_dataset.set_desiered_dim([self.cached_resize_dim[0], self.cached_resize_dim[1]]);
+                        log::info!("Set virtual trainingdata desiered dim: [{},{}]", self.cached_resize_input_dim[0], self.cached_resize_input_dim[1]);
+                        virtual_training_dataset.set_desiered_input_dim([self.cached_resize_input_dim[0], self.cached_resize_input_dim[1]]);
                     },
                 }
             }

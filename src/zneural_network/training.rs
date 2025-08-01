@@ -169,8 +169,8 @@ impl TrainingSession {
 
     pub fn ready(&self) -> bool {
         self.nn.is_some()
-            && self.training_data.get_dimensions().0 > 0
-            && self.training_data.get_dimensions().1 > 0
+            && self.training_data.get_in_out_dimensions().0 > 0
+            && self.training_data.get_in_out_dimensions().1 > 0
             && self.num_epochs > 0
             && self.batch_size > 0
             && self.learn_rate > 0.0
