@@ -1,53 +1,6 @@
-[package]
-name = "zaoai"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-zaoai-types = { path = "../zaoai-types" }
-
-rand = "0.8.5"
-rand_chacha = "0.3.1"
-# tensorflow = { version = "0.18.0", features = ["tensorflow_gpu"] }
-graphviz-rust = "0.6.2"
-eframe = {version = "0.31.0", features = ["serde", "persistence"]}
-env_logger = "0.11.8"
-ndarray = "0.15.6"
-rust-mnist = "0.2.0"
-log = "0.4.27"
-serde = { version = "1.0.219", features = ["derive"], optional=true }
-serde_derive = {version = "1.0", optional=true}
-serde_json = {version = "1.0.141", optional=true}
-humantime-serde = {version = "1.1.1", optional=true}
-egui_plot = {version = "0.32.1", features = ["serde"]}
-egui_extras = "0.31.1"
-pprof = { version="0.15.0", features = ["flamegraph"], optional = true}
-wide = "0.7.33"
-rayon = "1.10.0"
-bincode = "2.0.1"
-strum = "0.27.2"
-strum_macros = "0.27.2"
-anyhow = "1.0.98"
-
-[features]
-default = ["serde", "simd"]
-simd = []
-serde = ["dep:serde", "dep:serde_derive", "dep:serde_json", "dep:humantime-serde"]
-accesskit = []
-linux-profile = ["dep:pprof"]
-
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.5", features = ["winnt", "winuser"] }
-
-[profile.release]
-incremental = true
-codegen-units = 1
-lto = true
-opt-level = 3
-debug = true
-
-[profile.dev]
-incremental = true
-lto = "off"
+[workspace]
+members = [
+    "zaoai",
+    "zaoai-types",
+    "zaoai-helper"
+]
