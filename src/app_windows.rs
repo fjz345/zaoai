@@ -322,7 +322,9 @@ pub struct WindowTrainingSet {
     ui_training_dataset_split_thresholds_1: f64,
     #[cfg_attr(feature = "serde", serde(skip))]
     cached_zaoai_loader: Option<ZaoaiLabelsLoader>,
+    #[cfg_attr(feature = "serde", serde(skip))]
     resize_text: String,
+    cached_resize_dim: Vec<usize>,
 }
 
 impl Default for WindowTrainingSet {
@@ -332,6 +334,7 @@ impl Default for WindowTrainingSet {
             ui_training_dataset_split_thresholds_1: 1.0,
             cached_zaoai_loader: None,
             resize_text: String::new(),
+            cached_resize_dim: Vec::with_capacity(2),
         }
     }
 }
@@ -344,7 +347,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        egui::Window::new("Dataset")
+        let response = egui::Window::new("Dataset")
             .default_pos([0.0, 600.0])
             .show(ctx, |ui| {
                                ui.add(Interval::new(
@@ -457,7 +460,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                             *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset::new(PathBuf::from(zaoai_label_path), zaoai_labels, [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]));
                         }
 
-                        let name_label = ui.label("Resize (w,h)");
+                        let name_label = ui.label("Resize");
                         if (ui
                             .text_edit_singleline(&mut self.resize_text)
                             .labelled_by(name_label.id)
@@ -473,25 +476,29 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                                 })
                                 .collect::<Vec<_>>();
 
-                            if parsed_resize_dim.len() >= 2
-                            {
-                                if state_ctx.training_data.get_dimensions() != (parsed_resize_dim[0], parsed_resize_dim[1])
-                                {
-                                    match state_ctx.training_data
-                                    {
-                                        TrainingData::Physical(training_dataset) => {},
-                                        TrainingData::Virtual(virtual_training_dataset) => {
-                                            log::info!("Set virtual trainingdata desiered dim: [{},{}]", parsed_resize_dim[0], parsed_resize_dim[1]);
-                                            virtual_training_dataset.set_desiered_dim([parsed_resize_dim[0], parsed_resize_dim[1]]);
-                                        },
-                                    }
-                                }
-                            }
+                            self.cached_resize_dim = parsed_resize_dim;
                         }
                     });
                 }
 
-            })
+            });
+
+        if self.cached_resize_dim.len() >= 2
+        {
+            if state_ctx.training_data.get_dimensions() != (self.cached_resize_dim[0], self.cached_resize_dim[1])
+            {
+                match state_ctx.training_data
+                {
+                    TrainingData::Physical(training_dataset) => {},
+                    TrainingData::Virtual(virtual_training_dataset) => {
+                        log::info!("Set virtual trainingdata desiered dim: [{},{}]", self.cached_resize_dim[0], self.cached_resize_dim[1]);
+                        virtual_training_dataset.set_desiered_dim([self.cached_resize_dim[0], self.cached_resize_dim[1]]);
+                    },
+                }
+            }
+        }
+
+        response
     }
 }
 
