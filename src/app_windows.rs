@@ -484,7 +484,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
 
         if self.cached_resize_input_dim.len() >= 2
         {
-            if state_ctx.training_data.get_in_out_dimensions().0 * state_ctx.training_data.get_in_out_dimensions().1 != (self.cached_resize_input_dim[0] * self.cached_resize_input_dim[1])
+            if state_ctx.training_data.get_in_out_dimensions().0 != (self.cached_resize_input_dim[0] * self.cached_resize_input_dim[1])
             {
                 match state_ctx.training_data
                 {
