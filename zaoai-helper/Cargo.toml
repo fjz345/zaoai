@@ -1,0 +1,34 @@
+[package]
+name = "zaoai-helper"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "zaoai-helper"
+path = "src/main.rs"
+
+[dependencies]
+zaoai-types = { path = "../zaoai-types" }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_derive = "1.0"
+serde-xml-rs = "0.8.1"
+serde_json = "1.0.141"
+humantime-serde = "1.1.1"
+regex = "1.11.1"
+anyhow = "1.0.98"           # optional, for easier error handling
+thiserror = "1.0"        # optional, custom error types
+dotenvy = "0.15.7"
+env_logger = "0.11.8"
+soloud = "1.1.1"
+log = "0.4.27"
+plotlib = "0.5.1"
+
+[profile.dev]
+debug = true
+split-debuginfo = "packed"
+debug-assertions = true
+
+[profile.release]
+debug = true
+split-debuginfo = "packed"
+opt-level = 3
