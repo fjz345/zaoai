@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc};
+use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr};
 
 use crate::{
     app::AppState,
@@ -321,7 +321,8 @@ pub struct WindowTrainingSet {
     ui_training_dataset_split_thresholds_0: f64,
     ui_training_dataset_split_thresholds_1: f64,
     #[cfg_attr(feature = "serde", serde(skip))]
-    cached_zaoai_loader: Option<ZaoaiLabelsLoader>
+    cached_zaoai_loader: Option<ZaoaiLabelsLoader>,
+    resize_text: String,
 }
 
 impl Default for WindowTrainingSet {
@@ -330,6 +331,7 @@ impl Default for WindowTrainingSet {
             ui_training_dataset_split_thresholds_0: 1.0,
             ui_training_dataset_split_thresholds_1: 1.0,
             cached_zaoai_loader: None,
+            resize_text: String::new(),
         }
     }
 }
@@ -447,11 +449,46 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 }
                 if let  Some(zaoai_label_loader) = &self.cached_zaoai_loader 
                 {
-                if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTROGRAM_WIDTH*SPECTROGRAM_HEIGHT, 2, zaoai_label_loader.len)).clicked()
-                {
-                    let zaoai_labels = zaoai_label_loader.load_zaoai_labels().expect("failed to load zaoai_labels");
-                    *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset{ path: PathBuf::from(zaoai_label_path), virtual_dataset: zaoai_labels, thresholds: [1.0, 1.0], virtual_dataset_input_dim: [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT] });
-                }
+                    ui.horizontal(|ui|
+                    {
+                        if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTROGRAM_WIDTH*SPECTROGRAM_HEIGHT, 2, zaoai_label_loader.len)).clicked()
+                        {
+                            let zaoai_labels = zaoai_label_loader.load_zaoai_labels().expect("failed to load zaoai_labels");
+                            *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset::new(PathBuf::from(zaoai_label_path), zaoai_labels, [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]));
+                        }
+
+                        let name_label = ui.label("Resize (w,h)");
+                        if (ui
+                            .text_edit_singleline(&mut self.resize_text)
+                            .labelled_by(name_label.id)
+                            .lost_focus())
+                        {
+                            let mut parsed_resize_dim = self
+                                .resize_text.split(|c| c == ',' || c == ' ')
+                                .collect::<Vec<_>>()
+                                .into_iter()
+                                .map(|str| -> usize {
+                                    let ret = FromStr::from_str(str).unwrap_or(0);
+                                    ret
+                                })
+                                .collect::<Vec<_>>();
+
+                            if parsed_resize_dim.len() >= 2
+                            {
+                                if state_ctx.training_data.get_dimensions() != (parsed_resize_dim[0], parsed_resize_dim[1])
+                                {
+                                    match state_ctx.training_data
+                                    {
+                                        TrainingData::Physical(training_dataset) => {},
+                                        TrainingData::Virtual(virtual_training_dataset) => {
+                                            log::info!("Set virtual trainingdata desiered dim: [{},{}]", parsed_resize_dim[0], parsed_resize_dim[1]);
+                                            virtual_training_dataset.set_desiered_dim([parsed_resize_dim[0], parsed_resize_dim[1]]);
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    });
                 }
 
             })

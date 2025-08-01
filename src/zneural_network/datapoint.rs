@@ -14,7 +14,9 @@ use serde::{Deserialize, Serialize};
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabel},
     file::relative_after,
-    spectrogram::{generate_spectrogram, SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH},
+    spectrogram::{
+        generate_spectrogram, resize_spectrogram, SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH,
+    },
     FrequencyScale,
 };
 use zaoai_types::{sound::decode_samples_from_file, spectrogram::load_spectrogram};
@@ -174,7 +176,9 @@ impl TrainingData {
                     zaoai_label_to_datapoint(
                         virtual_training_dataset.path.clone(),
                         f,
-                        [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
+                        virtual_training_dataset
+                        .virtual_dataset_input_desiered_dim
+                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
                     )
                     .with_context(|| {
                         format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
@@ -199,7 +203,9 @@ impl TrainingData {
                     zaoai_label_to_datapoint(
                         virtual_training_dataset.path.clone(),
                         f,
-                        [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
+                        virtual_training_dataset
+                        .virtual_dataset_input_desiered_dim
+                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
                     )
                     .with_context(|| {
                         format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
@@ -222,7 +228,9 @@ impl TrainingData {
                     zaoai_label_to_datapoint(
                         virtual_training_dataset.path.clone(),
                         f,
-                        [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
+                        virtual_training_dataset
+                        .virtual_dataset_input_desiered_dim
+                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
                     )
                     .with_context(|| {
                         format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
@@ -271,6 +279,7 @@ pub struct VirtualTrainingDataset {
     pub virtual_dataset: Vec<ZaoaiLabel>,
     pub thresholds: [f64; 2],
     pub virtual_dataset_input_dim: [usize; 2],
+    pub virtual_dataset_input_desiered_dim: Option<[usize; 2]>,
 }
 
 #[derive(Debug)]
@@ -303,7 +312,9 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
                 zaoai_label_to_datapoint(
                     self.dataset.path.clone(),
                     label,
-                    [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT],
+                    self.dataset
+                        .virtual_dataset_input_desiered_dim
+                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
                 )
                 .expect("failed to zaoai_label_to_datapoint")
             })
@@ -319,7 +330,7 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
 fn zaoai_label_to_datapoint(
     source_path: impl AsRef<Path>,
     label: &ZaoaiLabel,
-    spectrogram_dim: [usize; 2],
+    dim: [usize; 2],
 ) -> Result<DataPoint> {
     let relative_path = relative_after(&label.path, &label.path_source).unwrap();
     let mut spectrogram_path = source_path.as_ref().join(relative_path);
@@ -331,10 +342,17 @@ fn zaoai_label_to_datapoint(
 
     let mut width = 0;
     let mut height = 0;
-    let spectrogram = load_spectrogram(spectrogram_path, &mut width, &mut height)?;
-
-    assert_eq!(width, spectrogram_dim[0], "dim missmatch");
-    assert_eq!(height, spectrogram_dim[1], "dim missmatch");
+    let mut spectrogram = load_spectrogram(spectrogram_path, &mut width, &mut height)?;
+    if dim != [width, height] {
+        log::trace!(
+            "Resizing Spectrogram [{},{}] -> [{},{}]",
+            width,
+            height,
+            dim[0],
+            dim[1]
+        );
+        spectrogram = unsafe { resize_spectrogram(spectrogram, dim[0], dim[1]) };
+    }
 
     let new_point = AnimeDataPoint {
         path: label.path.clone(),
@@ -342,14 +360,29 @@ fn zaoai_label_to_datapoint(
         expected_outputs: label.expected_outputs(),
     };
 
-    Ok(DataPoint::from_anime_data_point(
-        new_point,
-        spectrogram_dim[0],
-        spectrogram_dim[1],
-    ))
+    Ok(DataPoint::from_anime_data_point(new_point, dim[0], dim[1]))
 }
 
 impl VirtualTrainingDataset {
+    pub fn new(
+        path: PathBuf,
+        virtual_dataset: Vec<ZaoaiLabel>,
+        virtual_dataset_input_dim: [usize; 2],
+    ) -> Self {
+        VirtualTrainingDataset {
+            path: path,
+            virtual_dataset: virtual_dataset,
+            thresholds: [1.0, 1.0],
+            virtual_dataset_input_dim: virtual_dataset_input_dim,
+            virtual_dataset_input_desiered_dim: None,
+        }
+    }
+    pub fn set_thresholds(&mut self, thresholds: [f64; 2]) {
+        self.thresholds = thresholds;
+    }
+    pub fn set_desiered_dim(&mut self, dim: [usize; 2]) {
+        self.virtual_dataset_input_desiered_dim = Some(dim);
+    }
     // Returns the number of (in, out) nodes needed in layers
     pub fn get_dimensions(&self) -> (usize, usize) {
         if self.virtual_dataset.len() >= 1 {
