@@ -1,6 +1,6 @@
 # ZaoAI – Z Anime Opening AI
 
-![alt text](img/showcase2.png)
+![alt text](zaoai/img/showcase2.png)
 
 > ⚠️ This project is in early development.
 
