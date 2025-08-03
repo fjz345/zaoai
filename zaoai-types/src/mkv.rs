@@ -44,7 +44,8 @@ impl MkvMetadata {
         // Not 100% optimal code, dont care
         for (i, chapter) in self.chapters.iter().enumerate() {
             let title = chapter.display.title.to_lowercase();
-            if title.contains("op") || title.contains("opening") {
+            // Todo: read chapter_opening.txt
+            if title.to_lowercase().contains("op") || title.to_lowercase().contains("opening") {
                 op_chapter = Some(chapter);
                 op_chapter_next = self.chapters.get(i + 1);
                 op_start = parse_time(&chapter.start_time);
