@@ -1,6 +1,6 @@
 use crate::layer::*;
 use crate::zneural_network::thread::TrainingThreadPayload;
-use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, TestResults};
+use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, NNResult, TestResults};
 
 use super::datapoint::DataPoint;
 use rand::prelude::*;
@@ -136,12 +136,7 @@ impl NeuralNetwork {
             layer_activation,
         ));
 
-        let last_results = TestResults {
-            num_datapoints: 0,
-            num_correct: 0,
-            accuracy: 0.0,
-            cost: 0.0,
-        };
+        let last_results = TestResults::new(vec![], 0.0);
 
         let mut layer_learn_data: Vec<LayerLearnData> = Vec::new();
         for i in 0..layers.len() {
@@ -505,7 +500,7 @@ impl NeuralNetwork {
     }
 
     // returns index of max value, max value
-    pub fn determine_output_result(inputs: &[f32]) -> (usize, f32) {
+    pub fn determine_output_result(inputs: &[f32]) -> NNResult {
         let mut max = -99999999999.0;
         let mut max_index = 0;
         // Choose the greatest value
@@ -623,7 +618,7 @@ impl NeuralNetwork {
         let print_string: String = format!(
             "\
         Graph Structure: {}\n\
-        Last Test Results: {:#?}\n",
+        Last Test Results: {}\n",
             self.graph_structure.to_string(),
             self.last_test_results
         );

@@ -22,7 +22,7 @@ use zaoai_types::{
 use zaoai_types::{sound::decode_samples_from_file, spectrogram::load_spectrogram};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct DataPoint {
     pub inputs: Vec<f32>,
     pub expected_outputs: Vec<f32>,

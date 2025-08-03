@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -177,13 +179,55 @@ impl TrainingSession {
     }
 }
 
+pub type NNResult = (usize, f32);
+pub type NNOutputs = Vec<f32>;
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Copy, Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct TestResults {
-    pub num_datapoints: i32,
+    pub results: Vec<(DataPoint, NNOutputs)>, // results for each datapoint
     pub num_correct: i32,
     pub accuracy: f32,
     pub cost: f32,
+}
+
+impl TestResults {
+    pub fn new(results: Vec<(DataPoint, NNOutputs)>, avg_cost: f32) -> Self {
+        let mut num_correct = 0;
+        for (datapoint, outputs) in &results {
+            let result = NeuralNetwork::determine_output_result(&outputs);
+            let result_expected =
+                NeuralNetwork::determine_output_result(&datapoint.expected_outputs);
+            let is_correct = result.0 == result_expected.0;
+            if is_correct {
+                num_correct += 1;
+            }
+        }
+
+        Self {
+            num_correct: num_correct,
+            accuracy: (num_correct as f32) / (results.len() as f32),
+            cost: avg_cost,
+            results,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.results.len()
+    }
+}
+
+impl Display for TestResults {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "TestResults(\n\tnum_total: {}\n\tnum_correct: {}\n\taccuracy: {}\n\tcost: {}\n)",
+            self.len(),
+            self.num_correct,
+            self.accuracy,
+            self.cost
+        )
+    }
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
@@ -196,43 +240,29 @@ pub enum TrainingState {
     Abort,
 }
 
-// Returns a TestResult
-pub fn test_nn(nn: &mut NeuralNetwork, test_data: &[DataPoint]) -> TestResults {
+pub fn test_nn<'a>(
+    nn: &'a mut NeuralNetwork,
+    test_data: &[DataPoint],
+) -> Result<&'a TestResults, anyhow::Error> {
     if test_data.len() >= 1
         && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
         && test_data.first().unwrap().expected_outputs.len() == nn.graph_structure.output_nodes
     {
+        log::info!("Start test_nn");
         let mut num_correct = 0;
 
+        let mut results = Vec::with_capacity(test_data.len());
         for i in 0..test_data.len() {
             let mut datapoint = &test_data[i];
             let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
-            let result = NeuralNetwork::determine_output_result(&outputs);
-            let result_expected =
-                NeuralNetwork::determine_output_result(&datapoint.expected_outputs);
-
-            let is_correct = result.0 == result_expected.0;
-            if (is_correct) {
-                num_correct += 1;
-            }
+            results.push((test_data[i].clone(), outputs));
         }
 
         let avg_cost = nn.calculate_costs(test_data);
-        let test_result = TestResults {
-            num_datapoints: test_data.len() as i32,
-            num_correct: num_correct,
-            accuracy: (num_correct as f32) / (test_data.len() as f32),
-            cost: avg_cost,
-        };
-
-        nn.last_test_results = test_result;
-        test_result
+        let test_results = TestResults::new(results, avg_cost);
+        nn.last_test_results = test_results;
+        Ok(&nn.last_test_results)
     } else {
-        TestResults {
-            num_datapoints: 0,
-            num_correct: 0,
-            accuracy: 0.0,
-            cost: 0.0,
-        }
+        anyhow::bail!("Failed to test_nn")
     }
 }

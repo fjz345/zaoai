@@ -288,8 +288,11 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                 if ui.add(test_button).clicked() {
                     if let Some(training_data) = state_ctx.test_button_training_data {
                         if training_data.test_split_len() >= 1 {
-                            log::info!("{:?}", training_data);
-                            test_nn(ai, &training_data.test_split());
+                            match test_nn(ai, &training_data.test_split())
+                            {
+                                Ok(r) => log::info!("{r}"),
+                                Err(e) => log::error!("{e}"),
+                            }
                         } else {
                             log::error!(
                                 "Could not start test, training data training len was empty"
