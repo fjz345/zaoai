@@ -244,6 +244,7 @@ pub struct ZaoaiLabelsLoader {
     pub path_source: PathBuf,
     pub len: usize,
     pub label_file_paths: Vec<PathBuf>,
+    pub label_input_dim: Option<[usize; 2]>,
 }
 
 impl ZaoaiLabelsLoader {
@@ -269,6 +270,7 @@ impl ZaoaiLabelsLoader {
             path_source: path.as_ref().to_path_buf(),
             len: list_of_entries.len(),
             label_file_paths: list_of_entries,
+            label_input_dim: None,
         })
     }
 
