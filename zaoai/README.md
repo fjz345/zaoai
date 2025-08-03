@@ -5,7 +5,6 @@
 > ⚠️ This project is in early development.
 
 ## Current Features
-
 - Create neural networks with format **[In]748, 400, [Out]10**
 - Train networks using **backpropagation**
 - SIMD-optimized
