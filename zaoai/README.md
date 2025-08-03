@@ -4,12 +4,6 @@
 
 > ⚠️ This project is in early development.
 
-## Project Goal
-Input an anime video file and automatically mark:
-- **OP (Opening)** start/end
-- **ED (Ending)** start/end  
-Based primarily on **audio analysis**.
-
 ## Current Features
 
 - Create neural networks with format **[In]748, 400, [Out]10**
@@ -19,17 +13,6 @@ Based primarily on **audio analysis**.
 - Interactive UI (built with `eframe`)
 - Training metrics tracking
 
-## Roadmap
-
-### Phase 1 – Dataset Preparation
-- [ ] Zaoaihelper to extract training data
-- [ ] Chapter annotation tools for OP/ED regions
-
-### Phase 2 – Training Pipeline
-- Use sliced FFTs of audio as input
-- Train using labels of frame numbers to identify opening start/end segments
-
-
 ## TODO:
 ### Support Audio Formats
 - mkv
@@ -37,7 +20,6 @@ Based primarily on **audio analysis**.
 
 ### Zaoai Helper
 - Add chapters to video file
-- Gather training data
 
 ### AI:
 - Dropout neurons (Prune network during training)
@@ -61,14 +43,3 @@ Based primarily on **audio analysis**.
 - Mixed precision (f16/f32)	For speed/memory gains, GPU-focused
 - Model export (ONNX/custom)	Deployment-ready models
 - Gradient checking (finite diff)	Validate your backprop implementation
-
-## Crates
-> ⚠️ This project is in early development.
-### zaoai
-Main crate, contains neural network code and gui for interaction
-
-### zaoai-types
-Crate with common datatypes & functionality, currently stuff is just crammed in here.
-
-### zaoai-helper
-Contains script-like executables for preparing & maintaining files needed for zaoai. Such as converting .mkv files to .zlbl/.spectrogram files
