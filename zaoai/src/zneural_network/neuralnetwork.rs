@@ -1,6 +1,6 @@
 use crate::layer::*;
 use crate::zneural_network::thread::TrainingThreadPayload;
-use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, NNResult, TestResults};
+use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, TestResults};
 
 use super::datapoint::DataPoint;
 use rand::prelude::*;
@@ -14,6 +14,7 @@ use std::path::Path;
 use std::sync::mpsc::Receiver;
 use std::sync::mpsc::{self, Sender};
 use std::thread::JoinHandle;
+use std::time::Duration;
 use wide::f32x8;
 
 impl LayerLearnData {
@@ -101,7 +102,7 @@ impl GraphStructure {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, bincode::Encode, bincode::Decode)]
 pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
@@ -112,8 +113,16 @@ pub struct NeuralNetwork {
     layer_activation_function: ActivationFunctionType,
 }
 
+pub type NNGreatestValueResult = (usize, f32);
+pub type NNOutputs = Vec<f32>;
+pub type NNOutputsRef = [f32];
+pub type NNExpectedOutputs = Vec<f32>;
+pub type NNExpectedOutputsRef = [f32];
+pub type NNIsCorrectFn =
+    dyn Fn(&NNOutputsRef, &NNExpectedOutputsRef) -> bool + Send + Sync + 'static;
+
 impl NeuralNetwork {
-    const VERSION: u8 = 1;
+    const VERSION: u8 = 2;
     pub fn new(
         graph_structure: GraphStructure,
         layer_activation: ActivationFunctionType,
@@ -277,6 +286,7 @@ impl NeuralNetwork {
                         data,
                         &batch_data_outputs,
                         batch_data_cost,
+                        Some(&Self::my_is_correct_fn),
                         &mut new_metadata,
                     );
                     metadata.merge(&new_metadata);
@@ -298,32 +308,69 @@ impl NeuralNetwork {
         }
     }
 
+    pub fn is_output_correct(
+        outputs: &[f32],
+        expected_outputs: &[f32],
+        is_correct_fn: Option<&NNIsCorrectFn>,
+    ) -> bool {
+        if let Some(f) = is_correct_fn {
+            // No need to clone to Vec here; you can pass slices directly:
+            f(outputs, expected_outputs)
+        } else {
+            let (determined_index, _) = Self::determine_output_greatest_value_result(outputs);
+            let (expected_index, _) =
+                Self::determine_output_greatest_value_result(expected_outputs);
+            determined_index == expected_index
+        }
+    }
+
+    pub fn is_normalized_within_tolerance(
+        predicted_normalized: f32,
+        expected_normalized: f32,
+        tolerance_seconds: f32,
+        total_duration: Duration,
+    ) -> bool {
+        let epsilon = tolerance_seconds / total_duration.as_secs_f32();
+        (predicted_normalized - expected_normalized).abs() <= epsilon
+    }
+
+    pub fn my_is_correct_fn(
+        outputs: &NNOutputsRef,
+        expected_outputs: &NNExpectedOutputsRef,
+    ) -> bool {
+        const EPSILON: f32 = 0.001;
+        let duration = Duration::from_secs(20 * 60);
+        let mut is_correct = false;
+        for (output, expected_output) in outputs.iter().zip(expected_outputs) {
+            is_correct |=
+                Self::is_normalized_within_tolerance(*output, *expected_output, 2.0, duration);
+        }
+        is_correct
+    }
+
     fn learn_batch_metadata(
         &self,
         epoch_data: &[DataPoint],
         epoch_data_outputs: &Vec<Vec<f32>>,
         epoch_data_cost: f32,
+        is_correct_fn: Option<&NNIsCorrectFn>,
         new_metadata: &mut AIResultMetadata,
     ) {
         for (i, data) in epoch_data.iter().enumerate() {
             let datapoint_output = &epoch_data_outputs[i];
 
-            let (determined_index, determined_value) =
-                Self::determine_output_result(&datapoint_output[..]);
+            let correct = NeuralNetwork::is_output_correct(
+                datapoint_output,
+                &data.expected_outputs,
+                is_correct_fn,
+            );
 
-            let (determined_expected_index, determined_expected_value) =
-                Self::determine_output_result(&data.expected_outputs);
-
-            match (determined_index == determined_expected_index, false) {
-                (true, false) => {
-                    new_metadata.true_positives += 1;
-                    new_metadata.positive_instances += 1;
-                }
-                (false, false) => {
-                    new_metadata.false_positives += 1;
-                    new_metadata.negative_instances += 1;
-                }
-                _ => panic!("Fix bug"),
+            if correct {
+                new_metadata.true_positives += 1;
+                new_metadata.positive_instances += 1;
+            } else {
+                new_metadata.false_positives += 1;
+                new_metadata.negative_instances += 1;
             }
         }
 
@@ -483,7 +530,7 @@ impl NeuralNetwork {
     }
 
     // returns index of max value, max value
-    pub fn determine_output_result(inputs: &[f32]) -> NNResult {
+    pub fn determine_output_greatest_value_result(inputs: &[f32]) -> NNGreatestValueResult {
         let mut max = -99999999999.0;
         let mut max_index = 0;
         // Choose the greatest value

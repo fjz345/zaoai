@@ -271,7 +271,10 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                         if training_data.test_split_len() >= 1 {
                             match test_nn(ai, &training_data.test_split())
                             {
-                                Ok(r) => log::info!("{r}"),
+                                Ok(r) => {
+                                    log::info!("{r}");
+                                    r.save_results("testresults.results");
+                                },
                                 Err(e) => log::error!("{e}"),
                             }
                         } else {

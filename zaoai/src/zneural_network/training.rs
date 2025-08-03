@@ -1,11 +1,14 @@
-use std::fmt::Display;
+use std::{fmt::Display, fs::File, io::Write, path::Path, sync::Arc, time::Duration};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
-    neuralnetwork::NeuralNetwork,
+    neuralnetwork::{
+        NNExpectedOutputs, NNExpectedOutputsRef, NNIsCorrectFn, NNOutputs, NNOutputsRef,
+        NeuralNetwork,
+    },
 };
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -94,7 +97,7 @@ impl AIResultMetadata {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TrainingSession {
     pub nn: Option<NeuralNetwork>,
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -179,11 +182,8 @@ impl TrainingSession {
     }
 }
 
-pub type NNResult = (usize, f32);
-pub type NNOutputs = Vec<f32>;
-
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+#[derive(Clone, bincode::Encode, bincode::Decode)]
 pub struct TestResults {
     pub results: Vec<(DataPoint, NNOutputs)>, // results for each datapoint
     pub num_correct: i32,
@@ -192,13 +192,18 @@ pub struct TestResults {
 }
 
 impl TestResults {
-    pub fn new(results: Vec<(DataPoint, NNOutputs)>, avg_cost: f32) -> Self {
+    pub fn new(
+        results: Vec<(DataPoint, NNOutputs)>,
+        eval_correct_fn: Option<&NNIsCorrectFn>,
+        avg_cost: f32,
+    ) -> Self {
         let mut num_correct = 0;
         for (datapoint, outputs) in &results {
-            let result = NeuralNetwork::determine_output_result(&outputs);
-            let result_expected =
-                NeuralNetwork::determine_output_result(&datapoint.expected_outputs);
-            let is_correct = result.0 == result_expected.0;
+            let is_correct = NeuralNetwork::is_output_correct(
+                outputs,
+                &datapoint.expected_outputs,
+                eval_correct_fn,
+            );
             if is_correct {
                 num_correct += 1;
             }
@@ -210,6 +215,15 @@ impl TestResults {
             cost: avg_cost,
             results,
         }
+    }
+
+    pub fn save_results(&self, path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
+        let mut file = File::create(path.as_ref())?;
+
+        let mut json = serde_json::to_string_pretty(&self.results)?;
+        file.write_all(json.as_bytes())?;
+
+        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -243,7 +257,7 @@ pub enum TrainingState {
 pub fn test_nn<'a>(
     nn: &'a mut NeuralNetwork,
     test_data: &[DataPoint],
-) -> Result<TestResults, anyhow::Error> {
+) -> Result<&'a TestResults, anyhow::Error> {
     if test_data.len() >= 1
         && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
         && test_data.first().unwrap().expected_outputs.len() == nn.graph_structure.output_nodes
@@ -259,9 +273,29 @@ pub fn test_nn<'a>(
         }
 
         let avg_cost = nn.calculate_costs(test_data);
-        let test_results = TestResults::new(results, avg_cost);
-        nn.last_test_results = Some(test_results.clone());
-        Ok(test_results)
+        // let test_results = TestResults::new(results, None, avg_cost);
+        let test_results = TestResults::new(
+            results,
+            Some(
+                &|outputs: &NNOutputsRef, expected_outputs: &NNExpectedOutputsRef| {
+                    const ESPILON: f32 = 0.001;
+
+                    let mut is_correct = false;
+                    for (output, expected_output) in outputs.iter().zip(expected_outputs) {
+                        is_correct |= NeuralNetwork::is_normalized_within_tolerance(
+                            *output,
+                            *expected_output,
+                            60.0,
+                            Duration::from_secs(20 * 60),
+                        );
+                    }
+                    is_correct
+                },
+            ),
+            avg_cost,
+        );
+        nn.last_test_results = Some(test_results);
+        Ok(&nn.last_test_results.as_ref().unwrap())
     } else {
         anyhow::bail!("Failed to test_nn")
     }
