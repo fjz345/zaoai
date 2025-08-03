@@ -10,6 +10,14 @@ Input an anime video file and automatically mark:
 - **ED (Ending)** start/end  
 Based primarily on **audio analysis**.
 
+## Usage
+> ⚠️ This project is in early development.
+### Zaoai
+Working directory: zaoai/zaoai 
+
+### Zaoai-Helper
+Working directory: zaoai/zaoai-helper
+
 ## Roadmap
 
 ### Phase 1 – Dataset Preparation
