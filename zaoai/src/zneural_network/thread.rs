@@ -1,5 +1,5 @@
 use std::{
-    sync::mpsc::{self, Receiver},
+    sync::mpsc::{self, Receiver, Sender},
     thread::JoinHandle,
 };
 
@@ -20,7 +20,8 @@ pub struct TrainingThreadPayload {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct TrainingThread {
+#[derive(Default)]
+pub struct TrainingThreadController {
     pub id: u64,
     pub payload_buffer: Vec<TrainingThreadPayload>,
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -29,11 +30,13 @@ pub struct TrainingThread {
     pub rx_neuralnetwork: Option<Receiver<NeuralNetwork>>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub rx_payload: Option<Receiver<TrainingThreadPayload>>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub tx_abort: Option<Sender<()>>,
 }
 
-impl TrainingThread {
-    pub fn new(training_session: TrainingSession) -> Self {
-        let nn_option = training_session.nn;
+impl TrainingThreadController {
+    pub fn begin_training(&mut self, training_session: &TrainingSession) {
+        let nn_option = training_session.nn.clone();
         let training_data = training_session.training_data.clone();
         let num_epochs = training_session.num_epochs;
         let batch_size = training_session.batch_size;
@@ -41,6 +44,7 @@ impl TrainingThread {
 
         let (tx_nn, rx_nn) = mpsc::channel();
         let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
+        let (tx_abort, rx_abort) = mpsc::channel();
 
         let training_thread = std::thread::spawn(move || {
             if nn_option.is_some() {
@@ -52,20 +56,32 @@ impl TrainingThread {
                     num_epochs,
                     batch_size,
                     learn_rate,
-                    Some(false),
                     Some(&tx_training_metadata),
+                    Some(|| rx_abort.try_recv().is_ok()),
                 );
 
                 tx_nn.send(nn);
             }
         });
 
-        Self {
-            id: 0,
-            handle: Some(training_thread),
-            rx_neuralnetwork: Some(rx_nn),
-            rx_payload: Some(rx_training_metadata),
-            payload_buffer: Vec::with_capacity(num_epochs),
+        self.rx_neuralnetwork = Some(rx_nn);
+        self.rx_payload = Some(rx_training_metadata);
+        self.tx_abort = Some(tx_abort);
+        self.payload_buffer = Vec::with_capacity(num_epochs);
+        self.handle = Some(training_thread);
+    }
+
+    pub fn training_in_progress(&self) -> bool {
+        if let Some(handle) = &self.handle {
+            !handle.is_finished()
+        } else {
+            false
+        }
+    }
+
+    pub fn send_abort_training(&self) {
+        if let Some(tx) = &self.tx_abort {
+            tx.send(());
         }
     }
 }

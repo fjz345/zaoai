@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use log::error;
 use sonogram::Spectrogram;
 use std::io::{Read, Write};
 use std::sync::Arc;

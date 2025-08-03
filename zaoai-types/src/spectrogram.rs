@@ -5,12 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sonogram::{SonogramError, SpecOptionsBuilder, Spectrogram};
+use sonogram::{SpecOptionsBuilder, Spectrogram};
 
-use crate::sound::{
-    decode_audio_with_ffmpeg_f32, decode_samples_audio_only_from_file,
-    decode_samples_only_from_file,
-};
+use crate::sound::decode_audio_with_ffmpeg_f32;
 
 pub static S_SPECTROGRAM_SCALE: sonogram::FrequencyScale = sonogram::FrequencyScale::Log;
 pub static S_SPECTROGRAM_NUM_BINS: usize = 2048;

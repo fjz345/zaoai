@@ -97,11 +97,14 @@ fn main() -> Result<()> {
                 // Try to load saved state from storage
                 if let Some(storage) = cc.storage {
                     if let Some(json) = storage.get_string(eframe::APP_KEY) {
-                        if let Ok(mut app) = serde_json::from_str::<ZaoaiApp>(&json) {
-                            log::info!("Found previous app storage");
-                            return Ok(Box::new(app));
-                        } else {
-                            log::error!("Could not parse ZaoaiApp json");
+                        match serde_json::from_str::<ZaoaiApp>(&json) {
+                            Ok(app) => {
+                                log::info!("Found previous app storage");
+                                return Ok(Box::new(app));
+                            }
+                            Err(e) => {
+                                log::error!("Could not parse ZaoaiApp json: {e}");
+                            }
                         }
                     } else {
                         log::error!("Could not get storage string");

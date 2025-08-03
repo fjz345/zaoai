@@ -43,7 +43,7 @@ use crate::{
     zneural_network::{
         datapoint::{create_2x2_test_datapoints, split_datapoints, DataPoint},
         neuralnetwork::{GraphStructure, NeuralNetwork},
-        thread::{TrainingThread, TrainingThreadPayload},
+        thread::{TrainingThreadController, TrainingThreadPayload},
         training::{self, TrainingSession, TrainingState},
     },
 };
@@ -81,7 +81,7 @@ pub struct ZaoaiApp {
     training_data: TrainingData,
     training_session: TrainingSession,
     #[cfg_attr(feature = "serde", serde(skip))]
-    training_thread: Option<TrainingThread>,
+    training_thread: TrainingThreadController,
     window_training_graph: WindowTrainingGraph,
     window_ai: WindowAi,
     window_training_set: WindowTrainingSet,
@@ -195,7 +195,7 @@ impl eframe::App for ZaoaiApp {
 
                     TrainingState::StartTraining => {
                         if let Some(ai) = &self.ai {
-                            if (self.training_thread.is_none()) {
+                            if !self.training_thread.training_in_progress() {
                                 let training_dataset_dim =
                                     self.training_data.get_in_out_dimensions();
                                 self.training_session
@@ -206,8 +206,7 @@ impl eframe::App for ZaoaiApp {
                                 ) == training_dataset_dim
                                 {
                                     // Copy the session for TrainingThread to take care of
-                                    self.training_thread =
-                                        Some(TrainingThread::new(self.training_session.clone()));
+                                    self.training_thread.begin_training(&self.training_session);
                                     self.training_session.set_state(TrainingState::Training);
                                 } else {
                                     log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, training_dataset_dim.0, training_dataset_dim.1);
@@ -227,18 +226,18 @@ impl eframe::App for ZaoaiApp {
                     TrainingState::Training => {
                         let result_metadata = self
                             .training_thread
-                            .as_mut()
-                            .unwrap()
                             .rx_payload
                             .as_mut()
                             .expect("ERROR")
                             .try_recv();
+
+                        let in_progress = self.training_thread.training_in_progress();
                         if let Ok(result_metadata) = result_metadata {
-                            let payload_buffer =
-                                &mut self.training_thread.as_mut().unwrap().payload_buffer;
+                            let payload_buffer = &mut self.training_thread.payload_buffer;
                             payload_buffer.push(result_metadata);
 
-                            if payload_buffer.len() == payload_buffer.capacity() {
+                            if !in_progress {
+                                assert_eq!(payload_buffer.len(), payload_buffer.capacity());
                                 self.training_session.set_state(TrainingState::Finish);
                             }
                         }
@@ -248,10 +247,8 @@ impl eframe::App for ZaoaiApp {
 
                         let result = self
                             .training_thread
-                            .as_mut()
-                            .unwrap()
                             .rx_neuralnetwork
-                            .as_mut()
+                            .as_ref()
                             .expect("ERROR")
                             .try_recv();
                         if result.is_ok() {
@@ -260,13 +257,6 @@ impl eframe::App for ZaoaiApp {
                             panic!("Unexpected error");
                         }
 
-                        self.training_thread
-                            .take()
-                            .unwrap()
-                            .handle
-                            .expect("ERROR")
-                            .join();
-                        self.training_thread = None;
                         self.training_session.set_state(TrainingState::Idle);
                         self.state = AppState::Idle;
                     }
@@ -318,11 +308,11 @@ impl Default for ZaoaiApp {
             )),
             training_session: TrainingSession::default(),
             window_training_graph: WindowTrainingGraph::default(),
-            training_thread: None,
             window_ai: WindowAi {},
             window_training_set: WindowTrainingSet::default(),
             window_training_session: WindowTrainingSession {},
             last_ai_filepath: None,
+            training_thread: TrainingThreadController::default(),
         }
     }
 }

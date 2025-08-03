@@ -105,7 +105,7 @@ impl GraphStructure {
 pub struct NeuralNetwork {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
-    pub last_test_results: TestResults,
+    pub last_test_results: Option<TestResults>,
     pub is_softmax_output: bool,
     layer_learn_data: Vec<LayerLearnData>,
     version: u8,
@@ -136,8 +136,6 @@ impl NeuralNetwork {
             layer_activation,
         ));
 
-        let last_results = TestResults::new(vec![], 0.0);
-
         let mut layer_learn_data: Vec<LayerLearnData> = Vec::new();
         for i in 0..layers.len() {
             let layer: &Layer = &layers[i];
@@ -147,7 +145,7 @@ impl NeuralNetwork {
         NeuralNetwork {
             graph_structure,
             layers,
-            last_test_results: last_results,
+            last_test_results: None,
             layer_learn_data,
             version: Self::VERSION,
             is_softmax_output: false,
@@ -197,15 +195,12 @@ impl NeuralNetwork {
         learn_rate: f32,
         batch_data_cost: &mut f32,
         batch_data_loss: &mut f32,
-        print: Option<bool>,
     ) -> Vec<Vec<f32>> {
         // let new_metadata = AIResultMetadata::new(DatasetUsage::Training);
 
         if (batch_data.len() <= 0) {
             panic!("DataPoints length was 0");
         }
-
-        let print_enabled = print == Some(true);
 
         let mut total_cost = 0.0;
         let mut total_loss = 0.0;
@@ -230,10 +225,7 @@ impl NeuralNetwork {
 
         *batch_data_cost = total_cost;
         *batch_data_loss = total_loss;
-        // Print cost
-        if (print_enabled) {
-            log::info!("Cost: {}", batch_data_cost);
-        }
+        log::trace!("Cost: {}", batch_data_cost);
 
         batch_data_outputs
     }
@@ -244,7 +236,6 @@ impl NeuralNetwork {
         training_data: &[DataPoint],
         batch_size: usize,
         learn_rate: f32,
-        print: Option<bool>,
         mut epoch_metadata: Option<&mut AIResultMetadata>,
     ) {
         assert!(!training_data.is_empty());
@@ -257,32 +248,24 @@ impl NeuralNetwork {
             training_data[0].expected_outputs.len()
         );
 
-        let print_enabled = print.unwrap_or(false);
         let mut cur_index = 0;
         let len = training_data.len();
 
         let mut process_batch =
             |data: &[DataPoint], batch_num: usize, total_batches: usize, cur_index: usize| {
-                if print_enabled {
-                    log::info!(
-                        "Training... @{} #[{}/{}] (#{} - #{})",
-                        epoch_index + 1,
-                        batch_num + 1,
-                        total_batches,
-                        cur_index,
-                        cur_index + data.len(),
-                    );
-                }
+                log::trace!(
+                    "Training... @{} #[{}/{}] (#{} - #{})",
+                    epoch_index + 1,
+                    batch_num + 1,
+                    total_batches,
+                    cur_index,
+                    cur_index + data.len(),
+                );
 
                 let mut batch_data_cost = 0.0;
                 let mut batch_data_loss = 0.0;
-                let batch_data_outputs = self.learn_batch(
-                    data,
-                    learn_rate,
-                    &mut batch_data_cost,
-                    &mut batch_data_loss,
-                    print,
-                );
+                let batch_data_outputs =
+                    self.learn_batch(data, learn_rate, &mut batch_data_cost, &mut batch_data_loss);
 
                 if let Some(metadata) = epoch_metadata.as_mut() {
                     let mut new_metadata = AIResultMetadata::new(
@@ -347,30 +330,25 @@ impl NeuralNetwork {
         new_metadata.cost = epoch_data_cost as f64;
     }
 
-    pub fn learn(
+    pub fn learn<T: Fn() -> bool>(
         &mut self,
         training_data: &[DataPoint],
         num_epochs: usize,
         batch_size: usize,
         learn_rate: f32,
-        print: Option<bool>,
         tx_training_metadata: Option<&Sender<TrainingThreadPayload>>,
+        eval_abort_fn: Option<T>,
     ) {
         assert!(learn_rate > 0.0);
         assert!(training_data.len() > 0);
         assert!(batch_size > 0);
 
-        let print_enabled = print == Some(true);
-
         for e in 0..num_epochs {
-            if print_enabled {
-                log::info!(
-                    "Training...Learn Epoch Started [@{}/@{}]",
-                    e + 1,
-                    num_epochs
-                );
-            }
-
+            log::trace!(
+                "Training...Learn Epoch Started [@{}/@{}]",
+                e + 1,
+                num_epochs
+            );
             let mut metadata: AIResultMetadata =
                 AIResultMetadata::new(DatasetUsage::Training, 0.0, 0.0);
             self.learn_epoch(
@@ -378,7 +356,6 @@ impl NeuralNetwork {
                 &training_data,
                 batch_size,
                 learn_rate,
-                print,
                 Some(&mut metadata),
             );
 
@@ -390,11 +367,17 @@ impl NeuralNetwork {
                 };
                 tx_training_metadata.unwrap().send(payload);
             }
+
+            if let Some(post_fn) = &eval_abort_fn {
+                let abort_recv = post_fn();
+                if abort_recv {
+                    log::info!("Training thread received abort signal.");
+                    break;
+                }
+            }
         }
 
-        if print_enabled {
-            log::info!("Training...Complete! [@{} Epochs]", num_epochs);
-        }
+        log::info!("Training...Complete! [@{} Epochs]", num_epochs);
     }
 
     pub fn learn_calculate_outputs(&mut self, datapoint: &DataPoint) -> Vec<f32> {
@@ -615,12 +598,17 @@ impl NeuralNetwork {
     }
 
     pub fn to_string(&self) -> String {
+        let last_test_result_string = if let Some(last_test_results) = &self.last_test_results {
+            format!("{}", last_test_results)
+        } else {
+            "".to_string()
+        };
         let print_string: String = format!(
             "\
         Graph Structure: {}\n\
         Last Test Results: {}\n",
             self.graph_structure.to_string(),
-            self.last_test_results
+            last_test_result_string
         );
 
         print_string

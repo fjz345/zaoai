@@ -10,7 +10,7 @@ use crate::{
             VirtualTrainingDataset,
         },
         neuralnetwork::NeuralNetwork,
-        thread::{TrainingThread, TrainingThreadPayload},
+        thread::{TrainingThreadController, TrainingThreadPayload},
         training::{test_nn, TrainingSession, TrainingState},
     },
 };
@@ -45,7 +45,7 @@ pub trait DrawableWindow<'a> {
 }
 
 pub struct WindowTrainingGraphCtx<'a> {
-    pub(crate) training_thread: &'a Option<TrainingThread>,
+    pub(crate) training_thread: &'a TrainingThreadController,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -84,25 +84,22 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
         // Update
-        if let Some(training_thread) = &state_ctx.training_thread {
-            let payload_buffer = &state_ctx.training_thread.as_ref().unwrap().payload_buffer;
-
-            self.cached_plot_points_accuracy =
-                generate_accuracy_plotpoints_from_training_thread_payloads(&payload_buffer)
-                    .into_iter()
-                    .map(|f| f.into())
-                    .collect();
-            self.cached_plot_points_cost =
-                generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer)
-                    .into_iter()
-                    .map(|f| f.into())
-                    .collect();
-            self.cached_plot_points_last_loss =
-                generate_loss_plotpoints_from_training_thread_payloads(&payload_buffer)
-                    .into_iter()
-                    .map(|f| f.into())
-                    .collect();
-        }
+        let payload_buffer = &state_ctx.training_thread.payload_buffer;
+        self.cached_plot_points_accuracy =
+            generate_accuracy_plotpoints_from_training_thread_payloads(&payload_buffer)
+                .into_iter()
+                .map(|f| f.into())
+                .collect();
+        self.cached_plot_points_cost =
+            generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer)
+                .into_iter()
+                .map(|f| f.into())
+                .collect();
+        self.cached_plot_points_last_loss =
+            generate_loss_plotpoints_from_training_thread_payloads(&payload_buffer)
+                .into_iter()
+                .map(|f| f.into())
+                .collect();
 
         egui::Window::new("Training Graph").show(ctx, |ui| {
             use crate::app_windows::PlotPoints::Owned;
@@ -510,7 +507,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
 pub struct WindowTrainingSessionCtx<'a> {
     pub training_session: &'a mut TrainingSession,
     pub app_state: &'a mut AppState,
-    pub training_thread: &'a mut Option<TrainingThread>,
+    pub training_thread: &'a mut TrainingThreadController,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -586,8 +583,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
 
                 if *state_ctx.app_state == AppState::Training {
                     if ui.button("Abort Training").clicked() {
-                        log::info!("Training was interupted");
-                        *state_ctx.training_thread = None;
+                        log::info!("Interupting Training");
+                        state_ctx.training_thread.send_abort_training();
                         *state_ctx.app_state = AppState::Idle;
                         state_ctx.training_session.set_state(TrainingState::Idle);
                     }

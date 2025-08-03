@@ -187,7 +187,7 @@ pub type NNOutputs = Vec<f32>;
 pub struct TestResults {
     pub results: Vec<(DataPoint, NNOutputs)>, // results for each datapoint
     pub num_correct: i32,
-    pub accuracy: f32,
+    pub accuracy: Option<f32>,
     pub cost: f32,
 }
 
@@ -206,7 +206,7 @@ impl TestResults {
 
         Self {
             num_correct: num_correct,
-            accuracy: (num_correct as f32) / (results.len() as f32),
+            accuracy: Some((num_correct as f32) / (results.len() as f32)),
             cost: avg_cost,
             results,
         }
@@ -224,7 +224,7 @@ impl Display for TestResults {
             "TestResults(\n\tnum_total: {}\n\tnum_correct: {}\n\taccuracy: {}\n\tcost: {}\n)",
             self.len(),
             self.num_correct,
-            self.accuracy,
+            self.accuracy.unwrap_or_default(),
             self.cost
         )
     }
@@ -243,7 +243,7 @@ pub enum TrainingState {
 pub fn test_nn<'a>(
     nn: &'a mut NeuralNetwork,
     test_data: &[DataPoint],
-) -> Result<&'a TestResults, anyhow::Error> {
+) -> Result<TestResults, anyhow::Error> {
     if test_data.len() >= 1
         && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
         && test_data.first().unwrap().expected_outputs.len() == nn.graph_structure.output_nodes
@@ -260,8 +260,8 @@ pub fn test_nn<'a>(
 
         let avg_cost = nn.calculate_costs(test_data);
         let test_results = TestResults::new(results, avg_cost);
-        nn.last_test_results = test_results;
-        Ok(&nn.last_test_results)
+        nn.last_test_results = Some(test_results.clone());
+        Ok(test_results)
     } else {
         anyhow::bail!("Failed to test_nn")
     }
