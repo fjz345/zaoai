@@ -5,8 +5,10 @@ use crate::{
     error::Result,
     zneural_network::{
         datapoint::{TrainingData, TrainingDataset},
+        is_correct::IsCorrectFn,
         layer::ActivationFunctionType,
         neuralnetwork::load_neural_network,
+        training::FloatDecay,
     },
 };
 use eframe::{
@@ -68,6 +70,7 @@ struct MenuWindowData {
     ai_use_softmax: bool,
     ai_activation_function: ActivationFunctionType,
     ai_dropout_proc: f32,
+    ai_is_correct_fn: IsCorrectFn,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -201,6 +204,8 @@ impl eframe::App for ZaoaiApp {
                                     self.training_data.get_in_out_dimensions();
                                 self.training_session
                                     .set_training_data(self.training_data.clone());
+                                self.training_session.is_correct_fn =
+                                    self.window_data.ai_is_correct_fn;
                                 if (
                                     ai.graph_structure.input_nodes,
                                     ai.graph_structure.output_nodes,
@@ -301,6 +306,7 @@ impl Default for ZaoaiApp {
                 ai_use_softmax: false,
                 ai_activation_function: ActivationFunctionType::ReLU,
                 ai_dropout_proc: 0.0,
+                ai_is_correct_fn: IsCorrectFn::MaxVal,
             },
             training_data: TrainingData::Physical(TrainingDataset::new(
                 &[DataPoint {
@@ -308,7 +314,16 @@ impl Default for ZaoaiApp {
                     expected_outputs: vec![0.0; 2],
                 }; 0],
             )),
-            training_session: TrainingSession::default(),
+
+            training_session: TrainingSession::new(
+                None,
+                TrainingData::default(),
+                100,
+                1000,
+                0.2,
+                None,
+                0.0,
+            ),
             window_training_graph: WindowTrainingGraph::default(),
             window_ai: WindowAi {},
             window_training_set: WindowTrainingSet::default(),
@@ -437,6 +452,25 @@ impl ZaoaiApp {
                 if change_state_to_setupai {
                     self.state = AppState::SetupAi;
                 }
+
+                let is_correct_before = self.window_data.ai_is_correct_fn;
+                let combo_response = egui::ComboBox::from_label("Is Correct Fn")
+                    .selected_text(self.window_data.ai_is_correct_fn.to_string())
+                    .show_ui(ui, |ui| {
+                        for variant in [
+                            IsCorrectFn::MaxVal,
+                            IsCorrectFn::Zlbl,
+                            IsCorrectFn::ZlblLoose,
+                        ] {
+                            ui.selectable_value(
+                                &mut self.window_data.ai_is_correct_fn,
+                                variant,
+                                variant.to_string(),
+                            );
+                        }
+                    });
+
+                let changed = is_correct_before != self.window_data.ai_is_correct_fn;
             })
         });
         min_rect = min_rect.union(response.inner.response.rect);
@@ -480,6 +514,7 @@ impl ZaoaiApp {
                 &mut WindowAiCtx {
                     ai: &mut self.ai,
                     test_button_training_data: &Some(&self.training_data),
+                    ai_is_corret_fn: &self.window_data.ai_is_correct_fn,
                 },
                 |this, state_ctx| {
                     let response = this.draw_ui(ctx, state_ctx);

@@ -43,6 +43,7 @@ impl TrainingThreadController {
         let learn_rate = training_session.learn_rate;
         let learn_rate_decay = training_session.learn_rate_decay.clone();
         let learn_rate_decay_rate = training_session.learn_rate_decay_rate;
+        let is_correct_fn = training_session.is_correct_fn;
 
         let (tx_nn, rx_nn) = mpsc::channel();
         let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
@@ -61,6 +62,7 @@ impl TrainingThreadController {
                     learn_rate_decay,
                     learn_rate_decay_rate,
                     Some(&tx_training_metadata),
+                    is_correct_fn,
                     Some(|| rx_abort.try_recv().is_ok()),
                 );
 

@@ -8,10 +8,7 @@ use crate::{
         datapoint::{
             create_2x2_test_datapoints,  DataPoint, TrainingData, TrainingDataset,
             VirtualTrainingDataset,
-        },
-        neuralnetwork::NeuralNetwork,
-        thread::{TrainingThreadController, TrainingThreadPayload},
-        training::{test_nn, FloatDecay, TrainingSession, TrainingState},
+        }, is_correct::IsCorrectFn, neuralnetwork::NeuralNetwork, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TrainingSession, TrainingState}
     },
 };
 use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider, SliderClamping};
@@ -243,6 +240,7 @@ impl WindowTrainingGraph {
 pub struct WindowAiCtx<'a> {
     pub ai: &'a mut Option<NeuralNetwork>,
     pub test_button_training_data: &'a Option<&'a TrainingData>,
+    pub ai_is_corret_fn: &'a IsCorrectFn,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -269,7 +267,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                 if ui.add(test_button).clicked() {
                     if let Some(training_data) = state_ctx.test_button_training_data {
                         if training_data.test_split_len() >= 1 {
-                            match test_nn(ai, &training_data.test_split())
+                            match test_nn(ai, &training_data.test_split(), *state_ctx.ai_is_corret_fn)
                             {
                                 Ok(r) => {
                                     log::info!("{r}");
@@ -577,12 +575,12 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                                 None,
                                 Some(FloatDecay::Exponential { rate: 0.05 }),
                                 Some(FloatDecay::StepDecay {
-                                    step_size: 10,
+                                    step_size: 1,
                                     decay_factor: 0.5,
                                 }),
                                 Some(FloatDecay::Linear {
                                     max_steps: state_ctx.training_session.num_epochs,
-                                    end_rate: 0.0,
+                                    end_rate: 0.001,
                                 }),
                                 Some(FloatDecay::Cosine {
                                     max_steps: state_ctx.training_session.num_epochs,

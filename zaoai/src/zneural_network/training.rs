@@ -6,9 +6,9 @@ use strum_macros::Display;
 
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
+    is_correct::IsCorrectFn,
     neuralnetwork::{
-        NNExpectedOutputs, NNExpectedOutputsRef, NNIsCorrectFn, NNOutputs, NNOutputsRef,
-        NeuralNetwork,
+        NNExpectedOutputs, NNExpectedOutputsRef, NNOutputs, NNOutputsRef, NeuralNetwork,
     },
 };
 
@@ -109,21 +109,7 @@ pub struct TrainingSession {
     pub learn_rate_decay: Option<FloatDecay>,
     pub learn_rate_decay_rate: f32,
     pub training_data: TrainingData,
-}
-
-impl Default for TrainingSession {
-    fn default() -> Self {
-        Self {
-            nn: None,
-            state: TrainingState::Idle,
-            num_epochs: 2,
-            batch_size: 1000,
-            learn_rate: 0.2,
-            training_data: TrainingData::default(),
-            learn_rate_decay: None,
-            learn_rate_decay_rate: 1.0,
-        }
-    }
+    pub is_correct_fn: IsCorrectFn,
 }
 
 impl TrainingSession {
@@ -150,6 +136,7 @@ impl TrainingSession {
             training_data,
             learn_rate_decay,
             learn_rate_decay_rate,
+            is_correct_fn: IsCorrectFn::MaxVal,
         }
     }
 
@@ -203,16 +190,12 @@ pub struct TestResults {
 impl TestResults {
     pub fn new(
         results: Vec<(DataPoint, NNOutputs)>,
-        eval_correct_fn: Option<&NNIsCorrectFn>,
+        eval_correct_fn: IsCorrectFn,
         avg_cost: f32,
     ) -> Self {
         let mut num_correct = 0;
         for (datapoint, outputs) in &results {
-            let is_correct = NeuralNetwork::is_output_correct(
-                outputs,
-                &datapoint.expected_outputs,
-                eval_correct_fn,
-            );
+            let is_correct = eval_correct_fn.call(outputs, &datapoint.expected_outputs);
             if is_correct {
                 num_correct += 1;
             }
@@ -266,6 +249,7 @@ pub enum TrainingState {
 pub fn test_nn<'a>(
     nn: &'a mut NeuralNetwork,
     test_data: &[DataPoint],
+    is_correct_fn: IsCorrectFn,
 ) -> Result<&'a TestResults, anyhow::Error> {
     if test_data.len() >= 1
         && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
@@ -283,26 +267,7 @@ pub fn test_nn<'a>(
 
         let avg_cost = nn.calculate_costs(test_data);
         // let test_results = TestResults::new(results, None, avg_cost);
-        let test_results = TestResults::new(
-            results,
-            Some(
-                &|outputs: &NNOutputsRef, expected_outputs: &NNExpectedOutputsRef| {
-                    const ESPILON: f32 = 0.001;
-
-                    let mut is_correct = false;
-                    for (output, expected_output) in outputs.iter().zip(expected_outputs) {
-                        is_correct |= NeuralNetwork::is_normalized_within_tolerance(
-                            *output,
-                            *expected_output,
-                            60.0,
-                            Duration::from_secs(20 * 60),
-                        );
-                    }
-                    is_correct
-                },
-            ),
-            avg_cost,
-        );
+        let test_results = TestResults::new(results, is_correct_fn, avg_cost);
         nn.last_test_results = Some(test_results);
         Ok(&nn.last_test_results.as_ref().unwrap())
     } else {

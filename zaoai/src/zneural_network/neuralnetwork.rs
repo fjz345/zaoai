@@ -1,4 +1,5 @@
 use crate::layer::*;
+use crate::zneural_network::is_correct::IsCorrectFn;
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, FloatDecay, TestResults};
 
@@ -119,8 +120,6 @@ pub type NNOutputs = Vec<f32>;
 pub type NNOutputsRef = [f32];
 pub type NNExpectedOutputs = Vec<f32>;
 pub type NNExpectedOutputsRef = [f32];
-pub type NNIsCorrectFn =
-    dyn Fn(&NNOutputsRef, &NNExpectedOutputsRef) -> bool + Send + Sync + 'static;
 
 impl NeuralNetwork {
     const VERSION: u8 = 2;
@@ -262,6 +261,7 @@ impl NeuralNetwork {
         training_data: &[DataPoint],
         batch_size: usize,
         learn_rate: f32,
+        is_correct_fn: IsCorrectFn,
         mut epoch_metadata: Option<&mut AIResultMetadata>,
     ) {
         assert!(!training_data.is_empty());
@@ -303,7 +303,7 @@ impl NeuralNetwork {
                         data,
                         &batch_data_outputs,
                         batch_data_cost,
-                        Some(&Self::my_is_correct_fn),
+                        is_correct_fn,
                         &mut new_metadata,
                     );
                     metadata.merge(&new_metadata);
@@ -325,62 +325,18 @@ impl NeuralNetwork {
         }
     }
 
-    pub fn is_output_correct(
-        outputs: &[f32],
-        expected_outputs: &[f32],
-        is_correct_fn: Option<&NNIsCorrectFn>,
-    ) -> bool {
-        if let Some(f) = is_correct_fn {
-            // No need to clone to Vec here; you can pass slices directly:
-            f(outputs, expected_outputs)
-        } else {
-            let (determined_index, _) = Self::determine_output_greatest_value_result(outputs);
-            let (expected_index, _) =
-                Self::determine_output_greatest_value_result(expected_outputs);
-            determined_index == expected_index
-        }
-    }
-
-    pub fn is_normalized_within_tolerance(
-        predicted_normalized: f32,
-        expected_normalized: f32,
-        tolerance_seconds: f32,
-        total_duration: Duration,
-    ) -> bool {
-        let epsilon = tolerance_seconds / total_duration.as_secs_f32();
-        (predicted_normalized - expected_normalized).abs() <= epsilon
-    }
-
-    pub fn my_is_correct_fn(
-        outputs: &NNOutputsRef,
-        expected_outputs: &NNExpectedOutputsRef,
-    ) -> bool {
-        const EPSILON: f32 = 0.001;
-        let duration = Duration::from_secs(20 * 60);
-        let mut is_correct = false;
-        for (output, expected_output) in outputs.iter().zip(expected_outputs) {
-            is_correct |=
-                Self::is_normalized_within_tolerance(*output, *expected_output, 2.0, duration);
-        }
-        is_correct
-    }
-
     fn learn_batch_metadata(
         &self,
         epoch_data: &[DataPoint],
         epoch_data_outputs: &Vec<Vec<f32>>,
         epoch_data_cost: f32,
-        is_correct_fn: Option<&NNIsCorrectFn>,
+        is_correct_fn: IsCorrectFn,
         new_metadata: &mut AIResultMetadata,
     ) {
         for (i, data) in epoch_data.iter().enumerate() {
             let datapoint_output = &epoch_data_outputs[i];
 
-            let correct = NeuralNetwork::is_output_correct(
-                datapoint_output,
-                &data.expected_outputs,
-                is_correct_fn,
-            );
+            let correct = is_correct_fn.call(datapoint_output, &data.expected_outputs);
 
             if correct {
                 new_metadata.true_positives += 1;
@@ -403,6 +359,7 @@ impl NeuralNetwork {
         learn_rate_decay: Option<FloatDecay>,
         learn_rate_decay_rate: f32,
         tx_training_metadata: Option<&Sender<TrainingThreadPayload>>,
+        is_correct_fn: IsCorrectFn,
         eval_abort_fn: Option<T>,
     ) {
         assert!(learn_rate > 0.0);
@@ -427,6 +384,7 @@ impl NeuralNetwork {
                 &training_data,
                 batch_size,
                 maybe_decayed_learn_rate,
+                is_correct_fn,
                 Some(&mut metadata),
             );
 
