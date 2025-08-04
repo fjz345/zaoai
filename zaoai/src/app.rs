@@ -68,7 +68,7 @@ struct MenuWindowData {
     training_dataset_split_thresholds_0: f64,
     training_dataset_split_thresholds_1: f64,
     // AI options
-    ai_use_softmax: bool,
+    ai_use_softmax_output: bool,
     ai_activation_function: ActivationFunctionType,
     ai_cost_fn: CostFunction,
     ai_dropout_prob: f32,
@@ -307,9 +307,9 @@ impl Default for ZaoaiApp {
                 training_dataset_split_thresholds_0: 0.75,
                 training_dataset_split_thresholds_1: 0.9,
                 show_ai: true,
-                ai_use_softmax: false,
+                ai_use_softmax_output: false,
                 ai_activation_function: ActivationFunctionType::ReLU,
-                ai_dropout_prob: 0.0,
+                ai_dropout_prob: 0.5,
                 ai_is_correct_fn: IsCorrectFn::MaxVal,
                 ai_cost_fn: CostFunction::Mse,
                 ai_weight_init: WeightInit::default(),
@@ -436,7 +436,10 @@ impl ZaoaiApp {
                 });
 
                 let changed = ui
-                    .checkbox(&mut self.window_data.ai_use_softmax, "Use softmax")
+                    .checkbox(
+                        &mut self.window_data.ai_use_softmax_output,
+                        "Use softmax output",
+                    )
                     .changed();
                 change_state_to_setupai |= changed;
 
