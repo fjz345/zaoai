@@ -193,32 +193,6 @@ fn relu_d_simd(x: f32x8) -> f32x8 {
 }
 // ============================
 
-// ============================
-// Cost Functions
-// ============================
-
-pub fn node_cost(output_activation: f32, expected_activation: f32) -> f32 {
-    let error = output_activation - expected_activation;
-    0.5 * error * error
-}
-
-pub fn node_cost_d(output_activation: f32, expected_activation: f32) -> f32 {
-    (output_activation - expected_activation)
-}
-
-#[cfg(feature = "simd")]
-pub fn node_cost_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
-    let error = output_activation - expected_activation;
-    // 0.5 * error^2
-    f32x8::splat(0.5) * error * error
-}
-
-#[cfg(feature = "simd")]
-pub fn node_cost_d_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
-    output_activation - expected_activation
-}
-// ============================
-
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
 pub struct Layer {
@@ -725,7 +699,7 @@ impl Layer {
         expected_outputs: &[f32],
     ) {
         for i in 0..learn_data.node_values.len() {
-            let dcost = node_cost_d(learn_data.activation_values[i], expected_outputs[i]);
+            let dcost = mse_single_d(learn_data.activation_values[i], expected_outputs[i]);
             let dactivation = self
                 .activation_type
                 .activate_derivative(learn_data.weighted_inputs[i]);
@@ -766,11 +740,13 @@ impl Layer {
                 .zip(chunks_weighted)
                 .zip(chunks_expected.zip(chunks_node_vals.by_ref()))
         {
+            use crate::zneural_network::cost::mse_single_d_simd;
+
             let act_vec = f32x8::from(chunk_activation);
             let weighted_vec = f32x8::from(chunk_weighted);
             let expected_vec = f32x8::from(chunk_expected);
 
-            let dcost = node_cost_d_simd(act_vec, expected_vec);
+            let dcost = mse_single_d_simd(act_vec, expected_vec);
             let dactivation = self.activation_type.activate_derivative_simd(weighted_vec);
 
             let result = dactivation * dcost;
@@ -785,7 +761,9 @@ impl Layer {
         // Handle remainder scalars (fallback)
         if !remainder_activation.is_empty() {
             for i in 0..remainder_activation.len() {
-                let dcost = node_cost_d(remainder_activation[i], remainder_expected[i]);
+                use crate::zneural_network::cost::mse_single_d;
+
+                let dcost = mse_single_d(remainder_activation[i], remainder_expected[i]);
                 let dactivation = self
                     .activation_type
                     .activate_derivative(remainder_weighted[i]);

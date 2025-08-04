@@ -1,4 +1,5 @@
 use crate::layer::*;
+use crate::zneural_network::cost::{cross_entropy_loss_multiclass, mse};
 use crate::zneural_network::is_correct::IsCorrectFn;
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, FloatDecay, TestResults};
@@ -173,38 +174,6 @@ impl NeuralNetwork {
         &self.layers
     }
 
-    fn cross_entropy_loss(predicted: &[f32], expected: &[f32]) -> f32 {
-        Self::cross_entropy_loss_multiclass(predicted, expected)
-    }
-
-    fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32 {
-        // Small epsilon to avoid log(0)
-        let epsilon = 1e-12;
-
-        predicted
-            .iter()
-            .zip(expected.iter())
-            .map(|(p, e)| {
-                // Clamp p to avoid log(0)
-                let p_clamped = p.max(epsilon).min(1.0 - epsilon);
-                -e * p_clamped.ln()
-            })
-            .sum()
-    }
-
-    fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
-        let epsilon = 1e-12;
-
-        predicted
-            .iter()
-            .zip(expected.iter())
-            .map(|(p, e)| {
-                let p_clamped = p.max(epsilon).min(1.0 - epsilon);
-                -(e * p_clamped.ln() + (1.0 - e) * (1.0 - p_clamped).ln())
-            })
-            .sum()
-    }
-
     fn apply_dropout(inputs: &mut [f32], mask: &mut Vec<f32>, dropout_prob: f32) {
         let keep_prob = 1.0 - dropout_prob;
         let mut rng = rand::thread_rng();
@@ -239,11 +208,9 @@ impl NeuralNetwork {
         for datapoint in batch_data {
             // Todo: make functions forward/backward for simplicity.
             let datapoint_outputs = self.learn_calculate_outputs(datapoint);
-            let loss = Self::cross_entropy_loss(&datapoint_outputs, &datapoint.expected_outputs);
-            let mut cost = 0.0;
-            for (i, datapoint_output) in datapoint_outputs.iter().enumerate() {
-                cost += node_cost(*datapoint_output, datapoint.expected_outputs[i]);
-            }
+            let loss =
+                cross_entropy_loss_multiclass(&datapoint_outputs, &datapoint.expected_outputs);
+            let cost = Self::cost_function(&datapoint_outputs, &datapoint.expected_outputs);
 
             total_loss += loss;
             total_cost += cost;
@@ -545,22 +512,28 @@ impl NeuralNetwork {
         (max_index, max)
     }
 
+    fn cost_function(predicted: &[f32], expected: &[f32]) -> f32 {
+        mse(predicted, expected)
+    }
+
     fn calculate_cost_datapoint(&self, datapoint: &DataPoint) -> f32 {
-        let mut cost: f32 = 0.0;
+        // cost
+        let datapoint_outputs = self.calculate_outputs(&datapoint.inputs[..]);
+        let cost = Self::cost_function(&datapoint_outputs, &datapoint.expected_outputs);
 
-        // Calculate the output of the neural network
-        let datapoint_output = self.calculate_outputs(&datapoint.inputs[..]);
-
-        // Calculate cost by comparing difference between output and expected output
-        let output_layer = self.layers.last().unwrap();
-        for output_node in 0..output_layer.num_out_nodes {
-            cost += node_cost(
-                datapoint_output[output_node],
-                datapoint.expected_outputs[output_node],
-            );
+        // L2 Regularization: add sum of all weights squared
+        let mut l2_penalty = 0.0;
+        for layer in &self.layers {
+            for weight_matrix in &layer.weights {
+                for weight in weight_matrix {
+                    l2_penalty += weight.powi(2);
+                }
+            }
         }
 
-        cost
+        let lambda = 0.001;
+        // Combine: total cost = prediction + regularization penalty
+        cost + lambda * l2_penalty
     }
 
     pub fn calculate_costs(&self, data: &[DataPoint]) -> f32 {
@@ -611,7 +584,9 @@ impl NeuralNetwork {
 
             // Tail values (non-multiple of 8)
             while i < num_outputs {
-                cost += node_cost(output[i], datapoint.expected_outputs[i]);
+                use crate::zneural_network::cost::mse_single;
+
+                cost += mse_single(output[i], datapoint.expected_outputs[i]);
                 i += 1;
             }
 
