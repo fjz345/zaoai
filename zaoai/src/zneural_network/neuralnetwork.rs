@@ -24,6 +24,7 @@ impl LayerLearnData {
             weighted_inputs: vec![0.0; layer.num_out_nodes],
             activation_values: vec![0.0; layer.num_out_nodes],
             node_values: vec![0.0; layer.num_out_nodes],
+            dropout_mask: None,
         }
     }
 }
@@ -134,7 +135,7 @@ impl NeuralNetwork {
 
         // Create Hidden layers
         for i in &graph_structure.hidden_layers[..] {
-            layers.push(Layer::new(prev_out_size, *i, layer_activation));
+            layers.push(Layer::new(prev_out_size, *i, layer_activation, Some(0.5)));
             prev_out_size = *i;
         }
 
@@ -143,6 +144,7 @@ impl NeuralNetwork {
             prev_out_size,
             graph_structure.output_nodes,
             layer_activation,
+            None,
         ));
 
         let mut layer_learn_data: Vec<LayerLearnData> = Vec::new();
@@ -196,6 +198,21 @@ impl NeuralNetwork {
                 -(e * p_clamped.ln() + (1.0 - e) * (1.0 - p_clamped).ln())
             })
             .sum()
+    }
+
+    fn apply_dropout(inputs: &mut [f32], mask: &mut Vec<f32>, dropout_prob: f32) {
+        let keep_prob = 1.0 - dropout_prob;
+        let mut rng = rand::thread_rng();
+
+        for (i, input) in inputs.iter_mut().enumerate() {
+            if rng.gen::<f32>() < dropout_prob {
+                mask[i] = 0.0;
+                *input = 0.0;
+            } else {
+                mask[i] = 1.0 / keep_prob; // scale up remaining activations
+                *input *= mask[i];
+            }
+        }
     }
 
     pub fn learn_batch(
@@ -442,6 +459,19 @@ impl NeuralNetwork {
             {
                 current_inputs = layer
                     .calculate_outputs_learn(&mut self.layer_learn_data[i], &mut current_inputs);
+            }
+
+            // Dropout
+            if let Some(prob) = layer.dropout_prob {
+                let learn_data = &mut self.layer_learn_data[i];
+                if learn_data.dropout_mask.is_none() {
+                    learn_data.dropout_mask = Some(vec![0.0; current_inputs.len()]);
+                }
+                Self::apply_dropout(
+                    &mut current_inputs,
+                    learn_data.dropout_mask.as_mut().unwrap(),
+                    prob,
+                );
             }
         }
         let output_inputs = current_inputs;

@@ -229,6 +229,7 @@ pub struct Layer {
     pub weights_cost_grads: Vec<Vec<f32>>,
     pub biases_cost_grads: Vec<f32>,
     pub activation_type: ActivationFunctionType,
+    pub dropout_prob: Option<f32>,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -240,6 +241,7 @@ pub struct LayerLearnData {
     //"node values" for the output layer. This is an array containing for each node:
     // the partial derivative of the cost with respect to the weighted input
     pub node_values: Vec<f32>,
+    pub dropout_mask: Option<Vec<f32>>, // same length as layer outputs
 }
 
 impl Layer {
@@ -247,6 +249,7 @@ impl Layer {
         num_in_nodes: usize,
         num_out_nodes: usize,
         activation_type: ActivationFunctionType,
+        dropout_prob: Option<f32>,
     ) -> Layer {
         // Validate Inputs
         if num_in_nodes <= 0 {
@@ -291,6 +294,7 @@ impl Layer {
             weights_cost_grads,
             biases_cost_grads,
             activation_type,
+            dropout_prob,
         };
 
         new_layer.init_weights_and_biases(0);
@@ -633,6 +637,12 @@ impl Layer {
         let inputs = &learn_data.inputs;
 
         for node_out in 0..self.num_out_nodes {
+            if let Some(mask) = learn_data.dropout_mask.as_ref() {
+                if mask[node_out] == 0.0 {
+                    continue; // neuron was dropped, skip gradient update
+                }
+            }
+
             let node_value = learn_data.node_values[node_out];
             let weight_grad_row = &mut self.weights_cost_grads[node_out];
             let bias_grad = &mut self.biases_cost_grads[node_out];
@@ -653,6 +663,12 @@ impl Layer {
         let inputs = &learn_data.inputs;
 
         for node_out in 0..self.num_out_nodes {
+            if let Some(mask) = learn_data.dropout_mask.as_ref() {
+                if mask[node_out] == 0.0 {
+                    continue; // neuron was dropped, skip gradient update
+                }
+            }
+
             let node_value = learn_data.node_values[node_out];
             let weight_grad_row = &mut self.weights_cost_grads[node_out];
             let bias_grad = &mut self.biases_cost_grads[node_out];
@@ -671,12 +687,20 @@ impl Layer {
     pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
         let num_in_nodes = self.num_in_nodes;
         let inputs = &learn_data.inputs;
+        let maybe_mask = learn_data.dropout_mask.as_ref();
 
         self.weights_cost_grads
             .par_iter_mut()
             .zip(self.biases_cost_grads.par_iter_mut())
             .zip(learn_data.node_values.par_iter().copied())
-            .for_each(|((weight_grad_row, bias_grad), node_value)| {
+            .enumerate() // <- Add this to get index
+            .for_each(|(node_out, ((weight_grad_row, bias_grad), node_value))| {
+                if let Some(mask) = maybe_mask {
+                    if mask[node_out] == 0.0 {
+                        return; // neuron was dropped, skip gradient update
+                    }
+                }
+
                 Self::update_cost_gradient_for_node_simd(
                     weight_grad_row,
                     bias_grad,
