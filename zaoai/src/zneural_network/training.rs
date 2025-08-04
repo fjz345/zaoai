@@ -283,7 +283,6 @@ pub fn test_nn<'a>(
         && test_data.first().unwrap().expected_outputs.len() == nn.graph_structure.output_nodes
     {
         log::info!("Start test_nn");
-        let mut num_correct = 0;
 
         let mut results = Vec::with_capacity(test_data.len());
         for i in 0..test_data.len() {
@@ -292,9 +291,9 @@ pub fn test_nn<'a>(
             results.push((test_data[i].clone(), outputs));
         }
 
-        let avg_cost = nn.calculate_costs(test_data);
+        let cost = nn.calculate_costs(test_data);
         // let test_results = TestResults::new(results, None, avg_cost);
-        let test_results = TestResults::new(results, is_correct_fn, avg_cost);
+        let test_results = TestResults::new(results, is_correct_fn, cost);
         nn.last_test_results = Some(test_results);
         Ok(&nn.last_test_results.as_ref().unwrap())
     } else {

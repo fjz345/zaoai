@@ -9,6 +9,9 @@ use rayon::iter::{
 use serde::{Deserialize, Serialize};
 use wide::f32x8;
 
+#[cfg(feature = "simd")]
+use crate::zneural_network::cost::CostFunction;
+
 // ============================
 // Activation Functions
 // ============================
@@ -712,6 +715,7 @@ impl Layer {
         &self,
         learn_data: &mut LayerLearnData,
         expected_outputs: &[f32],
+        cost_fn: CostFunction,
     ) {
         use wide::f32x8;
 
@@ -740,13 +744,13 @@ impl Layer {
                 .zip(chunks_weighted)
                 .zip(chunks_expected.zip(chunks_node_vals.by_ref()))
         {
-            use crate::zneural_network::cost::mse_single_d_simd;
+            use crate::zneural_network::cost::mse_d_simd;
 
             let act_vec = f32x8::from(chunk_activation);
             let weighted_vec = f32x8::from(chunk_weighted);
             let expected_vec = f32x8::from(chunk_expected);
 
-            let dcost = mse_single_d_simd(act_vec, expected_vec);
+            let dcost = cost_fn.call_simd_d(act_vec, expected_vec);
             let dactivation = self.activation_type.activate_derivative_simd(weighted_vec);
 
             let result = dactivation * dcost;
@@ -761,9 +765,8 @@ impl Layer {
         // Handle remainder scalars (fallback)
         if !remainder_activation.is_empty() {
             for i in 0..remainder_activation.len() {
-                use crate::zneural_network::cost::mse_single_d;
-
-                let dcost = mse_single_d(remainder_activation[i], remainder_expected[i]);
+                let dcost =
+                    cost_fn.call_d(&vec![remainder_activation[i]], &vec![remainder_expected[i]]);
                 let dactivation = self
                     .activation_type
                     .activate_derivative(remainder_weighted[i]);

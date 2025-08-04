@@ -24,6 +24,42 @@ impl CostFunction {
         }
     }
 
+    pub fn call_d(&self, predicted: &[f32], expected: &[f32]) -> f32 {
+        match self {
+            CostFunction::Mse => Self::mse(predicted, expected),
+            CostFunction::CrossEntropyBinary => {
+                Self::cross_entropy_loss_binary(predicted, expected)
+            }
+            CostFunction::CrossEntropyMulticlass => {
+                Self::cross_entropy_loss_multiclass(predicted, expected)
+            }
+        }
+    }
+
+    pub fn call_simd(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
+        match self {
+            CostFunction::Mse => mse_simd(predicted, expected),
+            CostFunction::CrossEntropyBinary => {
+                todo!()
+            }
+            CostFunction::CrossEntropyMulticlass => {
+                todo!()
+            }
+        }
+    }
+
+    pub fn call_simd_d(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
+        match self {
+            CostFunction::Mse => mse_d_simd(predicted, expected),
+            CostFunction::CrossEntropyBinary => {
+                todo!()
+            }
+            CostFunction::CrossEntropyMulticlass => {
+                todo!()
+            }
+        }
+    }
+
     fn mse(predicted: &[f32], expected: &[f32]) -> f32 {
         predicted
             .iter()
@@ -74,18 +110,17 @@ pub fn mse_single_d(output_activation: f32, expected_activation: f32) -> f32 {
 }
 
 #[cfg(feature = "simd")]
-pub fn mse_single_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
+pub fn mse_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
     let error = output_activation - expected_activation;
     // 0.5 * error^2
     f32x8::splat(0.5) * error * error
 }
 
 #[cfg(feature = "simd")]
-pub fn mse_single_d_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
+pub fn mse_d_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
     output_activation - expected_activation
 }
 
-// Todo  simd
 pub fn mse(predicted: &[f32], expected: &[f32]) -> f32 {
     predicted
         .iter()

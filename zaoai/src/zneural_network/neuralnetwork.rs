@@ -432,6 +432,7 @@ impl NeuralNetwork {
         output_layer.calculate_output_layer_node_cost_values(
             learn_data_output,
             &datapoint.expected_outputs,
+            self.cost_fn,
         );
         #[cfg(feature = "simd")]
         {
@@ -577,20 +578,16 @@ impl NeuralNetwork {
             while i + 8 <= num_outputs {
                 let pred = f32x8::from(&output[i..i + 8]);
                 let expected = f32x8::from(&datapoint.expected_outputs[i..i + 8]);
-                let delta = pred - expected;
-                sum += delta * delta;
+                sum += self.cost_fn.call_simd(pred, expected);
                 i += 8;
             }
 
-            // Horizontal sum for SIMD part
             let mut cost = sum.reduce_add();
 
-            // Tail values (non-multiple of 8)
-            while i < num_outputs {
-                use crate::zneural_network::cost::mse_single;
-
-                cost += mse_single(output[i], datapoint.expected_outputs[i]);
-                i += 1;
+            if i < num_outputs {
+                cost += self
+                    .cost_fn
+                    .call(&output[i..], &datapoint.expected_outputs[i..]);
             }
 
             total_cost += cost;
