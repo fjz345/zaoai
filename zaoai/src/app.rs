@@ -7,7 +7,7 @@ use crate::{
         cost::CostFunction,
         datapoint::{TrainingData, TrainingDataset},
         is_correct::IsCorrectFn,
-        layer::ActivationFunctionType,
+        layer::{ActivationFunctionType, BiasInit, WeightInit},
         neuralnetwork::load_neural_network,
         training::FloatDecay,
     },
@@ -73,6 +73,8 @@ struct MenuWindowData {
     ai_cost_fn: CostFunction,
     ai_dropout_prob: f32,
     ai_is_correct_fn: IsCorrectFn,
+    ai_weight_init: WeightInit,
+    ai_bias_init: BiasInit,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -310,6 +312,8 @@ impl Default for ZaoaiApp {
                 ai_dropout_prob: 0.0,
                 ai_is_correct_fn: IsCorrectFn::MaxVal,
                 ai_cost_fn: CostFunction::Mse,
+                ai_weight_init: WeightInit::default(),
+                ai_bias_init: BiasInit::default(),
             },
             training_data: TrainingData::Physical(TrainingDataset::new(
                 &[DataPoint {
@@ -377,6 +381,8 @@ impl ZaoaiApp {
             self.window_data.ai_activation_function,
             self.window_data.ai_cost_fn,
             Some(self.window_data.ai_dropout_prob),
+            self.window_data.ai_weight_init,
+            self.window_data.ai_bias_init,
         ));
         self.training_session.set_nn(self.ai.as_ref().unwrap());
         self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
@@ -489,6 +495,36 @@ impl ZaoaiApp {
                         }
                     });
                 let changed = cost_fn_before != self.window_data.ai_cost_fn;
+                change_state_to_setupai |= changed;
+
+                let weight_init_before = self.window_data.ai_weight_init;
+                let combo_response = egui::ComboBox::from_label("Weight Init")
+                    .selected_text(self.window_data.ai_weight_init.to_string())
+                    .show_ui(ui, |ui| {
+                        for variant in WeightInit::all() {
+                            ui.selectable_value(
+                                &mut self.window_data.ai_weight_init,
+                                *variant,
+                                variant.to_string(),
+                            );
+                        }
+                    });
+                let changed = weight_init_before != self.window_data.ai_weight_init;
+                change_state_to_setupai |= changed;
+
+                let bias_init_before = self.window_data.ai_bias_init;
+                let combo_response = egui::ComboBox::from_label("Bias Init")
+                    .selected_text(self.window_data.ai_bias_init.to_string())
+                    .show_ui(ui, |ui| {
+                        for variant in BiasInit::all() {
+                            ui.selectable_value(
+                                &mut self.window_data.ai_bias_init,
+                                *variant,
+                                variant.to_string(),
+                            );
+                        }
+                    });
+                let changed = bias_init_before != self.window_data.ai_bias_init;
                 change_state_to_setupai |= changed;
 
                 if change_state_to_setupai {

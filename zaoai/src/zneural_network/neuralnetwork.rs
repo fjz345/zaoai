@@ -130,6 +130,8 @@ impl NeuralNetwork {
         layer_activation: ActivationFunctionType,
         cost_fn: CostFunction,
         dropout_prob: Option<f32>,
+        weight_init: WeightInit,
+        bias_init: BiasInit,
     ) -> NeuralNetwork {
         let mut layers: Vec<Layer> = Vec::new();
         let mut prev_out_size = graph_structure.input_nodes;
@@ -143,6 +145,8 @@ impl NeuralNetwork {
                 *i,
                 layer_activation,
                 dropout_prob,
+                weight_init,
+                bias_init,
             ));
             prev_out_size = *i;
         }
@@ -153,6 +157,8 @@ impl NeuralNetwork {
             graph_structure.output_nodes,
             layer_activation,
             None,
+            weight_init,
+            bias_init,
         ));
 
         let mut layer_learn_data: Vec<LayerLearnData> = Vec::new();

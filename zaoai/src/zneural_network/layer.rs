@@ -1,12 +1,15 @@
 use rand::prelude::*;
 use rand::rngs::StdRng;
-use rand_chacha;
+use rand_chacha::{self, ChaCha8Rng};
+use rand_distr::{Distribution, Normal, Uniform};
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
     IntoParallelRefMutIterator, ParallelIterator,
 };
+
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::Display;
 use wide::f32x8;
 
 #[cfg(feature = "simd")]
@@ -221,12 +224,102 @@ pub struct LayerLearnData {
     pub dropout_mask: Option<Vec<f32>>, // same length as layer outputs
 }
 
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Display, PartialEq, Default)]
+pub enum WeightInit {
+    Zero,       // Bad
+    Uniform,    // Uniform [0, 1]
+    NormalDist, // Normal(0, 1)
+    #[default]
+    XavierUniform, // sigmoid / tanh
+    XavierNormal, // sigmoid / tanh
+    HeUniform,  // ReLU / leaky ReLU
+    HeNormal,   // ReLU / leaky ReLU
+    LeCun,      // SELU / scaled tanh
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Copy, Display, PartialEq, Default)]
+pub enum BiasInit {
+    Zero,
+    #[default]
+    ZeroPointZeroOne,
+    // Random, // You can add later
+}
+
+impl WeightInit {
+    pub fn all() -> &'static [Self] {
+        use crate::WeightInit::*;
+        &[
+            Zero,
+            Uniform,
+            NormalDist,
+            XavierUniform,
+            XavierNormal,
+            HeUniform,
+            HeNormal,
+            LeCun,
+        ]
+    }
+    pub fn sample_weight(self, rng: &mut ChaCha8Rng, num_inputs: usize, num_outputs: usize) -> f32 {
+        match self {
+            Self::Zero => 0.0,
+            Self::Uniform => rng.gen_range(0.0..1.0),
+            Self::NormalDist => {
+                let normal = Normal::new(0.0, 1.0).unwrap();
+                normal.sample(rng)
+            }
+            Self::XavierUniform => {
+                let limit = (6.0 / (num_inputs + num_outputs) as f32).sqrt();
+                rng.gen_range(-limit..limit)
+            }
+            Self::XavierNormal => {
+                let std_dev = (2.0 / (num_inputs + num_outputs) as f32).sqrt();
+                let normal = Normal::new(0.0, std_dev).unwrap();
+                normal.sample(rng)
+            }
+            Self::HeUniform => {
+                let limit = (6.0 / num_inputs as f32).sqrt();
+                rng.gen_range(-limit..limit)
+            }
+
+            Self::HeNormal => {
+                let std_dev = (2.0 / num_inputs as f32).sqrt();
+                let normal = Normal::new(0.0, std_dev).unwrap();
+                normal.sample(rng)
+            }
+
+            Self::LeCun => {
+                let std_dev = (1.0 / num_inputs as f32).sqrt();
+                let normal = Normal::new(0.0, std_dev).unwrap();
+                normal.sample(rng)
+            }
+        }
+    }
+}
+
+impl BiasInit {
+    pub fn all() -> &'static [Self] {
+        use crate::BiasInit::*;
+        &[Zero, ZeroPointZeroOne]
+    }
+
+    pub fn sample_bias(self) -> f32 {
+        match self {
+            Self::Zero => 0.0,
+            Self::ZeroPointZeroOne => 0.01,
+        }
+    }
+}
+
 impl Layer {
     pub fn new(
         num_in_nodes: usize,
         num_out_nodes: usize,
         activation_type: ActivationFunctionType,
         dropout_prob: Option<f32>,
+        weight_init: WeightInit,
+        bias_init: BiasInit,
     ) -> Layer {
         // Validate Inputs
         if num_in_nodes <= 0 {
@@ -274,44 +367,25 @@ impl Layer {
             dropout_prob,
         };
 
-        new_layer.init_weights_and_biases(0);
+        new_layer.init_weights_and_biases(0, weight_init, bias_init);
 
         new_layer
     }
 
-    fn init_weights_and_biases(&mut self, seed: u64) {
-        // Uniform [0-1]
-        // {
-        //     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
+    pub fn init_weights_and_biases(
+        &mut self,
+        seed: u64,
+        weight_init: WeightInit,
+        bias_init: BiasInit,
+    ) {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
-        //     let min_weight = 0.0;
-        //     let max_weight = 1.0;
-        //     let min_bias = min_weight;
-        //     let max_bias = max_weight;
+        for i in 0..self.num_out_nodes {
+            self.biases[i] = bias_init.sample_bias();
 
-        //     // Initialize weights & biases
-        //     for i in 0..self.num_out_nodes {
-        //         let rand_bias: f32 = rng.gen_range(min_weight..max_weight);
-        //         self.biases[i] = rand_bias;
-
-        //         for j in 0..self.num_in_nodes {
-        //             let rand_weight: f32 = rng.gen_range(min_bias..max_bias);
-        //             self.weights[i][j] = rand_weight;
-        //         }
-        //     }
-        // }
-        // Xavier uniform
-        {
-            let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(seed);
-
-            let limit = (6.0 / (self.num_in_nodes + self.num_out_nodes) as f32).sqrt();
-
-            for i in 0..self.num_out_nodes {
-                self.biases[i] = 0.0; // biases often initialized to zero
-
-                for j in 0..self.num_in_nodes {
-                    self.weights[i][j] = rng.gen_range(-limit..limit);
-                }
+            for j in 0..self.num_in_nodes {
+                self.weights[i][j] =
+                    weight_init.sample_weight(&mut rng, self.num_in_nodes, self.num_out_nodes);
             }
         }
     }
