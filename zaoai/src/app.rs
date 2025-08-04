@@ -208,6 +208,7 @@ impl eframe::App for ZaoaiApp {
                                     self.training_data.get_in_out_dimensions();
                                 self.training_session
                                     .set_training_data(self.training_data.clone());
+                                self.training_session.nn = Some(ai.clone());
                                 self.training_session.is_correct_fn =
                                     self.window_data.ai_is_correct_fn;
                                 if (
@@ -216,8 +217,11 @@ impl eframe::App for ZaoaiApp {
                                 ) == training_dataset_dim
                                 {
                                     // Copy the session for TrainingThread to take care of
-                                    self.training_thread.begin_training(&self.training_session);
-                                    self.training_session.set_state(TrainingState::Training);
+                                    if self.training_thread.begin_training(&self.training_session) {
+                                        self.training_session.set_state(TrainingState::Training);
+                                    } else {
+                                        self.training_session.set_state(TrainingState::Idle);
+                                    }
                                 } else {
                                     log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, training_dataset_dim.0, training_dataset_dim.1);
                                     self.training_session.set_state(TrainingState::Idle);

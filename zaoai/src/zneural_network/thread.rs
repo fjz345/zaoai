@@ -35,24 +35,22 @@ pub struct TrainingThreadController {
 }
 
 impl TrainingThreadController {
-    pub fn begin_training(&mut self, training_session: &TrainingSession) {
-        let nn_option = training_session.nn.clone();
-        let training_data = training_session.training_data.clone();
-        let num_epochs = training_session.num_epochs;
-        let batch_size = training_session.batch_size;
-        let learn_rate = training_session.learn_rate;
-        let learn_rate_decay = training_session.learn_rate_decay.clone();
-        let learn_rate_decay_rate = training_session.learn_rate_decay_rate;
-        let is_correct_fn = training_session.is_correct_fn;
+    pub fn begin_training(&mut self, training_session: &TrainingSession) -> bool {
+        if let Some(mut nn) = training_session.nn.as_ref() {
+            let mut nn = nn.clone();
+            let training_data = training_session.training_data.clone();
+            let num_epochs = training_session.num_epochs;
+            let batch_size = training_session.batch_size;
+            let learn_rate = training_session.learn_rate;
+            let learn_rate_decay = training_session.learn_rate_decay.clone();
+            let learn_rate_decay_rate = training_session.learn_rate_decay_rate;
+            let is_correct_fn = training_session.is_correct_fn;
 
-        let (tx_nn, rx_nn) = mpsc::channel();
-        let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
-        let (tx_abort, rx_abort) = mpsc::channel();
+            let (tx_nn, rx_nn) = mpsc::channel();
+            let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
+            let (tx_abort, rx_abort) = mpsc::channel();
 
-        let training_thread = std::thread::spawn(move || {
-            if nn_option.is_some() {
-                let mut nn: NeuralNetwork = nn_option.unwrap();
-
+            let training_thread = std::thread::spawn(move || {
                 let training_data_vec = training_data.training_split();
                 nn.learn(
                     &training_data_vec[..],
@@ -67,14 +65,18 @@ impl TrainingThreadController {
                 );
 
                 tx_nn.send(nn);
-            }
-        });
+            });
 
-        self.rx_neuralnetwork = Some(rx_nn);
-        self.rx_payload = Some(rx_training_metadata);
-        self.tx_abort = Some(tx_abort);
-        self.payload_buffer = Vec::with_capacity(num_epochs);
-        self.handle = Some(training_thread);
+            self.rx_neuralnetwork = Some(rx_nn);
+            self.rx_payload = Some(rx_training_metadata);
+            self.tx_abort = Some(tx_abort);
+            self.payload_buffer = Vec::with_capacity(num_epochs);
+            self.handle = Some(training_thread);
+
+            return true;
+        }
+
+        false
     }
 
     pub fn training_in_progress(&self) -> bool {
