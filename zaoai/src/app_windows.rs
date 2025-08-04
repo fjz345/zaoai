@@ -568,6 +568,25 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                     ui.label("Learn Rate");
                 });
 
+                ui.horizontal(|ui| {
+                    if add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut state_ctx.training_session.learn_rate_decay,
+                            RangeInclusive::new(0.01,1.0),
+                        )
+                        .clamping(egui::SliderClamping::Never)
+                        .min_decimals(2)
+                        .max_decimals_opt(Some(5)),
+                    )
+                    .changed()
+                    {
+                        ui_dirty = true;
+                    };
+                    ui.label("Learn Decay Rate");
+                });
+
                 if *state_ctx.app_state == AppState::Training {
                     if ui.button("Abort Training").clicked() {
                         log::info!("Interupting Training");

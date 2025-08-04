@@ -67,6 +67,7 @@ struct MenuWindowData {
     // AI options
     ai_use_softmax: bool,
     ai_activation_function: ActivationFunctionType,
+    ai_dropout_proc: f32,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -299,6 +300,7 @@ impl Default for ZaoaiApp {
                 show_ai: true,
                 ai_use_softmax: false,
                 ai_activation_function: ActivationFunctionType::ReLU,
+                ai_dropout_proc: 0.0,
             },
             training_data: TrainingData::Physical(TrainingDataset::new(
                 &[DataPoint {
@@ -369,6 +371,8 @@ impl ZaoaiApp {
     ) -> (InnerResponse<InnerResponse<()>>, Rect) {
         let mut min_rect = Rect::ZERO;
         let response = egui::CentralPanel::default().show(ctx, |ui| {
+            let mut change_state_to_setupai = false;
+
             ui.vertical(|ui| {
                 ui.checkbox(&mut self.window_data.show_ai, "Show AI");
                 ui.checkbox(&mut self.window_data.show_traning_dataset, "Show Dataset");
@@ -381,20 +385,36 @@ impl ZaoaiApp {
                 );
 
                 let name_label = ui.label("Create new NN with layers");
-                if (ui
+                let changed = ui
                     .text_edit_singleline(&mut self.window_data.graph_structure_string)
                     .labelled_by(name_label.id)
-                    .lost_focus())
-                {
-                    self.state = AppState::SetupAi;
-                }
+                    .lost_focus();
+                change_state_to_setupai |= changed;
 
-                if ui
+                ui.horizontal(|ui| {
+                    let dropout_slider = add_slider_sized(
+                        ui,
+                        100.0,
+                        Slider::new(
+                            &mut self.window_data.ai_dropout_proc,
+                            RangeInclusive::new(0.01, 0.5),
+                        )
+                        .clamping(egui::SliderClamping::Never)
+                        .min_decimals(2)
+                        .max_decimals_opt(Some(5)),
+                    );
+                    let changed = dropout_slider.drag_stopped();
+
+                    ui.label("Dropout %");
+
+                    change_state_to_setupai |= changed;
+                });
+
+                let changed = ui
                     .checkbox(&mut self.window_data.ai_use_softmax, "Use softmax")
-                    .changed()
-                {
-                    self.state = AppState::SetupAi;
-                }
+                    .changed();
+                change_state_to_setupai |= changed;
+
                 let act_before = self.window_data.ai_activation_function;
                 let combo_response = egui::ComboBox::from_label("Activation Function")
                     .selected_text(self.window_data.ai_activation_function.to_string())
@@ -411,7 +431,10 @@ impl ZaoaiApp {
                         }
                     });
 
-                if act_before != self.window_data.ai_activation_function {
+                let changed = act_before != self.window_data.ai_activation_function;
+                change_state_to_setupai |= changed;
+
+                if change_state_to_setupai {
                     self.state = AppState::SetupAi;
                 }
             })

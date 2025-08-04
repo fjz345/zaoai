@@ -105,6 +105,7 @@ pub struct TrainingSession {
     pub num_epochs: usize,
     pub batch_size: usize,
     pub learn_rate: f32,
+    pub learn_rate_decay: f32,
     pub training_data: TrainingData,
 }
 
@@ -117,6 +118,7 @@ impl Default for TrainingSession {
             batch_size: 1000,
             learn_rate: 0.2,
             training_data: TrainingData::default(),
+            learn_rate_decay: 1.0,
         }
     }
 }
@@ -141,6 +143,7 @@ impl TrainingSession {
             batch_size: batch_size,
             learn_rate: learn_rate,
             training_data: training_data,
+            learn_rate_decay: 1.0,
         }
     }
 
