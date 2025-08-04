@@ -69,7 +69,7 @@ struct MenuWindowData {
     // AI options
     ai_use_softmax: bool,
     ai_activation_function: ActivationFunctionType,
-    ai_dropout_proc: f32,
+    ai_dropout_prob: f32,
     ai_is_correct_fn: IsCorrectFn,
 }
 
@@ -305,7 +305,7 @@ impl Default for ZaoaiApp {
                 show_ai: true,
                 ai_use_softmax: false,
                 ai_activation_function: ActivationFunctionType::ReLU,
-                ai_dropout_proc: 0.0,
+                ai_dropout_prob: 0.0,
                 ai_is_correct_fn: IsCorrectFn::MaxVal,
             },
             training_data: TrainingData::Physical(TrainingDataset::new(
@@ -372,6 +372,7 @@ impl ZaoaiApp {
         self.ai = Some(NeuralNetwork::new(
             nn_structure,
             self.window_data.ai_activation_function,
+            Some(self.window_data.ai_dropout_prob),
         ));
         self.training_session.set_nn(self.ai.as_ref().unwrap());
         self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
@@ -411,7 +412,7 @@ impl ZaoaiApp {
                         ui,
                         100.0,
                         Slider::new(
-                            &mut self.window_data.ai_dropout_proc,
+                            &mut self.window_data.ai_dropout_prob,
                             RangeInclusive::new(0.01, 0.5),
                         )
                         .clamping(egui::SliderClamping::Never)

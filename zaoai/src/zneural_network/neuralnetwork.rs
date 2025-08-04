@@ -126,6 +126,7 @@ impl NeuralNetwork {
     pub fn new(
         graph_structure: GraphStructure,
         layer_activation: ActivationFunctionType,
+        dropout_prob: Option<f32>,
     ) -> NeuralNetwork {
         let mut layers: Vec<Layer> = Vec::new();
         let mut prev_out_size = graph_structure.input_nodes;
@@ -134,7 +135,12 @@ impl NeuralNetwork {
 
         // Create Hidden layers
         for i in &graph_structure.hidden_layers[..] {
-            layers.push(Layer::new(prev_out_size, *i, layer_activation, Some(0.5)));
+            layers.push(Layer::new(
+                prev_out_size,
+                *i,
+                layer_activation,
+                dropout_prob,
+            ));
             prev_out_size = *i;
         }
 
