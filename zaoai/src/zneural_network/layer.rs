@@ -511,8 +511,8 @@ impl Layer {
 
     pub fn calculate_outputs_learn(
         &mut self,
-        learn_data: &mut LayerLearnData,
         inputs: &[f32],
+        learn_data: &mut LayerLearnData,
     ) -> Vec<f32> {
         learn_data.inputs.clone_from_slice(inputs);
 
@@ -526,8 +526,8 @@ impl Layer {
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd(
         &mut self,
-        learn_data: &mut LayerLearnData,
         inputs: &[f32],
+        learn_data: &mut LayerLearnData,
     ) -> Vec<f32> {
         learn_data.inputs.clone_from_slice(inputs);
 
@@ -541,8 +541,8 @@ impl Layer {
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd_rayon(
         &mut self,
-        learn_data: &mut LayerLearnData,
         inputs: &[f32],
+        learn_data: &mut LayerLearnData,
     ) -> Vec<f32> {
         learn_data.inputs.clone_from_slice(inputs);
 

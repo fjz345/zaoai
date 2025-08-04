@@ -392,14 +392,14 @@ impl NeuralNetwork {
             #[cfg(feature = "simd")]
             {
                 current_inputs = layer.calculate_outputs_learn_simd(
-                    &mut self.layer_learn_data[i],
                     &mut current_inputs,
+                    &mut self.layer_learn_data[i],
                 );
             }
             #[cfg(not(feature = "simd"))]
             {
                 current_inputs = layer
-                    .calculate_outputs_learn(&mut self.layer_learn_data[i], &mut current_inputs);
+                    .calculate_outputs_learn(&mut current_inputs, &mut self.layer_learn_data[i]);
             }
 
             // Dropout
