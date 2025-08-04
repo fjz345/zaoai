@@ -424,10 +424,9 @@ impl ZaoaiApp {
                         .max_decimals_opt(Some(5)),
                     );
                     let changed = dropout_slider.drag_stopped();
+                    change_state_to_setupai |= changed;
 
                     ui.label("Dropout %");
-
-                    change_state_to_setupai |= changed;
                 });
 
                 let changed = ui
@@ -452,7 +451,9 @@ impl ZaoaiApp {
                     });
 
                 let changed = act_before != self.window_data.ai_activation_function;
+                change_state_to_setupai |= changed;
 
+                let is_correct_before = self.window_data.ai_is_correct_fn;
                 let combo_response = egui::ComboBox::from_label("Is Correct Fn")
                     .selected_text(self.window_data.ai_is_correct_fn.to_string())
                     .show_ui(ui, |ui| {
@@ -468,6 +469,8 @@ impl ZaoaiApp {
                             );
                         }
                     });
+                let changed = is_correct_before != self.window_data.ai_is_correct_fn;
+                change_state_to_setupai |= changed;
 
                 let cost_fn_before = self.window_data.ai_cost_fn;
                 let combo_response = egui::ComboBox::from_label("Cost Fn")
@@ -485,9 +488,7 @@ impl ZaoaiApp {
                             );
                         }
                     });
-
                 let changed = cost_fn_before != self.window_data.ai_cost_fn;
-
                 change_state_to_setupai |= changed;
 
                 if change_state_to_setupai {
