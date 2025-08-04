@@ -13,8 +13,10 @@ use crate::zneural_network::{
 };
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Default)]
 pub enum DatasetUsage {
+    #[default]
+    NotSet,
     Training,
     Validation,
     Test,
@@ -31,8 +33,25 @@ pub struct AIResultMetadata {
     pub negative_instances: usize,
     pub cost: f64,
     pub last_loss: f64,
-    num_merged: usize,
-    dataset_usage: DatasetUsage,
+    pub num_merged: usize,
+    pub dataset_usage: DatasetUsage,
+}
+
+impl Default for AIResultMetadata {
+    fn default() -> Self {
+        Self {
+            true_positives: Default::default(),
+            true_negatives: Default::default(),
+            false_positives: Default::default(),
+            false_negatives: Default::default(),
+            positive_instances: Default::default(),
+            negative_instances: Default::default(),
+            cost: Default::default(),
+            last_loss: Default::default(),
+            num_merged: 1,
+            dataset_usage: Default::default(),
+        }
+    }
 }
 
 impl AIResultMetadata {
@@ -48,6 +67,30 @@ impl AIResultMetadata {
             last_loss: last_loss,
             num_merged: 1,
             dataset_usage,
+        }
+    }
+
+    pub fn from_accuracy(accuracy: f64, total_preds: usize) -> Self {
+        let correct = (accuracy * total_preds as f64).round() as usize;
+        let incorrect = total_preds - correct;
+
+        // We'll fake these with symmetry
+        let true_positives = correct / 2;
+        let true_negatives = correct - true_positives;
+        let false_positives = incorrect / 2;
+        let false_negatives = incorrect - false_positives;
+
+        Self {
+            true_positives,
+            true_negatives,
+            false_positives,
+            false_negatives,
+            positive_instances: true_positives + false_negatives,
+            negative_instances: true_negatives + false_positives,
+            cost: 0.0,
+            last_loss: 0.0,
+            num_merged: 1,
+            dataset_usage: DatasetUsage::Test, // or whatever variant makes sense
         }
     }
 

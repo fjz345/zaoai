@@ -2,7 +2,9 @@ use crate::layer::*;
 use crate::zneural_network::cost::{cross_entropy_loss_multiclass, mse, CostFunction};
 use crate::zneural_network::is_correct::IsCorrectFn;
 use crate::zneural_network::thread::TrainingThreadPayload;
-use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, FloatDecay, TestResults};
+use crate::zneural_network::training::{
+    test_nn, AIResultMetadata, DatasetUsage, FloatDecay, TestResults,
+};
 
 use super::datapoint::DataPoint;
 use rand::prelude::*;
@@ -348,6 +350,25 @@ impl NeuralNetwork {
         assert!(training_data.len() > 0);
         assert!(batch_size > 0);
 
+        // Send training meta data before training for baseline graph point
+        if let Some(test_results) = test_nn(self, training_data, is_correct_fn).ok() {
+            let mut initial_metadata = AIResultMetadata::from_accuracy(
+                test_results.accuracy.unwrap_or_default() as f64,
+                test_results.results.len(),
+            );
+            initial_metadata.cost = test_results.cost as f64;
+            initial_metadata.last_loss = 1.0;
+
+            if tx_training_metadata.is_some() {
+                let payload = TrainingThreadPayload {
+                    payload_index: 0,
+                    payload_max_index: num_epochs - 1,
+                    training_metadata: initial_metadata,
+                };
+                tx_training_metadata.unwrap().send(payload);
+            }
+        }
+
         for e in 0..num_epochs {
             log::trace!(
                 "Training...Learn Epoch Started [@{}/@{}]",
@@ -372,7 +393,7 @@ impl NeuralNetwork {
 
             if tx_training_metadata.is_some() {
                 let payload = TrainingThreadPayload {
-                    payload_index: e,
+                    payload_index: e + 1,
                     payload_max_index: num_epochs - 1,
                     training_metadata: metadata,
                 };
