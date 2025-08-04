@@ -1,5 +1,5 @@
 use crate::layer::*;
-use crate::zneural_network::cost::{cross_entropy_loss_multiclass, mse};
+use crate::zneural_network::cost::{cross_entropy_loss_multiclass, mse, CostFunction};
 use crate::zneural_network::is_correct::IsCorrectFn;
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, FloatDecay, TestResults};
@@ -114,6 +114,7 @@ pub struct NeuralNetwork {
     layer_learn_data: Vec<LayerLearnData>,
     version: u8,
     layer_activation_function: ActivationFunctionType,
+    cost_fn: CostFunction,
 }
 
 pub type NNGreatestValueResult = (usize, f32);
@@ -127,6 +128,7 @@ impl NeuralNetwork {
     pub fn new(
         graph_structure: GraphStructure,
         layer_activation: ActivationFunctionType,
+        cost_fn: CostFunction,
         dropout_prob: Option<f32>,
     ) -> NeuralNetwork {
         let mut layers: Vec<Layer> = Vec::new();
@@ -167,6 +169,7 @@ impl NeuralNetwork {
             version: Self::VERSION,
             is_softmax_output: false,
             layer_activation_function: layer_activation,
+            cost_fn: cost_fn,
         }
     }
 
@@ -210,7 +213,7 @@ impl NeuralNetwork {
             let datapoint_outputs = self.learn_calculate_outputs(datapoint);
             let loss =
                 cross_entropy_loss_multiclass(&datapoint_outputs, &datapoint.expected_outputs);
-            let cost = Self::cost_function(&datapoint_outputs, &datapoint.expected_outputs);
+            let cost = self.cost_function(&datapoint_outputs, &datapoint.expected_outputs);
 
             total_loss += loss;
             total_cost += cost;
@@ -512,14 +515,14 @@ impl NeuralNetwork {
         (max_index, max)
     }
 
-    fn cost_function(predicted: &[f32], expected: &[f32]) -> f32 {
-        mse(predicted, expected)
+    fn cost_function(&self, predicted: &[f32], expected: &[f32]) -> f32 {
+        self.cost_fn.call(predicted, expected)
     }
 
     fn calculate_cost_datapoint(&self, datapoint: &DataPoint) -> f32 {
         // cost
         let datapoint_outputs = self.calculate_outputs(&datapoint.inputs[..]);
-        let cost = Self::cost_function(&datapoint_outputs, &datapoint.expected_outputs);
+        let cost = self.cost_function(&datapoint_outputs, &datapoint.expected_outputs);
 
         // L2 Regularization: add sum of all weights squared
         let mut l2_penalty = 0.0;

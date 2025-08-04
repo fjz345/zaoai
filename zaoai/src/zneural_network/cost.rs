@@ -4,7 +4,7 @@ use strum_macros::Display;
 use wide::f32x8;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Copy, PartialEq, Display)]
+#[derive(Clone, Copy, PartialEq, Display, bincode::Encode, bincode::Decode)]
 pub enum CostFunction {
     Mse,
     CrossEntropyBinary,

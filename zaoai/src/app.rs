@@ -4,6 +4,7 @@
 use crate::{
     error::Result,
     zneural_network::{
+        cost::CostFunction,
         datapoint::{TrainingData, TrainingDataset},
         is_correct::IsCorrectFn,
         layer::ActivationFunctionType,
@@ -69,6 +70,7 @@ struct MenuWindowData {
     // AI options
     ai_use_softmax: bool,
     ai_activation_function: ActivationFunctionType,
+    ai_cost_fn: CostFunction,
     ai_dropout_prob: f32,
     ai_is_correct_fn: IsCorrectFn,
 }
@@ -307,6 +309,7 @@ impl Default for ZaoaiApp {
                 ai_activation_function: ActivationFunctionType::ReLU,
                 ai_dropout_prob: 0.0,
                 ai_is_correct_fn: IsCorrectFn::MaxVal,
+                ai_cost_fn: CostFunction::Mse,
             },
             training_data: TrainingData::Physical(TrainingDataset::new(
                 &[DataPoint {
@@ -372,6 +375,7 @@ impl ZaoaiApp {
         self.ai = Some(NeuralNetwork::new(
             nn_structure,
             self.window_data.ai_activation_function,
+            self.window_data.ai_cost_fn,
             Some(self.window_data.ai_dropout_prob),
         ));
         self.training_session.set_nn(self.ai.as_ref().unwrap());
@@ -448,13 +452,7 @@ impl ZaoaiApp {
                     });
 
                 let changed = act_before != self.window_data.ai_activation_function;
-                change_state_to_setupai |= changed;
 
-                if change_state_to_setupai {
-                    self.state = AppState::SetupAi;
-                }
-
-                let is_correct_before = self.window_data.ai_is_correct_fn;
                 let combo_response = egui::ComboBox::from_label("Is Correct Fn")
                     .selected_text(self.window_data.ai_is_correct_fn.to_string())
                     .show_ui(ui, |ui| {
@@ -471,7 +469,30 @@ impl ZaoaiApp {
                         }
                     });
 
-                let changed = is_correct_before != self.window_data.ai_is_correct_fn;
+                let cost_fn_before = self.window_data.ai_cost_fn;
+                let combo_response = egui::ComboBox::from_label("Cost Fn")
+                    .selected_text(self.window_data.ai_cost_fn.to_string())
+                    .show_ui(ui, |ui| {
+                        for variant in [
+                            CostFunction::Mse,
+                            CostFunction::CrossEntropyMulticlass,
+                            CostFunction::CrossEntropyBinary,
+                        ] {
+                            ui.selectable_value(
+                                &mut self.window_data.ai_cost_fn,
+                                variant,
+                                variant.to_string(),
+                            );
+                        }
+                    });
+
+                let changed = cost_fn_before != self.window_data.ai_cost_fn;
+
+                change_state_to_setupai |= changed;
+
+                if change_state_to_setupai {
+                    self.state = AppState::SetupAi;
+                }
             })
         });
         min_rect = min_rect.union(response.inner.response.rect);
