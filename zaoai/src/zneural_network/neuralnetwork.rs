@@ -1,6 +1,6 @@
 use crate::layer::*;
 use crate::zneural_network::thread::TrainingThreadPayload;
-use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, TestResults};
+use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, FloatDecay, TestResults};
 
 use super::datapoint::DataPoint;
 use rand::prelude::*;
@@ -400,6 +400,8 @@ impl NeuralNetwork {
         num_epochs: usize,
         batch_size: usize,
         learn_rate: f32,
+        learn_rate_decay: Option<FloatDecay>,
+        learn_rate_decay_rate: f32,
         tx_training_metadata: Option<&Sender<TrainingThreadPayload>>,
         eval_abort_fn: Option<T>,
     ) {
@@ -415,11 +417,16 @@ impl NeuralNetwork {
             );
             let mut metadata: AIResultMetadata =
                 AIResultMetadata::new(DatasetUsage::Training, 0.0, 0.0);
+
+            let maybe_decayed_learn_rate = learn_rate_decay
+                .as_ref()
+                .and_then(|f| Some(f.decay(learn_rate, e)))
+                .unwrap_or(learn_rate);
             self.learn_epoch(
                 e,
                 &training_data,
                 batch_size,
-                learn_rate,
+                maybe_decayed_learn_rate,
                 Some(&mut metadata),
             );
 

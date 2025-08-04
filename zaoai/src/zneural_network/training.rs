@@ -2,6 +2,7 @@ use std::{fmt::Display, fs::File, io::Write, path::Path, sync::Arc, time::Durati
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::Display;
 
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
@@ -105,7 +106,8 @@ pub struct TrainingSession {
     pub num_epochs: usize,
     pub batch_size: usize,
     pub learn_rate: f32,
-    pub learn_rate_decay: f32,
+    pub learn_rate_decay: Option<FloatDecay>,
+    pub learn_rate_decay_rate: f32,
     pub training_data: TrainingData,
 }
 
@@ -118,7 +120,8 @@ impl Default for TrainingSession {
             batch_size: 1000,
             learn_rate: 0.2,
             training_data: TrainingData::default(),
-            learn_rate_decay: 1.0,
+            learn_rate_decay: None,
+            learn_rate_decay_rate: 1.0,
         }
     }
 }
@@ -130,6 +133,8 @@ impl TrainingSession {
         num_epochs: usize,
         batch_size: usize,
         learn_rate: f32,
+        learn_rate_decay: Option<FloatDecay>,
+        learn_rate_decay_rate: f32,
     ) -> Self {
         let mut nn_option: Option<NeuralNetwork> = None;
         if nn.is_some() {
@@ -139,11 +144,12 @@ impl TrainingSession {
         Self {
             nn: nn_option,
             state: TrainingState::Idle,
-            num_epochs: num_epochs,
-            batch_size: batch_size,
-            learn_rate: learn_rate,
-            training_data: training_data,
-            learn_rate_decay: 1.0,
+            num_epochs,
+            batch_size,
+            learn_rate,
+            training_data,
+            learn_rate_decay,
+            learn_rate_decay_rate,
         }
     }
 
@@ -301,5 +307,88 @@ pub fn test_nn<'a>(
         Ok(&nn.last_test_results.as_ref().unwrap())
     } else {
         anyhow::bail!("Failed to test_nn")
+    }
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Display, PartialEq)]
+pub enum FloatDecay {
+    Exponential {
+        rate: f32, // decay_rate is now embedded
+    },
+    StepDecay {
+        step_size: usize,
+        decay_factor: f32, // e.g. 0.5 to halve every step_size
+    },
+    Linear {
+        max_steps: usize,
+        end_rate: f32,
+    },
+    Cosine {
+        max_steps: usize,
+        min_val: f32,
+    },
+}
+
+impl Default for FloatDecay {
+    fn default() -> Self {
+        Self::Exponential { rate: 0.05 }
+    }
+}
+
+impl FloatDecay {
+    pub fn decay(&self, init_val: f32, step: usize) -> f32 {
+        match self {
+            Self::Exponential { rate } => init_val * (-rate * step as f32).exp(),
+            Self::StepDecay {
+                step_size,
+                decay_factor,
+            } => {
+                let exponent = (step / *step_size) as f32;
+                init_val * decay_factor.powf(exponent)
+            }
+            Self::Linear {
+                max_steps,
+                end_rate,
+            } => {
+                let progress = step as f32 / *max_steps as f32;
+                if progress >= 1.0 {
+                    *end_rate
+                } else {
+                    // Linearly interpolate between init_val and end_rate
+                    init_val * (1.0 - progress) + end_rate * progress
+                }
+            }
+            Self::Cosine { max_steps, min_val } => {
+                let progress = step as f32 / *max_steps as f32;
+                if progress >= 1.0 {
+                    *min_val
+                } else {
+                    min_val
+                        + 0.5
+                            * (init_val - min_val)
+                            * (1.0 + (std::f32::consts::PI * progress).cos())
+                }
+            }
+        }
+    }
+
+    pub fn set_decay_rate(&mut self, rate: f32) {
+        match self {
+            Self::Exponential { rate: r } => *r = rate,
+            Self::StepDecay { decay_factor, .. } => *decay_factor = rate,
+            Self::Linear { end_rate, .. } => *end_rate = rate,
+            Self::Cosine { min_val, .. } => *min_val = rate,
+        }
+    }
+
+    pub fn uses_decay_rate(&self) -> bool {
+        matches!(
+            self,
+            Self::Exponential { .. }
+                | Self::StepDecay { .. }
+                | Self::Linear { .. }
+                | Self::Cosine { .. }
+        )
     }
 }

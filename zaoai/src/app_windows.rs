@@ -11,10 +11,10 @@ use crate::{
         },
         neuralnetwork::NeuralNetwork,
         thread::{TrainingThreadController, TrainingThreadPayload},
-        training::{test_nn, TrainingSession, TrainingState},
+        training::{test_nn, FloatDecay, TrainingSession, TrainingState},
     },
 };
-use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider};
+use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider, SliderClamping};
 use egui_plot::{Corner, Legend};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 
@@ -567,25 +567,67 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                     };
                     ui.label("Learn Rate");
                 });
+                
+                let before = state_ctx.training_session.learn_rate_decay.clone();
+                let text_none = "None";
+                let combo_response = egui::ComboBox::from_label("Decay")
+                    .selected_text(state_ctx.training_session.learn_rate_decay.as_ref().and_then(|f|Some(f.to_string())).unwrap_or(text_none.to_string()))
+                    .show_ui(ui, |ui| {
+                        for variant in [
+                                None,
+                                Some(FloatDecay::Exponential { rate: 0.05 }),
+                                Some(FloatDecay::StepDecay {
+                                    step_size: 10,
+                                    decay_factor: 0.5,
+                                }),
+                                Some(FloatDecay::Linear {
+                                    max_steps: state_ctx.training_session.num_epochs,
+                                    end_rate: 0.0,
+                                }),
+                                Some(FloatDecay::Cosine {
+                                    max_steps: state_ctx.training_session.num_epochs,
+                                    min_val: 0.001,
+                                }),
+                        ] {
+                            ui.selectable_value(
+                                &mut state_ctx.training_session.learn_rate_decay,
+                                variant.clone(),
+                                variant.and_then(|f|Some(f.to_string())).unwrap_or(text_none.to_string()),
+                            );
+                        }
+                    });
+                let changed = before != state_ctx.training_session.learn_rate_decay;
+
+                let decay = &state_ctx.training_session.learn_rate_decay;
+
+                let slider_enabled = decay.as_ref().map_or(false, |d| d.uses_decay_rate());
 
                 ui.horizontal(|ui| {
-                    if add_slider_sized(
-                        ui,
-                        100.0,
-                        Slider::new(
-                            &mut state_ctx.training_session.learn_rate_decay,
-                            RangeInclusive::new(0.01,1.0),
-                        )
-                        .clamping(egui::SliderClamping::Never)
-                        .min_decimals(2)
-                        .max_decimals_opt(Some(5)),
-                    )
-                    .changed()
-                    {
+                    let mut decay_rate = state_ctx.training_session.learn_rate_decay_rate;
+
+                    let slider = ui.add_enabled(
+                        slider_enabled,
+                        Slider::new(&mut decay_rate, 0.01..=1.0)
+                            .clamping(SliderClamping::Always)
+                            .min_decimals(2)
+                            .max_decimals_opt(Some(5)),
+                    );
+
+                    if slider.changed() {
                         ui_dirty = true;
-                    };
+                        state_ctx.training_session.learn_rate_decay_rate = decay_rate;
+
+                        if let Some(ref mut decay) = state_ctx.training_session.learn_rate_decay {
+                            if decay.uses_decay_rate() {
+                                decay.set_decay_rate(decay_rate);
+                            }
+                        }
+                    }
+
                     ui.label("Learn Decay Rate");
                 });
+
+
 
                 if *state_ctx.app_state == AppState::Training {
                     if ui.button("Abort Training").clicked() {

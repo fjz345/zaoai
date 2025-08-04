@@ -41,6 +41,8 @@ impl TrainingThreadController {
         let num_epochs = training_session.num_epochs;
         let batch_size = training_session.batch_size;
         let learn_rate = training_session.learn_rate;
+        let learn_rate_decay = training_session.learn_rate_decay.clone();
+        let learn_rate_decay_rate = training_session.learn_rate_decay_rate;
 
         let (tx_nn, rx_nn) = mpsc::channel();
         let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
@@ -56,6 +58,8 @@ impl TrainingThreadController {
                     num_epochs,
                     batch_size,
                     learn_rate,
+                    learn_rate_decay,
+                    learn_rate_decay_rate,
                     Some(&tx_training_metadata),
                     Some(|| rx_abort.try_recv().is_ok()),
                 );
