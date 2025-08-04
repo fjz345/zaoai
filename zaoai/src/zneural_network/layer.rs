@@ -700,9 +700,10 @@ impl Layer {
         &self,
         learn_data: &mut LayerLearnData,
         expected_outputs: &[f32],
+        cost_fn: CostFunction,
     ) {
         for i in 0..learn_data.node_values.len() {
-            let dcost = mse_single_d(learn_data.activation_values[i], expected_outputs[i]);
+            let dcost = cost_fn.call_d(learn_data.activation_values[i], expected_outputs[i]);
             let dactivation = self
                 .activation_type
                 .activate_derivative(learn_data.weighted_inputs[i]);
