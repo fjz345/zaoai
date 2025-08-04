@@ -178,6 +178,12 @@ impl TrainingSession {
     }
 }
 
+#[derive(Serialize)]
+struct ResultNoInputs<'a> {
+    expected_outputs: &'a [f32],
+    outputs: &'a [f32],
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, bincode::Encode, bincode::Decode)]
 pub struct TestResults {
@@ -210,9 +216,30 @@ impl TestResults {
     }
 
     pub fn save_results(&self, path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
+        return self.save_results_no_inputs(path);
+
         let mut file = File::create(path.as_ref())?;
 
         let mut json = serde_json::to_string_pretty(&self.results)?;
+        file.write_all(json.as_bytes())?;
+
+        Ok(())
+    }
+
+    pub fn save_results_no_inputs(&self, path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
+        let mut file = File::create(path.as_ref())?;
+
+        // Strip out inputs from each result
+        let stripped_results: Vec<ResultNoInputs> = self
+            .results
+            .iter()
+            .map(|(datapoint, outputs)| ResultNoInputs {
+                expected_outputs: &datapoint.expected_outputs,
+                outputs,
+            })
+            .collect();
+
+        let json = serde_json::to_string_pretty(&stripped_results)?;
         file.write_all(json.as_bytes())?;
 
         Ok(())
