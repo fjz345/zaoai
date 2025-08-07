@@ -284,6 +284,7 @@ impl NeuralNetwork {
                         DatasetUsage::Training,
                         batch_data_cost as f64,
                         batch_data_loss as f64,
+                        learn_rate,
                     );
                     self.learn_batch_metadata(
                         data,
@@ -359,7 +360,8 @@ impl NeuralNetwork {
                 test_results.results.len(),
             );
             initial_metadata.cost = test_results.cost as f64;
-            initial_metadata.last_loss = 1.0;
+            initial_metadata.last_loss = test_results.cost as f64;
+            initial_metadata.learn_rate = learn_rate;
 
             if tx_training_metadata.is_some() {
                 let payload = TrainingThreadPayload {
@@ -378,7 +380,7 @@ impl NeuralNetwork {
                 num_epochs
             );
             let mut metadata: AIResultMetadata =
-                AIResultMetadata::new(DatasetUsage::Training, 0.0, 0.0);
+                AIResultMetadata::new(DatasetUsage::Training, 0.0, 0.0, 0.0);
 
             let maybe_decayed_learn_rate = learn_rate_decay
                 .as_ref()

@@ -150,72 +150,19 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     .collect(),
             );
 
-            let plot_cost_percent_first =
-                *(plot_cost.points().first()).unwrap_or(&PlotPoint::new(0.0, 1.0));
-            let plot_cost_percent = PlotPoints::new(
-                plot_cost
-                    .points()
-                    .iter()
-                    .map(|f| {
-                        [
-                            f.x,
-                            f.y / plot_cost_percent_first.y,
-                        ]
-                    })
-                    .collect(),
-            );
-            let plot_last_loss_percent_first =
-                *(plot_last_loss.points().first()).unwrap_or(&PlotPoint::new(0.0, 1.0));
-            let plot_last_loss_percent = PlotPoints::new(
-                plot_last_loss
-                    .points()
-                    .iter()
-                    .map(|f| {
-                        [
-                            f.x,
-                            f.y / plot_last_loss_percent_first.y,
-                        ]
-                    })
-                    .collect(),
-            );
-
             let line_accuracy = Line::new("Accuracy %", plot_accuracy).color(Color32::LIGHT_GREEN);
-            let line_cost_percent =
-                Line::new(format!(
-                    "Cost {:.2e}",
-                    (*plot_cost_percent
-                        .points()
-                        .last()
-                        .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
-                    .y
-                ), plot_cost_percent).color(Color32::LIGHT_RED);
-            let line_last_loss_percent =
-                Line::new(format!(
-                    "Last Loss {:.2}",
-                    (*plot_last_loss_percent
-                        .points()
-                        .last()
-                        .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
-                    .y
-                ), plot_last_loss_percent).color(Color32::LIGHT_YELLOW);
+            let line_cost =
+                Line::new(
+                    "Cost", plot_cost).color(Color32::LIGHT_RED);
+            let line_last_loss =
+                Line::new(
+                    "Last Loss", plot_last_loss).color(Color32::LIGHT_YELLOW);
             let line_learn_rate =
-                Line::new(format!(
-                    "Learn Rate {:.4e}",
-                    (*plot_learn_rate
-                        .points()
-                        .last()
-                        .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
-                    .y
-                ), plot_learn_rate).color(Color32::LIGHT_GRAY);
+                Line::new(
+                    "Learn Rate", plot_learn_rate).color(Color32::LIGHT_GRAY);
             let line_f1_score =
-                Line::new(format!(
-                    "F1 Score {:.2e}",
-                    (*plot_f1_score
-                        .points()
-                        .last()
-                        .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
-                    .y
-                ), plot_f1_score).color(Color32::LIGHT_BLUE);
+                Line::new(
+                    "F1 Score", plot_f1_score).color(Color32::LIGHT_BLUE);
 
             // Create the plot once and add multiple lines inside it
             Self::create_plot_training()
@@ -224,8 +171,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                 .include_x(0.0)
                 .show(ui, |plot_ui| {
                     plot_ui.line(line_accuracy);
-                    plot_ui.line(line_cost_percent);
-                    plot_ui.line(line_last_loss_percent);
+                    plot_ui.line(line_cost);
+                    plot_ui.line(line_last_loss);
                     plot_ui.line(line_learn_rate);
                     plot_ui.line(line_f1_score);
                 });
@@ -246,7 +193,7 @@ impl WindowTrainingGraph {
             .include_y(0.0 - INCLUDE_Y_PADDING)
             .include_y(1.0 + INCLUDE_Y_PADDING)
             .default_y_bounds(0.0 - INCLUDE_Y_PADDING, 1.0 + INCLUDE_Y_PADDING)
-            .auto_bounds([true, false])
+            .auto_bounds([true, true])
             .include_x(0.0)
             .y_grid_spacer(
                 Self::create_plot_training_y_spacer_func as fn(GridInput) -> Vec<GridMark>,

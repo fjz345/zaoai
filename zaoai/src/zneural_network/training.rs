@@ -57,12 +57,13 @@ impl Default for AIResultMetadata {
 }
 
 impl AIResultMetadata {
-    pub fn new(dataset_usage: DatasetUsage, cost: f64, last_loss: f64) -> Self {
+    pub fn new(dataset_usage: DatasetUsage, cost: f64, last_loss: f64, learn_rate: f32) -> Self {
         Self {
             cost: cost,
             last_loss: last_loss,
             num_merged: 1,
             dataset_usage,
+            learn_rate,
             ..Default::default()
         }
     }
@@ -104,6 +105,7 @@ impl AIResultMetadata {
         self.positive_instances += other.positive_instances;
         self.negative_instances += other.negative_instances;
         self.last_loss = other.last_loss;
+        self.learn_rate = other.learn_rate;
         self.cost =
             (self.cost * (self.num_merged - 1) as f64 + other.cost) / self.num_merged as f64;
         self
