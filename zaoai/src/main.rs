@@ -92,28 +92,29 @@ fn main() -> Result<()> {
             // This gives us image support:
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
-            #[cfg(feature = "serde")]
-            {
-                if let Some(storage) = cc.storage {
-                    if let Some(json) = storage.get_string(eframe::APP_KEY) {
-                        let loaded_app = serde_json::from_str::<ZaoaiApp>(&json);
-                        match loaded_app {
-                            Ok(app) => {
-                                log::info!("Found previous app storage");
-                                return Ok(Box::new(app));
-                            }
-                            Err(e) => {
-                                log::error!("Failed to parse saved app state JSON: {e}. Ignoring and starting fresh.");
-                                // no return here, fall through to create new app
-                            }
-                        }
-                    } else {
-                        log::info!("No saved app state found. Starting fresh.");
-                    }
-                } else {
-                    log::info!("No app storage available. Starting fresh.");
-                }
-            }
+            // Persistent storage started bugging out, disabled for now.
+            // #[cfg(feature = "serde")]
+            // {
+            //     if let Some(storage) = cc.storage {
+            //         if let Some(json) = storage.get_string(eframe::APP_KEY) {
+            //             let loaded_app = serde_json::from_str::<ZaoaiApp>(&json);
+            //             match loaded_app {
+            //                 Ok(app) => {
+            //                     log::info!("Found previous app storage");
+            //                     return Ok(Box::new(app));
+            //                 }
+            //                 Err(e) => {
+            //                     log::error!("Failed to parse saved app state JSON: {e}. Ignoring and starting fresh.");
+            //                     // no return here, fall through to create new app
+            //                 }
+            //             }
+            //         } else {
+            //             log::info!("No saved app state found. Starting fresh.");
+            //         }
+            //     } else {
+            //         log::info!("No app storage available. Starting fresh.");
+            //     }
+            // }
 
             let app = ZaoaiApp::new(cc);
             Ok(Box::<ZaoaiApp>::new(app))
