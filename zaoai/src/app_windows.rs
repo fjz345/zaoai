@@ -112,7 +112,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                 .map(|f| f.into())
                 .collect();
 
-        egui::Window::new("Training Graph").show(ctx, |ui| {
+        egui::Window::new("Training Graph").default_pos(egui::Pos2::new(1000.0, 500.0)).show(ctx, |ui| {
             use crate::app_windows::PlotPoints::Owned;
 
             let plot_accuracy: PlotPoints = Owned(
@@ -254,7 +254,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        let pos = egui::pos2(999999.0, 0.0);
+        let pos = egui::pos2(1000.0, 0.0);
         egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
             if let Some(ai) = &mut state_ctx.ai {
                 ui.label(ai.to_string());
@@ -327,15 +327,15 @@ pub static MNIST_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| {
     AiSetupPreset {
         graph: GraphStructure {
             input_nodes: 784,
-            hidden_layers: vec![500],
+            hidden_layers: vec![256, 128],
             output_nodes: 10,
         },
-        dropout_prob: 0.5,
+        dropout_prob: 0.3,
         softmax_output: true,
         activation_func: ActivationFunctionType::ReLU,
         is_correct_fn: IsCorrectFn::MaxVal,
         cost_fn: CostFunction::CrossEntropyMulticlass,
-        weight_init: WeightInit::XavierUniform,
+        weight_init: WeightInit::HeUniform,
         bias_init: BiasInit::ZeroPointZeroOne,
         display: "MNIST_PRESET".to_string(),
     }
@@ -386,7 +386,7 @@ impl<'a> DrawableWindow<'a> for WindowAiSetupPresets {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        let pos = egui::pos2(999999.0, 200.0);
+        let pos = egui::pos2(0.0, 500.0);
         egui::Window::new("Setup Presets").default_pos(pos).show(ctx, |ui| {
            
             // TODO: use &AiSetupPreset instead of AiSetupPreset to avoid clones.
