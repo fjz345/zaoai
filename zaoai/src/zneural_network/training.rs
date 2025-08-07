@@ -159,6 +159,7 @@ pub struct TrainingSession {
     pub learn_rate_decay_rate: f32,
     pub training_data: TrainingData,
     pub is_correct_fn: IsCorrectFn,
+    pub validation_each_epoch: usize,
 }
 
 impl TrainingSession {
@@ -170,6 +171,8 @@ impl TrainingSession {
         learn_rate: f32,
         learn_rate_decay: Option<FloatDecay>,
         learn_rate_decay_rate: f32,
+        is_correct_fn: IsCorrectFn,
+        validation_each_epoch: usize,
     ) -> Self {
         let mut nn_option: Option<NeuralNetwork> = None;
         if nn.is_some() {
@@ -185,7 +188,8 @@ impl TrainingSession {
             training_data,
             learn_rate_decay,
             learn_rate_decay_rate,
-            is_correct_fn: IsCorrectFn::MaxVal,
+            is_correct_fn,
+            validation_each_epoch,
         }
     }
 

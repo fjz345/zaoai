@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider, SliderClamping};
-use egui_plot::{Corner, Legend, PlotItem};
+use egui_plot::{Corner, Legend, PlotItem, PlotResponse};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 
 #[cfg(feature = "serde")]
@@ -68,11 +68,169 @@ impl From<SerdePlotPoint> for PlotPoint {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Default)]
 pub struct WindowTrainingGraph {
+    // Training
     cached_plot_points_accuracy: Vec<SerdePlotPoint>,
     cached_plot_points_cost: Vec<SerdePlotPoint>,
     cached_plot_points_last_loss: Vec<SerdePlotPoint>,
     cached_plot_points_learn_rate: Vec<SerdePlotPoint>,
     cached_plot_points_f1_score: Vec<SerdePlotPoint>,
+    
+    // Validation
+
+    // Test
+}
+
+
+macro_rules! gen_line {
+    (
+        self = $self:ident,
+        payload = $payload:expr,
+        cache_field = $cache_field:ident,
+        generator = $gen_fn:path,
+        label = $label:expr,
+        color = $color:expr,
+    ) => {{
+        use crate::app_windows::PlotPoints::Owned;
+
+        $self.$cache_field = $gen_fn($payload)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+
+        let plot_points = Owned(
+            $self.$cache_field
+                .clone()
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+        );
+
+        Line::new($label, plot_points)
+            .color($color)
+            .id($label)
+    }};
+}
+
+impl WindowTrainingGraph
+{
+    fn generate_common_lines(&mut self, payload_buffer: &Vec<TrainingThreadPayload>) -> Vec<Line<'_>>
+    {
+        let line_accuracy = gen_line! {
+            self = self,
+            payload = &payload_buffer,
+            cache_field = cached_plot_points_accuracy,
+            generator = generate_accuracy_plotpoints_from_training_thread_payloads,
+            label = "Accuracy %",
+            color = Color32::LIGHT_GREEN,
+        };
+        let line_cost = gen_line! {
+            self = self,
+            payload = &payload_buffer,
+            cache_field = cached_plot_points_cost,
+            generator = generate_cost_plotpoints_from_training_thread_payloads,
+            label = "Cost",
+            color = Color32::LIGHT_RED,
+        };
+        let line_last_loss = gen_line! {
+            self = self,
+            payload = &payload_buffer,
+            cache_field = cached_plot_points_last_loss,
+            generator = generate_last_loss_plotpoints_from_training_thread_payloads,
+            label = "Last Loss",
+            color = Color32::LIGHT_YELLOW,
+        };
+        let line_learn_rate = gen_line! {
+            self = self,
+            payload = &payload_buffer,
+            cache_field = cached_plot_points_learn_rate,
+            generator = generate_learn_rate_plotpoints_from_training_thread_payloads,
+            label = "Learn Rate",
+            color = Color32::LIGHT_GRAY,
+        };
+        let line_f1_score = gen_line! {
+            self = self,
+            payload = &payload_buffer,
+            cache_field = cached_plot_points_f1_score,
+            generator = generate_f1_score_plotpoints_from_training_thread_payloads,
+            label = "F1 Score",
+            color = Color32::LIGHT_BLUE,
+        };
+
+        vec![line_accuracy, line_cost, line_last_loss, line_learn_rate, line_f1_score]
+    }
+
+    fn show_training_plot(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,
+        state_ctx: &mut WindowTrainingGraphCtx,) -> PlotResponse<()>
+    {
+        // TODO: optimize this when it starts stuttering
+        // Update
+        let payload_buffer = &state_ctx.training_thread.payload_training_buffer;
+
+        let common_lines = self.generate_common_lines(&payload_buffer);
+
+        // Create the plot once and add multiple lines inside it
+        ui.label("Training");
+        Self::create_plot_training()
+            .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
+            .x_axis_label("Epoch")
+            .include_x(0.0)
+            .show(ui, |plot_ui| {
+                for line in common_lines
+                {
+                    plot_ui.line(line);
+                }
+            })
+    }
+
+    fn show_validation_plot(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,
+        state_ctx: &mut WindowTrainingGraphCtx,) -> PlotResponse<()>
+    {
+        use crate::app_windows::PlotPoints::Owned;
+
+        // TODO: optimize this when it starts stuttering
+        // Update
+        let payload_buffer = &state_ctx.training_thread.payload_validation_buffer;
+
+        let common_lines = self.generate_common_lines(&payload_buffer); 
+
+        // Create the plot once and add multiple lines inside it
+        ui.label("Training");
+        Self::create_plot_training()
+            .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
+            .x_axis_label("Epoch")
+            .include_x(0.0)
+            .show(ui, |plot_ui| {
+                for line in common_lines
+                {
+                    plot_ui.line(line);
+                }
+            })
+    }
+
+    fn show_test_plot(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,
+        state_ctx: &mut WindowTrainingGraphCtx,) -> PlotResponse<()>
+    {
+        use crate::app_windows::PlotPoints::Owned;
+
+        // TODO: optimize this when it starts stuttering
+        // Update
+        let payload_buffer = &state_ctx.training_thread.payload_training_buffer;
+        
+        let common_lines = self.generate_common_lines(&payload_buffer);
+
+        // Create the plot once and add multiple lines inside it
+        ui.label("Testing");
+        Self::create_plot_training()
+            .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
+            .x_axis_label("Epoch")
+            .include_x(0.0)
+            .show(ui, |plot_ui| {
+                for line in common_lines
+                {
+                    plot_ui.line(line);
+                }
+            })
+    }
 }
 
 impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
@@ -83,101 +241,13 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        // TODO: optimize this when it starts stuttering
-        // Update
-        let payload_buffer = &state_ctx.training_thread.payload_buffer;
-        self.cached_plot_points_accuracy =
-            generate_accuracy_plotpoints_from_training_thread_payloads(&payload_buffer)
-                .into_iter()
-                .map(|f| f.into())
-                .collect();
-        self.cached_plot_points_cost =
-            generate_cost_plotpoints_from_training_thread_payloads(&payload_buffer)
-                .into_iter()
-                .map(|f| f.into())
-                .collect();
-        self.cached_plot_points_last_loss =
-            generate_last_loss_plotpoints_from_training_thread_payloads(&payload_buffer)
-                .into_iter()
-                .map(|f| f.into())
-                .collect();
-        self.cached_plot_points_learn_rate =
-            generate_learn_rate_plotpoints_from_training_thread_payloads(&payload_buffer)
-                .into_iter()
-                .map(|f| f.into())
-                .collect();
-        self.cached_plot_points_f1_score =
-            generate_f1_score_plotpoints_from_training_thread_payloads(&payload_buffer)
-                .into_iter()
-                .map(|f| f.into())
-                .collect();
+        let window = egui::Window::new("Training Graph").default_pos(egui::Pos2::new(1000.0, 500.0)).show(ctx, |ui| {
+            let training_plot = self.show_training_plot(ui, ctx, state_ctx);
+            let validation_plot = self.show_validation_plot(ui, ctx, state_ctx);
+            let test_plot = self.show_test_plot(ui, ctx, state_ctx);
+        });
 
-        egui::Window::new("Training Graph").default_pos(egui::Pos2::new(1000.0, 500.0)).show(ctx, |ui| {
-            use crate::app_windows::PlotPoints::Owned;
-
-            let plot_accuracy: PlotPoints = Owned(
-                self.cached_plot_points_accuracy
-                    .clone()
-                    .into_iter()
-                    .map(|f| f.into())
-                    .collect(),
-            );
-            let plot_cost: PlotPoints = Owned(
-                self.cached_plot_points_cost
-                    .clone()
-                    .into_iter()
-                    .map(|f| f.into())
-                    .collect(),
-            );
-            let plot_last_loss: PlotPoints = Owned(
-                self.cached_plot_points_last_loss
-                    .clone()
-                    .into_iter()
-                    .map(|f| f.into())
-                    .collect(),
-            );
-            let plot_learn_rate: PlotPoints = Owned(
-                self.cached_plot_points_learn_rate
-                    .clone()
-                    .into_iter()
-                    .map(|f| f.into())
-                    .collect(),
-            );
-            let plot_f1_score: PlotPoints = Owned(
-                self.cached_plot_points_f1_score
-                    .clone()
-                    .into_iter()
-                    .map(|f| f.into())
-                    .collect(),
-            );
-
-            let line_accuracy = Line::new("Accuracy %", plot_accuracy).color(Color32::LIGHT_GREEN).id("Accuracy");
-            let line_cost =
-                Line::new(
-                    "Cost", plot_cost).color(Color32::LIGHT_RED).id("Cost");
-            let line_last_loss =
-                Line::new(
-                    "Last Loss", plot_last_loss).color(Color32::LIGHT_YELLOW).id("Last Loss");
-            let line_learn_rate =
-                Line::new(
-                    "Learn Rate", plot_learn_rate).color(Color32::LIGHT_GRAY).id("Learn Rate");
-            let line_f1_score =
-                Line::new(
-                    "F1 Score", plot_f1_score).color(Color32::LIGHT_BLUE).id("F1 Score");
-
-            // Create the plot once and add multiple lines inside it
-            Self::create_plot_training()
-                .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
-                .x_axis_label("Epoch")
-                .include_x(0.0)
-                .show(ui, |plot_ui| {
-                    plot_ui.line(line_accuracy);
-                    plot_ui.line(line_learn_rate);
-                    plot_ui.line(line_f1_score);
-                    plot_ui.line(line_cost);
-                    plot_ui.line(line_last_loss.highlight(false));
-                });
-        })
+        window
     }
 }
 
@@ -622,7 +692,8 @@ pub struct WindowTrainingSessionCtx<'a> {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct WindowTrainingSession {}
+pub struct WindowTrainingSession {
+}
 
 impl<'a> DrawableWindow<'a> for WindowTrainingSession {
     type Ctx = WindowTrainingSessionCtx<'a>;
@@ -636,9 +707,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
         egui::Window::new("Training")
             .default_pos(pos)
             .show(ctx, |ui| {
-                let mut ui_dirty: bool = false;
                 ui.horizontal(|ui| {
-                    if add_slider_sized(
+                    add_slider_sized(
                         ui,
                         100.0,
                         Slider::new(
@@ -647,16 +717,12 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                         )
                         .step_by(1.0)
                         .clamping(egui::SliderClamping::Never),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
+                    );
                     ui.label("Num Epochs");
                 });
 
                 ui.horizontal(|ui| {
-                    if add_slider_sized(
+                    add_slider_sized(
                         ui,
                         100.0,
                         Slider::new(
@@ -665,16 +731,12 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                         )
                         .step_by(1.0)
                         .clamping(egui::SliderClamping::Never),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
+                    );
                     ui.label("Batch Size");
                 });
 
                 ui.horizontal(|ui| {
-                    if add_slider_sized(
+                    add_slider_sized(
                         ui,
                         100.0,
                         Slider::new(
@@ -684,11 +746,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                         .clamping(egui::SliderClamping::Never)
                         .min_decimals(2)
                         .max_decimals_opt(Some(5)),
-                    )
-                    .changed()
-                    {
-                        ui_dirty = true;
-                    };
+                    );
                     ui.label("Learn Rate");
                 });
                 
@@ -738,7 +796,6 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                     );
 
                     if slider.changed() {
-                        ui_dirty = true;
                         state_ctx.training_session.learn_rate_decay_rate = decay_rate;
 
                         if let Some(ref mut decay) = state_ctx.training_session.learn_rate_decay {
@@ -751,6 +808,13 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                     ui.label("Learn Decay Rate");
                 });
 
+                ui.horizontal(|ui| {
+                    let slider = ui.add(Slider::new(&mut state_ctx.training_session.validation_each_epoch,0..=5)
+                            .clamping(egui::SliderClamping::Never)
+                            .integer());
+
+                    ui.label("Validate each epoch");
+                });
 
 
                 if *state_ctx.app_state == AppState::Training {

@@ -23,7 +23,9 @@ pub struct TrainingThreadPayload {
 #[derive(Default)]
 pub struct TrainingThreadController {
     pub id: u64,
-    pub payload_buffer: Vec<TrainingThreadPayload>,
+    pub payload_training_buffer: Vec<TrainingThreadPayload>,
+    pub payload_validation_buffer: Vec<TrainingThreadPayload>,
+    pub payload_test_buffer: Vec<TrainingThreadPayload>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub handle: Option<JoinHandle<()>>,
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -70,7 +72,7 @@ impl TrainingThreadController {
             self.rx_neuralnetwork = Some(rx_nn);
             self.rx_payload = Some(rx_training_metadata);
             self.tx_abort = Some(tx_abort);
-            self.payload_buffer = Vec::with_capacity(num_epochs);
+            self.payload_training_buffer = Vec::with_capacity(num_epochs);
             self.handle = Some(training_thread);
 
             return true;

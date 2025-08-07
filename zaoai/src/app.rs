@@ -251,7 +251,7 @@ impl eframe::App for ZaoaiApp {
 
                         let in_progress = self.training_thread.training_in_progress();
                         if let Ok(result_metadata) = result_metadata {
-                            let payload_buffer = &mut self.training_thread.payload_buffer;
+                            let payload_buffer = &mut self.training_thread.payload_training_buffer;
                             payload_buffer.push(result_metadata);
 
                             if !in_progress {
@@ -338,6 +338,8 @@ impl Default for ZaoaiApp {
                 0.2,
                 None,
                 0.0,
+                IsCorrectFn::MaxVal,
+                0,
             ),
             window_training_graph: WindowTrainingGraph::default(),
             window_ai: WindowAi {},
