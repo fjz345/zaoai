@@ -18,7 +18,7 @@ Based primarily on **audio analysis**.
   - (GPU integration on it's way)
 - Interactive UI
 - Training metrics tracking
-- Cached three stage processing
+- Cached three stage processing of input files
 
 ## Usage
 > ⚠️ This project is in early development.
