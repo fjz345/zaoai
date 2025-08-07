@@ -268,7 +268,9 @@ impl eframe::App for ZaoaiApp {
                             payload_buffer.push(result_metadata);
 
                             if !in_progress {
-                                assert_eq!(payload_buffer.len(), payload_buffer.capacity());
+                                if payload_buffer.len() != payload_buffer.capacity() {
+                                    log::error!("payload_buffer.len() != payload_buffer.capacity(), some data was not put in payload_buffer");
+                                }
                                 self.training_session.set_state(TrainingState::Finish);
                             }
                         }

@@ -46,3 +46,10 @@
 - Mixed precision (f16/f32)	For speed/memory gains, GPU-focused
 - Model export (ONNX/custom)	Deployment-ready models
 - Gradient checking (finite diff)	Validate your backprop implementation
+
+// Potential strong input augmentation
+- Frequency masking: Randomly hide bands of frequencies — simulates frequency dropout or muffled sound.
+- Time masking: Mask out random time slices on the spectrogram — simulates short dropouts or silences.
+- Time warping: Stretch or compress parts of the spectrogram in time direction.
+- Pitch shifting: Shift frequencies up or down slightly.
+- Mixup: Combine two spectrograms to simulate overlapping sounds.
