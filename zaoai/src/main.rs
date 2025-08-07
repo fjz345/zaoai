@@ -94,23 +94,24 @@ fn main() -> Result<()> {
 
             #[cfg(feature = "serde")]
             {
-                // Try to load saved state from storage
                 if let Some(storage) = cc.storage {
                     if let Some(json) = storage.get_string(eframe::APP_KEY) {
-                        match serde_json::from_str::<ZaoaiApp>(&json) {
+                        let loaded_app = serde_json::from_str::<ZaoaiApp>(&json);
+                        match loaded_app {
                             Ok(app) => {
                                 log::info!("Found previous app storage");
                                 return Ok(Box::new(app));
                             }
                             Err(e) => {
-                                log::error!("Could not parse ZaoaiApp json: {e}");
+                                log::error!("Failed to parse saved app state JSON: {e}. Ignoring and starting fresh.");
+                                // no return here, fall through to create new app
                             }
                         }
                     } else {
-                        log::error!("Could not get storage string");
+                        log::info!("No saved app state found. Starting fresh.");
                     }
                 } else {
-                    log::error!("Could not find app storage");
+                    log::info!("No app storage available. Starting fresh.");
                 }
             }
 
