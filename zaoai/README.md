@@ -4,13 +4,23 @@
 
 > ⚠️ This project is in early development.
 
-## Current Features
+## Current Main Features
 - Create neural networks with format **[In]748, 500, [Out]10**
 - Train networks using **backpropagation**
 - SIMD-optimized
   - Example: 30 epochs of [784, 100, 10] finishes in seconds
 - Interactive UI (built with `eframe`)
 - Training metrics tracking
+
+## Other features
+- Persistant storage & Store network to .znn
+- Dropout neurons during training
+- Weight/Bias initialization options
+- Learn rate decay options
+- Dataset management
+- Multiple is correct functions to choose between
+- Multiple cost functions to choose between
+
 
 ## TODO:
 ### Support Audio Formats
