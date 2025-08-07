@@ -139,14 +139,6 @@ impl WindowTrainingGraph
             label = "Last Loss",
             color = Color32::LIGHT_YELLOW,
         };
-        let line_learn_rate = gen_line! {
-            self = self,
-            payload = &payload_buffer,
-            cache_field = cached_plot_points_learn_rate,
-            generator = generate_learn_rate_plotpoints_from_training_thread_payloads,
-            label = "Learn Rate",
-            color = Color32::LIGHT_GRAY,
-        };
         let line_f1_score = gen_line! {
             self = self,
             payload = &payload_buffer,
@@ -156,7 +148,7 @@ impl WindowTrainingGraph
             color = Color32::LIGHT_BLUE,
         };
 
-        vec![line_accuracy, line_cost, line_last_loss, line_learn_rate, line_f1_score]
+        vec![line_accuracy, line_cost, line_last_loss, line_f1_score]
     }
 
     fn show_training_plot(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,
@@ -166,6 +158,14 @@ impl WindowTrainingGraph
         // Update
         let payload_buffer = &state_ctx.training_thread.payload_training_buffer;
 
+        let line_learn_rate = gen_line! {
+            self = self,
+            payload = &payload_buffer,
+            cache_field = cached_plot_points_learn_rate,
+            generator = generate_learn_rate_plotpoints_from_training_thread_payloads,
+            label = "Learn Rate",
+            color = Color32::LIGHT_GRAY,
+        };
         let common_lines = self.generate_common_lines(&payload_buffer);
 
         // Create the plot once and add multiple lines inside it
@@ -179,6 +179,7 @@ impl WindowTrainingGraph
                 {
                     plot_ui.line(line);
                 }
+                plot_ui.line(line_learn_rate);
             })
     }
 
@@ -227,7 +228,7 @@ impl WindowTrainingGraph
             .show(ui, |plot_ui| {
                 for line in common_lines
                 {
-                    plot_ui.line(line);
+                    // plot_ui.line(line);
                 }
             })
     }

@@ -385,6 +385,7 @@ impl NeuralNetwork {
             }
             if validation_each_epoch != 0 && e % validation_each_epoch == 0 {
                 if let Some(tx_validation_metadata) = tx_validation_metadata {
+                    log::trace!("Testing and sending validation data...");
                     test_and_send_payload(tx_validation_metadata, validation_data, e);
                 }
             }
