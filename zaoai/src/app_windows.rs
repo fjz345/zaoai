@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr};
+use std::{any::Any, cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr};
 
 use crate::{
     app::{AppState, MenuWindowData},
@@ -12,7 +12,7 @@ use crate::{
     },
 };
 use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider, SliderClamping};
-use egui_plot::{Corner, Legend};
+use egui_plot::{Corner, Legend, PlotItem};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 
 #[cfg(feature = "serde")]
@@ -151,31 +151,31 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     .collect(),
             );
 
-            let line_accuracy = Line::new("Accuracy %", plot_accuracy).color(Color32::LIGHT_GREEN);
+            let line_accuracy = Line::new("Accuracy %", plot_accuracy).color(Color32::LIGHT_GREEN).id("Accuracy");
             let line_cost =
                 Line::new(
-                    "Cost", plot_cost).color(Color32::LIGHT_RED);
+                    "Cost", plot_cost).color(Color32::LIGHT_RED).id("Cost");
             let line_last_loss =
                 Line::new(
-                    "Last Loss", plot_last_loss).color(Color32::LIGHT_YELLOW);
+                    "Last Loss", plot_last_loss).color(Color32::LIGHT_YELLOW).id("Last Loss");
             let line_learn_rate =
                 Line::new(
-                    "Learn Rate", plot_learn_rate).color(Color32::LIGHT_GRAY);
+                    "Learn Rate", plot_learn_rate).color(Color32::LIGHT_GRAY).id("Learn Rate");
             let line_f1_score =
                 Line::new(
-                    "F1 Score", plot_f1_score).color(Color32::LIGHT_BLUE);
+                    "F1 Score", plot_f1_score).color(Color32::LIGHT_BLUE).id("F1 Score");
 
             // Create the plot once and add multiple lines inside it
             Self::create_plot_training()
-                .legend(Legend::default().position(Corner::LeftBottom))
+                .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
                 .x_axis_label("Epoch")
                 .include_x(0.0)
                 .show(ui, |plot_ui| {
                     plot_ui.line(line_accuracy);
-                    plot_ui.line(line_cost);
-                    plot_ui.line(line_last_loss);
                     plot_ui.line(line_learn_rate);
                     plot_ui.line(line_f1_score);
+                    plot_ui.line(line_cost);
+                    plot_ui.line(line_last_loss.highlight(false));
                 });
         })
     }
