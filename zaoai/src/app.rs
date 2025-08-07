@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use crate::{
+    app_windows::{WindowAiSetupPresets, WindowAiSetupPresetsCtx},
     error::Result,
     zneural_network::{
         cost::CostFunction,
@@ -52,29 +53,31 @@ use crate::{
 };
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-struct MenuWindowData {
+pub struct MenuWindowData {
     // Main Menu
-    graph_structure_string: String,
-    show_ai: bool,
+    pub graph_structure_string: String,
+    pub show_ai: bool,
     // Training Graph
-    show_training_graph: bool,
+    pub show_training_graph: bool,
     // Training Session
-    show_training_session: bool,
-    training_session_num_epochs: usize,
-    training_session_batch_size: usize,
-    training_session_learn_rate: f32,
+    pub show_training_session: bool,
+    pub training_session_num_epochs: usize,
+    pub training_session_batch_size: usize,
+    pub training_session_learn_rate: f32,
     // Training Dataset
-    show_traning_dataset: bool,
-    training_dataset_split_thresholds_0: f64,
-    training_dataset_split_thresholds_1: f64,
+    pub show_traning_dataset: bool,
+    pub training_dataset_split_thresholds_0: f64,
+    pub training_dataset_split_thresholds_1: f64,
     // AI options
-    ai_use_softmax_output: bool,
-    ai_activation_function: ActivationFunctionType,
-    ai_cost_fn: CostFunction,
-    ai_dropout_prob: f32,
-    ai_is_correct_fn: IsCorrectFn,
-    ai_weight_init: WeightInit,
-    ai_bias_init: BiasInit,
+    pub ai_use_softmax_output: bool,
+    pub ai_activation_function: ActivationFunctionType,
+    pub ai_cost_fn: CostFunction,
+    pub ai_dropout_prob: f32,
+    pub ai_is_correct_fn: IsCorrectFn,
+    pub ai_weight_init: WeightInit,
+    pub ai_bias_init: BiasInit,
+    // Setup Presets
+    pub show_setup_presets: bool,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -94,6 +97,7 @@ pub struct ZaoaiApp {
     window_ai: WindowAi,
     window_training_set: WindowTrainingSet,
     window_training_session: WindowTrainingSession,
+    window_setup_presets: WindowAiSetupPresets,
 }
 
 impl eframe::App for ZaoaiApp {
@@ -318,6 +322,7 @@ impl Default for ZaoaiApp {
                 ai_cost_fn: CostFunction::Mse,
                 ai_weight_init: WeightInit::default(),
                 ai_bias_init: BiasInit::default(),
+                show_setup_presets: true,
             },
             training_data: TrainingData::Physical(TrainingDataset::new(
                 &[DataPoint {
@@ -341,6 +346,7 @@ impl Default for ZaoaiApp {
             window_training_session: WindowTrainingSession {},
             last_ai_filepath: None,
             training_thread: TrainingThreadController::default(),
+            window_setup_presets: WindowAiSetupPresets::default(),
         }
     }
 }
@@ -595,6 +601,21 @@ impl ZaoaiApp {
                 ctx,
                 &mut WindowTrainingGraphCtx {
                     training_thread: &self.training_thread,
+                },
+                |this, state_ctx| {
+                    let response = this.draw_ui(ctx, state_ctx);
+                    if let Some(r) = response {
+                        min_rect = min_rect.union(r.response.rect);
+                    }
+                },
+            );
+        }
+        if self.window_data.show_setup_presets {
+            self.window_setup_presets.with_ctx(
+                ctx,
+                &mut WindowAiSetupPresetsCtx {
+                    window_data: &mut self.window_data,
+                    state: &mut self.state,
                 },
                 |this, state_ctx| {
                     let response = this.draw_ui(ctx, state_ctx);

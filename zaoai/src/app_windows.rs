@@ -1,14 +1,14 @@
 use std::{cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr};
 
 use crate::{
-    app::AppState,
+    app::{AppState, MenuWindowData},
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
-        datapoint::{
+        cost::CostFunction, datapoint::{
             create_2x2_test_datapoints,  DataPoint, TrainingData, TrainingDataset,
             VirtualTrainingDataset,
-        }, is_correct::IsCorrectFn, neuralnetwork::NeuralNetwork, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TrainingSession, TrainingState}
+        }, is_correct::IsCorrectFn, layer::{ActivationFunctionType, BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TrainingSession, TrainingState}
     },
 };
 use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider, SliderClamping};
@@ -18,6 +18,7 @@ use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use strum_macros::Display;
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabelsLoader},
     sound::get_spectrogram_dims,
@@ -295,6 +296,132 @@ impl<'a> DrawableWindow<'a> for WindowAi {
 }
 
 impl WindowAi {}
+
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(PartialEq, Clone)]
+pub struct AiSetupPreset{
+    graph: GraphStructure, 
+    dropout_prob: f32, 
+    softmax_output: bool,
+    activation_func: ActivationFunctionType,
+    is_correct_fn: IsCorrectFn, 
+    cost_fn: CostFunction, 
+    weight_init: WeightInit, 
+    bias_init: BiasInit,
+    display: String, 
+}
+
+impl std::fmt::Display for AiSetupPreset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // You can customize this string however you want.
+        write!(
+            f,
+            "{}", self.display
+        )
+    }
+}
+
+use std::sync::LazyLock;
+pub static MNIST_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| {
+    AiSetupPreset {
+        graph: GraphStructure {
+            input_nodes: 784,
+            hidden_layers: vec![500],
+            output_nodes: 10,
+        },
+        dropout_prob: 0.5,
+        softmax_output: true,
+        activation_func: ActivationFunctionType::ReLU,
+        is_correct_fn: IsCorrectFn::MaxVal,
+        cost_fn: CostFunction::CrossEntropyMulticlass,
+        weight_init: WeightInit::XavierUniform,
+        bias_init: BiasInit::ZeroPointZeroOne,
+        display: "MNIST_PRESET".to_string(),
+    }
+});
+pub static ZLBL_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| {
+    AiSetupPreset {
+        graph: GraphStructure {
+            input_nodes: 4096,
+            hidden_layers: vec![2000],
+            output_nodes: 2,
+        },
+        dropout_prob: 0.5,
+        softmax_output: true,
+        activation_func: ActivationFunctionType::ReLU,
+        is_correct_fn: IsCorrectFn::MaxVal,
+        cost_fn: CostFunction::CrossEntropyMulticlass,
+        weight_init: WeightInit::XavierUniform,
+        bias_init: BiasInit::ZeroPointZeroOne,
+        display: "ZLBL_PRESET".to_string(),
+    }
+});
+pub static ALL_PRESETS: LazyLock<[&'static AiSetupPreset; 2]> = LazyLock::new(|| {
+    [&*MNIST_PRESET, &*ZLBL_PRESET]
+});
+
+pub struct WindowAiSetupPresetsCtx<'a> {
+    pub window_data: &'a mut MenuWindowData,
+    pub state: &'a mut AppState,
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct WindowAiSetupPresets {
+    pub cached_ai_preset: AiSetupPreset
+}
+
+impl Default for WindowAiSetupPresets
+{
+    fn default() -> Self {
+        Self { cached_ai_preset: ALL_PRESETS[0].clone() }
+    }
+}
+
+impl<'a> DrawableWindow<'a> for WindowAiSetupPresets {
+    type Ctx = WindowAiSetupPresetsCtx<'a>;
+
+    fn draw_ui(
+        &mut self,
+        ctx: &egui::Context,
+        state_ctx: &mut Self::Ctx,
+    ) -> Option<InnerResponse<Option<()>>> {
+        let pos = egui::pos2(999999.0, 0.0);
+        egui::Window::new("Setup Presets").default_pos(pos).show(ctx, |ui| {
+           
+            // TODO: use &AiSetupPreset instead of AiSetupPreset to avoid clones.
+            let before = self.cached_ai_preset.clone();
+            let combo_response = egui::ComboBox::from_label("AiSetup")
+                .selected_text(self.cached_ai_preset.to_string())
+                .show_ui(ui, |ui| {
+                    for variant in *ALL_PRESETS {
+                        ui.selectable_value(
+                            &mut self.cached_ai_preset,
+                            variant.clone(),
+                            variant.to_string(),
+                        );
+                    }
+                });
+            // let changed_preset = before != self.cached_ai_preset;
+
+            if ui.button("Setup").clicked()
+            {
+                state_ctx.window_data.graph_structure_string = self.cached_ai_preset.graph.to_string();
+                state_ctx.window_data.ai_use_softmax_output = self.cached_ai_preset.softmax_output;
+                state_ctx.window_data.ai_activation_function = self.cached_ai_preset.activation_func;
+                state_ctx.window_data.ai_cost_fn= self.cached_ai_preset.cost_fn;
+                state_ctx.window_data.ai_dropout_prob = self.cached_ai_preset.dropout_prob;
+                state_ctx.window_data.ai_is_correct_fn = self.cached_ai_preset.is_correct_fn;
+                state_ctx.window_data.ai_weight_init = self.cached_ai_preset.weight_init;
+                state_ctx.window_data.ai_bias_init = self.cached_ai_preset.bias_init;
+
+                *state_ctx.state = AppState::SetupAi;
+            }
+        })
+    }
+}
+
+impl WindowAiSetupPresets {}
 
 pub struct WindowTrainingSetCtx<'a> {
     pub training_data: &'a mut TrainingData, // Probably should store on heap to avoid copy, not an issue for now
