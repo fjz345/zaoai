@@ -242,7 +242,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        let window = egui::Window::new("Training Graph").default_pos(egui::Pos2::new(1000.0, 500.0)).show(ctx, |ui| {
+        let window = egui::Window::new("Training Graph").default_pos(egui::Pos2::new(1000.0, 0.0)).show(ctx, |ui| {
             let training_plot = self.show_training_plot(ui, ctx, state_ctx);
             let validation_plot = self.show_validation_plot(ui, ctx, state_ctx);
             let test_plot = self.show_test_plot(ui, ctx, state_ctx);
@@ -325,8 +325,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        let pos = egui::pos2(1000.0, 0.0);
-        egui::Window::new("ZaoAI").default_pos(pos).show(ctx, |ui| {
+        egui::Window::new("ZaoAI").default_pos(egui::pos2(700.0, 0.0)).show(ctx, |ui| {
             if let Some(ai) = &mut state_ctx.ai {
                 ui.label(ai.to_string());
 
@@ -457,8 +456,7 @@ impl<'a> DrawableWindow<'a> for WindowAiSetupPresets {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        let pos = egui::pos2(0.0, 500.0);
-        egui::Window::new("Setup Presets").default_pos(pos).show(ctx, |ui| {
+        egui::Window::new("Setup Presets").default_pos(egui::pos2(0.0, 500.0)).show(ctx, |ui| {
            
             // TODO: use &AiSetupPreset instead of AiSetupPreset to avoid clones.
             let before = self.cached_ai_preset.clone();
@@ -704,9 +702,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        let pos = egui::pos2(500.0, 0.0);
         egui::Window::new("Training")
-            .default_pos(pos)
+            .default_pos(egui::pos2(350.0, 0.0))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     add_slider_sized(
