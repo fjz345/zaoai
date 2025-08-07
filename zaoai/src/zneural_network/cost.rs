@@ -14,24 +14,20 @@ pub enum CostFunction {
 impl CostFunction {
     pub fn call(&self, predicted: &[f32], expected: &[f32]) -> f32 {
         match self {
-            CostFunction::Mse => Self::mse(predicted, expected),
-            CostFunction::CrossEntropyBinary => {
-                Self::cross_entropy_loss_binary(predicted, expected)
-            }
+            CostFunction::Mse => mse(predicted, expected),
+            CostFunction::CrossEntropyBinary => cross_entropy_loss_binary(predicted, expected),
             CostFunction::CrossEntropyMulticlass => {
-                Self::cross_entropy_loss_multiclass(predicted, expected)
+                cross_entropy_loss_multiclass(predicted, expected)
             }
         }
     }
 
     pub fn call_d(&self, predicted: &[f32], expected: &[f32]) -> f32 {
         match self {
-            CostFunction::Mse => Self::mse(predicted, expected),
-            CostFunction::CrossEntropyBinary => {
-                Self::cross_entropy_loss_binary(predicted, expected)
-            }
+            CostFunction::Mse => mse(predicted, expected),
+            CostFunction::CrossEntropyBinary => cross_entropy_loss_binary_d(predicted, expected),
             CostFunction::CrossEntropyMulticlass => {
-                Self::cross_entropy_loss_multiclass(predicted, expected)
+                cross_entropy_loss_multiclass(predicted, expected)
             }
         }
     }
@@ -39,11 +35,9 @@ impl CostFunction {
     pub fn call_simd(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
         match self {
             CostFunction::Mse => mse_simd(predicted, expected),
-            CostFunction::CrossEntropyBinary => {
-                todo!()
-            }
+            CostFunction::CrossEntropyBinary => cross_entropy_loss_binary_simd(predicted, expected),
             CostFunction::CrossEntropyMulticlass => {
-                todo!()
+                cross_entropy_loss_multiclass_simd(predicted, expected)
             }
         }
     }
@@ -52,48 +46,37 @@ impl CostFunction {
         match self {
             CostFunction::Mse => mse_d_simd(predicted, expected),
             CostFunction::CrossEntropyBinary => {
-                todo!()
+                cross_entropy_loss_binary_d_simd(predicted, expected)
             }
             CostFunction::CrossEntropyMulticlass => {
-                todo!()
+                cross_entropy_loss_multiclass_d_simd(predicted, expected)
             }
         }
     }
 
-    fn mse(predicted: &[f32], expected: &[f32]) -> f32 {
-        predicted
-            .iter()
-            .zip(expected.iter())
-            .map(|(p, e)| {
-                let error = p - e;
-                0.5 * error * error
-            })
-            .sum()
-    }
+    // fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
+    //     let epsilon = 1e-12;
+    //     predicted
+    //         .iter()
+    //         .zip(expected.iter())
+    //         .map(|(p, e)| {
+    //             let p_clamped = p.max(epsilon).min(1.0 - epsilon);
+    //             -(e * p_clamped.ln() + (1.0 - e) * (1.0 - p_clamped).ln())
+    //         })
+    //         .sum()
+    // }
 
-    fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
-        let epsilon = 1e-12;
-        predicted
-            .iter()
-            .zip(expected.iter())
-            .map(|(p, e)| {
-                let p_clamped = p.max(epsilon).min(1.0 - epsilon);
-                -(e * p_clamped.ln() + (1.0 - e) * (1.0 - p_clamped).ln())
-            })
-            .sum()
-    }
-
-    fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32 {
-        let epsilon = 1e-12;
-        predicted
-            .iter()
-            .zip(expected.iter())
-            .map(|(p, e)| {
-                let p_clamped = p.max(epsilon).min(1.0 - epsilon);
-                -e * p_clamped.ln()
-            })
-            .sum()
-    }
+    // fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32 {
+    //     let epsilon = 1e-12;
+    //     predicted
+    //         .iter()
+    //         .zip(expected.iter())
+    //         .map(|(p, e)| {
+    //             let p_clamped = p.max(epsilon).min(1.0 - epsilon);
+    //             -e * p_clamped.ln()
+    //         })
+    //         .sum()
+    // }
 }
 
 // ============================
@@ -152,6 +135,32 @@ pub fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32
         .sum()
 }
 
+#[cfg(feature = "simd")]
+pub fn cross_entropy_loss_multiclass_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
+    let epsilon = f32x8::splat(1e-12);
+    let one = f32x8::splat(1.0);
+
+    // Clamp predicted to [epsilon, 1 - epsilon]
+    let clamped = predicted.min(one - epsilon).max(epsilon);
+
+    // -expected * ln(clamped)
+    -expected * clamped.ln()
+}
+
+pub fn cross_entropy_loss_multiclass_d(predicted: &[f32], expected: &[f32]) -> f32 {
+    predicted
+        .iter()
+        .zip(expected.iter())
+        .map(|(p, y)| p - y)
+        .sum()
+}
+
+#[cfg(feature = "simd")]
+pub fn cross_entropy_loss_multiclass_d_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
+    // Assumes inputs are after softmax
+    predicted - expected
+}
+
 pub fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
     let epsilon = 1e-12;
 
@@ -163,5 +172,41 @@ pub fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
             -(e * p_clamped.ln() + (1.0 - e) * (1.0 - p_clamped).ln())
         })
         .sum()
+}
+
+#[cfg(feature = "simd")]
+pub fn cross_entropy_loss_binary_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
+    let epsilon = f32x8::splat(1e-12);
+    let one = f32x8::splat(1.0);
+
+    let clamped = predicted.min(one - epsilon).max(epsilon);
+
+    -(expected * clamped.ln() + (one - expected) * (one - clamped).ln())
+}
+
+pub fn cross_entropy_loss_binary_d(predicted: &[f32], expected: &[f32]) -> f32 {
+    let epsilon = 1e-12;
+    let mut result = 0.0;
+
+    for (&p, &y) in predicted.iter().zip(expected.iter()) {
+        let p_clamped = p.max(epsilon).min(1.0 - epsilon);
+        result += -y / p_clamped + (1.0 - y) / (1.0 - p_clamped);
+    }
+
+    result
+}
+
+#[cfg(feature = "simd")]
+pub fn cross_entropy_loss_binary_d_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
+    let epsilon = f32x8::splat(1e-12);
+    let one = f32x8::splat(1.0);
+
+    // Clamp predicted to [epsilon, 1 - epsilon]
+    let p = predicted.min(one - epsilon).max(epsilon);
+    let one_minus_p = one - p;
+    let one_minus_y = one - expected;
+
+    // Derivative: - y / p + (1 - y) / (1 - p)
+    -expected / p + one_minus_y / one_minus_p
 }
 // ============================

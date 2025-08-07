@@ -386,7 +386,7 @@ impl<'a> DrawableWindow<'a> for WindowAiSetupPresets {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        let pos = egui::pos2(999999.0, 0.0);
+        let pos = egui::pos2(999999.0, 200.0);
         egui::Window::new("Setup Presets").default_pos(pos).show(ctx, |ui| {
            
             // TODO: use &AiSetupPreset instead of AiSetupPreset to avoid clones.
