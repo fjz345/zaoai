@@ -214,17 +214,18 @@ impl NeuralNetwork {
         }
 
         let mut total_cost = 0.0;
-        let mut total_loss = 0.0;
+        let mut last_loss = 0.0; // last batches cost
         let mut batch_data_outputs = Vec::new();
-        for datapoint in batch_data {
-            // Todo: make functions forward/backward for simplicity.
+        for (i, datapoint) in batch_data.iter().enumerate() {
             let datapoint_outputs = self.learn_calculate_outputs(datapoint);
             let loss =
                 cross_entropy_loss_multiclass(&datapoint_outputs, &datapoint.expected_outputs);
             let cost = self.cost_function(&datapoint_outputs, &datapoint.expected_outputs);
 
-            total_loss += loss;
             total_cost += cost;
+            if i == batch_data.len() - 1 {
+                last_loss = cost;
+            }
 
             batch_data_outputs.push(datapoint_outputs);
         }
@@ -233,8 +234,9 @@ impl NeuralNetwork {
         self.clear_all_cost_gradients();
 
         *batch_data_cost = total_cost;
-        *batch_data_loss = total_loss;
+        *batch_data_loss = last_loss;
         log::trace!("Cost: {}", batch_data_cost);
+        log::trace!("Last Loss: {}", batch_data_loss);
 
         batch_data_outputs
     }

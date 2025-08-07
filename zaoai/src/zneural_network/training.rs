@@ -35,6 +35,7 @@ pub struct AIResultMetadata {
     pub last_loss: f64,
     pub num_merged: usize,
     pub dataset_usage: DatasetUsage,
+    pub learn_rate: f32,
 }
 
 impl Default for AIResultMetadata {
@@ -50,6 +51,7 @@ impl Default for AIResultMetadata {
             last_loss: Default::default(),
             num_merged: 1,
             dataset_usage: Default::default(),
+            learn_rate: Default::default(),
         }
     }
 }
@@ -57,16 +59,11 @@ impl Default for AIResultMetadata {
 impl AIResultMetadata {
     pub fn new(dataset_usage: DatasetUsage, cost: f64, last_loss: f64) -> Self {
         Self {
-            true_positives: 0,
-            true_negatives: 0,
-            false_positives: 0,
-            false_negatives: 0,
-            positive_instances: 0,
-            negative_instances: 0,
             cost: cost,
             last_loss: last_loss,
             num_merged: 1,
             dataset_usage,
+            ..Default::default()
         }
     }
 
@@ -87,10 +84,9 @@ impl AIResultMetadata {
             false_negatives,
             positive_instances: true_positives + false_negatives,
             negative_instances: true_negatives + false_positives,
-            cost: 0.0,
-            last_loss: 0.0,
             num_merged: 1,
-            dataset_usage: DatasetUsage::Test, // or whatever variant makes sense
+            dataset_usage: DatasetUsage::Test,
+            ..Default::default()
         }
     }
 
@@ -137,6 +133,14 @@ impl AIResultMetadata {
 
     pub fn calc_negative_liklihood(&self) -> f64 {
         self.calc_true_positive_rate() as f64 / self.calc_true_negative_rate() as f64
+    }
+
+    pub fn calc_f1_score(&self) -> f64 {
+        let precision =
+            self.true_positives as f64 / (self.true_positives + self.false_positives) as f64;
+        let recall =
+            self.true_positives as f64 / (self.true_positives + self.false_negatives) as f64;
+        2.0 * (precision * recall) / (precision + recall)
     }
 }
 

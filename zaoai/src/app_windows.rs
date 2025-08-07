@@ -70,6 +70,8 @@ pub struct WindowTrainingGraph {
     cached_plot_points_accuracy: Vec<SerdePlotPoint>,
     cached_plot_points_cost: Vec<SerdePlotPoint>,
     cached_plot_points_last_loss: Vec<SerdePlotPoint>,
+    cached_plot_points_learn_rate: Vec<SerdePlotPoint>,
+    cached_plot_points_f1_score: Vec<SerdePlotPoint>,
 }
 
 impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
@@ -80,6 +82,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
+        // TODO: optimize this when it starts stuttering
         // Update
         let payload_buffer = &state_ctx.training_thread.payload_buffer;
         self.cached_plot_points_accuracy =
@@ -93,7 +96,17 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                 .map(|f| f.into())
                 .collect();
         self.cached_plot_points_last_loss =
-            generate_loss_plotpoints_from_training_thread_payloads(&payload_buffer)
+            generate_last_loss_plotpoints_from_training_thread_payloads(&payload_buffer)
+                .into_iter()
+                .map(|f| f.into())
+                .collect();
+        self.cached_plot_points_learn_rate =
+            generate_learn_rate_plotpoints_from_training_thread_payloads(&payload_buffer)
+                .into_iter()
+                .map(|f| f.into())
+                .collect();
+        self.cached_plot_points_f1_score =
+            generate_f1_score_plotpoints_from_training_thread_payloads(&payload_buffer)
                 .into_iter()
                 .map(|f| f.into())
                 .collect();
@@ -115,8 +128,22 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     .map(|f| f.into())
                     .collect(),
             );
-            let plot_loss: PlotPoints = Owned(
+            let plot_last_loss: PlotPoints = Owned(
                 self.cached_plot_points_last_loss
+                    .clone()
+                    .into_iter()
+                    .map(|f| f.into())
+                    .collect(),
+            );
+            let plot_learn_rate: PlotPoints = Owned(
+                self.cached_plot_points_learn_rate
+                    .clone()
+                    .into_iter()
+                    .map(|f| f.into())
+                    .collect(),
+            );
+            let plot_f1_score: PlotPoints = Owned(
+                self.cached_plot_points_f1_score
                     .clone()
                     .into_iter()
                     .map(|f| f.into())
@@ -137,35 +164,58 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                     })
                     .collect(),
             );
-            let plot_loss_percent_first =
-                *(plot_loss.points().first()).unwrap_or(&PlotPoint::new(0.0, 1.0));
-            let plot_loss_percent = PlotPoints::new(
-                plot_loss
+            let plot_last_loss_percent_first =
+                *(plot_last_loss.points().first()).unwrap_or(&PlotPoint::new(0.0, 1.0));
+            let plot_last_loss_percent = PlotPoints::new(
+                plot_last_loss
                     .points()
                     .iter()
-                    .map(|f| [f.x, f.y / plot_loss_percent_first.y])
+                    .map(|f| {
+                        [
+                            f.x,
+                            f.y / plot_last_loss_percent_first.y,
+                        ]
+                    })
                     .collect(),
             );
 
             let line_accuracy = Line::new("Accuracy %", plot_accuracy).color(Color32::LIGHT_GREEN);
             let line_cost_percent =
                 Line::new(format!(
-                    "Cost {:.0}",
-                    (*plot_loss_percent
+                    "Cost {:.2e}",
+                    (*plot_cost_percent
                         .points()
                         .last()
                         .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
                     .y
                 ), plot_cost_percent).color(Color32::LIGHT_RED);
-            let line_loss_percent =
+            let line_last_loss_percent =
                 Line::new(format!(
-                    "Loss {:.0}",
-                    (*plot_loss
+                    "Last Loss {:.2}",
+                    (*plot_last_loss_percent
                         .points()
                         .last()
                         .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
                     .y
-                ), plot_loss_percent).color(Color32::LIGHT_YELLOW);
+                ), plot_last_loss_percent).color(Color32::LIGHT_YELLOW);
+            let line_learn_rate =
+                Line::new(format!(
+                    "Learn Rate {:.4e}",
+                    (*plot_learn_rate
+                        .points()
+                        .last()
+                        .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
+                    .y
+                ), plot_learn_rate).color(Color32::LIGHT_GRAY);
+            let line_f1_score =
+                Line::new(format!(
+                    "F1 Score {:.2e}",
+                    (*plot_f1_score
+                        .points()
+                        .last()
+                        .unwrap_or(&PlotPoint { x: 0.0, y: 0.0 }))
+                    .y
+                ), plot_f1_score).color(Color32::LIGHT_BLUE);
 
             // Create the plot once and add multiple lines inside it
             Self::create_plot_training()
@@ -175,7 +225,9 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
                 .show(ui, |plot_ui| {
                     plot_ui.line(line_accuracy);
                     plot_ui.line(line_cost_percent);
-                    plot_ui.line(line_loss_percent);
+                    plot_ui.line(line_last_loss_percent);
+                    plot_ui.line(line_learn_rate);
+                    plot_ui.line(line_f1_score);
                 });
         })
     }
@@ -679,16 +731,47 @@ pub fn generate_cost_plotpoints_from_training_thread_payloads(
     }
     result
 }
-pub fn generate_loss_plotpoints_from_training_thread_payloads(
+pub fn generate_last_loss_plotpoints_from_training_thread_payloads(
     payloads: &Vec<TrainingThreadPayload>,
 ) -> Vec<PlotPoint> {
     let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
 
     for payload in payloads {
-        let last_loss = payload.training_metadata.last_loss;
+        let learn_rate = payload.training_metadata.last_loss;
         let plotpoint = PlotPoint {
             x: payload.payload_index as f64,
-            y: last_loss,
+            y: learn_rate as f64, 
+        };
+        result.push(plotpoint);
+    }
+    result
+}
+
+pub fn generate_learn_rate_plotpoints_from_training_thread_payloads(
+    payloads: &Vec<TrainingThreadPayload>,
+) -> Vec<PlotPoint> {
+    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+
+    for payload in payloads {
+        let learn_rate = payload.training_metadata.learn_rate;
+        let plotpoint = PlotPoint {
+            x: payload.payload_index as f64,
+            y: learn_rate as f64, 
+        };
+        result.push(plotpoint);
+    }
+    result
+}
+pub fn generate_f1_score_plotpoints_from_training_thread_payloads(
+    payloads: &Vec<TrainingThreadPayload>,
+) -> Vec<PlotPoint> {
+    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+
+    for payload in payloads {
+        let learn_rate = payload.training_metadata.calc_f1_score();
+        let plotpoint = PlotPoint {
+            x: payload.payload_index as f64,
+            y: learn_rate as f64, 
         };
         result.push(plotpoint);
     }
