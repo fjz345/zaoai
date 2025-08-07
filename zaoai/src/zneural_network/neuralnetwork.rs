@@ -1,5 +1,6 @@
 use crate::layer::*;
 use crate::zneural_network::cost::{cross_entropy_loss_multiclass, mse, CostFunction};
+use crate::zneural_network::datapoint::TrainingData;
 use crate::zneural_network::is_correct::IsCorrectFn;
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{
@@ -340,40 +341,54 @@ impl NeuralNetwork {
     pub fn learn<T: Fn() -> bool>(
         &mut self,
         training_data: &[DataPoint],
+        validation_data: &[DataPoint],
         num_epochs: usize,
         batch_size: usize,
         learn_rate: f32,
         learn_rate_decay: Option<FloatDecay>,
         learn_rate_decay_rate: f32,
         tx_training_metadata: Option<&Sender<TrainingThreadPayload>>,
+        tx_validation_metadata: Option<&Sender<TrainingThreadPayload>>,
         is_correct_fn: IsCorrectFn,
         eval_abort_fn: Option<T>,
+        validation_each_epoch: usize,
     ) {
         assert!(learn_rate > 0.0);
         assert!(training_data.len() > 0);
         assert!(batch_size > 0);
 
-        // Send training meta data before training for baseline graph point
-        if let Some(test_results) = test_nn(self, training_data, is_correct_fn).ok() {
-            let mut initial_metadata = AIResultMetadata::from_accuracy(
-                test_results.accuracy.unwrap_or_default() as f64,
-                test_results.results.len(),
-            );
-            initial_metadata.cost = test_results.cost as f64;
-            initial_metadata.last_loss = test_results.cost as f64;
-            initial_metadata.learn_rate = learn_rate;
-
-            if tx_training_metadata.is_some() {
-                let payload = TrainingThreadPayload {
-                    payload_index: 0,
-                    payload_max_index: num_epochs - 1,
-                    training_metadata: initial_metadata,
-                };
-                tx_training_metadata.unwrap().send(payload);
-            }
-        }
-
         for e in 0..num_epochs {
+            let mut test_and_send_payload =
+                |tx: &Sender<TrainingThreadPayload>, data: &[DataPoint], payload_index: usize| {
+                    // Send training meta data before training for baseline graph point
+                    if let Some(test_results) = test_nn(self, data, is_correct_fn).ok() {
+                        let mut initial_metadata = AIResultMetadata::from_accuracy(
+                            test_results.accuracy.unwrap_or_default() as f64,
+                            test_results.results.len(),
+                        );
+                        initial_metadata.cost = test_results.cost as f64;
+                        initial_metadata.last_loss = test_results.cost as f64;
+                        initial_metadata.learn_rate = learn_rate;
+
+                        let payload = TrainingThreadPayload {
+                            payload_index: payload_index,
+                            payload_max_index: num_epochs - 1,
+                            training_metadata: initial_metadata,
+                        };
+                        tx.send(payload);
+                    }
+                };
+            if e == 0 {
+                if let Some(tx_testing_metadata) = tx_training_metadata {
+                    test_and_send_payload(tx_testing_metadata, training_data, e);
+                }
+            }
+            if validation_each_epoch != 0 && e % validation_each_epoch == 0 {
+                if let Some(tx_validation_metadata) = tx_validation_metadata {
+                    test_and_send_payload(tx_validation_metadata, validation_data, e);
+                }
+            }
+
             log::trace!(
                 "Training...Learn Epoch Started [@{}/@{}]",
                 e + 1,

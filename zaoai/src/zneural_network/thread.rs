@@ -31,7 +31,9 @@ pub struct TrainingThreadController {
     #[cfg_attr(feature = "serde", serde(skip))]
     pub rx_neuralnetwork: Option<Receiver<NeuralNetwork>>,
     #[cfg_attr(feature = "serde", serde(skip))]
-    pub rx_payload: Option<Receiver<TrainingThreadPayload>>,
+    pub rx_training_payload: Option<Receiver<TrainingThreadPayload>>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub rx_validation_payload: Option<Receiver<TrainingThreadPayload>>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub tx_abort: Option<Sender<()>>,
 }
@@ -47,32 +49,40 @@ impl TrainingThreadController {
             let learn_rate_decay = training_session.learn_rate_decay.clone();
             let learn_rate_decay_rate = training_session.learn_rate_decay_rate;
             let is_correct_fn = training_session.is_correct_fn;
+            let validation_each_epoch = training_session.validation_each_epoch;
 
             let (tx_nn, rx_nn) = mpsc::channel();
             let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
+            let (tx_validation_metadata, rx_validation_metadata) = mpsc::channel();
             let (tx_abort, rx_abort) = mpsc::channel();
 
             let training_thread = std::thread::spawn(move || {
                 let training_data_vec = training_data.training_split();
+                let validation_data_vec = training_data.validation_split();
                 nn.learn(
                     &training_data_vec[..],
+                    &validation_data_vec[..],
                     num_epochs,
                     batch_size,
                     learn_rate,
                     learn_rate_decay,
                     learn_rate_decay_rate,
                     Some(&tx_training_metadata),
+                    Some(&tx_validation_metadata),
                     is_correct_fn,
                     Some(|| rx_abort.try_recv().is_ok()),
+                    validation_each_epoch,
                 );
 
                 tx_nn.send(nn);
             });
 
             self.rx_neuralnetwork = Some(rx_nn);
-            self.rx_payload = Some(rx_training_metadata);
+            self.rx_training_payload = Some(rx_training_metadata);
+            self.rx_validation_payload = Some(rx_validation_metadata);
             self.tx_abort = Some(tx_abort);
             self.payload_training_buffer = Vec::with_capacity(num_epochs);
+            self.payload_validation_buffer = Vec::with_capacity(num_epochs);
             self.handle = Some(training_thread);
 
             return true;

@@ -194,7 +194,7 @@ impl WindowTrainingGraph
         let common_lines = self.generate_common_lines(&payload_buffer); 
 
         // Create the plot once and add multiple lines inside it
-        ui.label("Training");
+        ui.label("Validation");
         Self::create_plot_training()
             .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
             .x_axis_label("Epoch")

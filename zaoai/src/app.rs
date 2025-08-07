@@ -242,15 +242,28 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
                     TrainingState::Training => {
-                        let result_metadata = self
+                        let result_training_metadata = self
                             .training_thread
-                            .rx_payload
+                            .rx_training_payload
+                            .as_mut()
+                            .expect("ERROR")
+                            .try_recv();
+
+                        let result_validation_metadata = self
+                            .training_thread
+                            .rx_validation_payload
                             .as_mut()
                             .expect("ERROR")
                             .try_recv();
 
                         let in_progress = self.training_thread.training_in_progress();
-                        if let Ok(result_metadata) = result_metadata {
+                        if let Ok(result_metadata) = result_validation_metadata {
+                            let payload_buffer =
+                                &mut self.training_thread.payload_validation_buffer;
+                            payload_buffer.push(result_metadata);
+                        }
+
+                        if let Ok(result_metadata) = result_training_metadata {
                             let payload_buffer = &mut self.training_thread.payload_training_buffer;
                             payload_buffer.push(result_metadata);
 
