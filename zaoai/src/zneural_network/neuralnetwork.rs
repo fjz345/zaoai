@@ -215,7 +215,7 @@ impl NeuralNetwork {
 
         let mut total_cost = 0.0;
         let mut last_loss = 0.0; // last batches cost
-        let mut batch_data_outputs = Vec::new();
+        let mut batch_data_outputs = Vec::with_capacity(batch_data.len());
         for (i, datapoint) in batch_data.iter().enumerate() {
             let datapoint_outputs = self.learn_calculate_outputs(datapoint);
             let loss =
@@ -233,7 +233,7 @@ impl NeuralNetwork {
         self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
         self.clear_all_cost_gradients();
 
-        *batch_data_cost = total_cost;
+        *batch_data_cost = total_cost / batch_data.len() as f32;
         *batch_data_loss = last_loss;
         log::trace!("Cost: {}", batch_data_cost);
         log::trace!("Last Loss: {}", batch_data_loss);

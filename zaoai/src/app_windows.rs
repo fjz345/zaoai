@@ -757,8 +757,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                     if ui.button("Abort Training").clicked() {
                         log::info!("Interupting Training");
                         state_ctx.training_thread.send_abort_training();
-                        *state_ctx.app_state = AppState::Idle;
-                        state_ctx.training_session.set_state(TrainingState::Idle);
+                        state_ctx.training_session.set_state(TrainingState::Finish);
                     }
                 } else {
                     if ui.button("Begin Training").clicked() {

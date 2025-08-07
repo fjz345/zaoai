@@ -261,7 +261,7 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
                     TrainingState::Finish => {
-                        log::info!("Training Finished");
+                        log::trace!("Training Finished! Waiting for result");
 
                         let result = self
                             .training_thread
@@ -270,13 +270,12 @@ impl eframe::App for ZaoaiApp {
                             .expect("ERROR")
                             .try_recv();
                         if result.is_ok() {
+                            log::info!("Training result recieved, updating ai");
                             self.ai = Some(result.unwrap());
-                        } else {
-                            panic!("Unexpected error");
-                        }
 
-                        self.training_session.set_state(TrainingState::Idle);
-                        self.state = AppState::Idle;
+                            self.training_session.set_state(TrainingState::Idle);
+                            self.state = AppState::Idle;
+                        }
                     }
                     TrainingState::Abort => {
                         panic!("Not Implemented");
