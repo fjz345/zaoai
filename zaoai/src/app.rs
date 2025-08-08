@@ -386,6 +386,7 @@ impl Default for ZaoaiApp {
                 test_nn_handle: None,
                 test_nn_done: Arc::new(Mutex::new(None)),
                 test_nn_abort_tx: None,
+                test_nn_graph: true,
             },
             window_training_set: WindowTrainingSet::default(),
             window_training_session: WindowTrainingSession {},
@@ -664,6 +665,9 @@ impl ZaoaiApp {
                 if let Some(r) = &*nn_done {
                     log::info!("test_nn results recieved!");
                     log::info!("{r}");
+                    if let Some(ai) = &mut self.ai {
+                        ai.last_test_results = Some(r.to_owned());
+                    }
                     self.window_ai.test_nn_handle = None;
                     *nn_done = None;
                 }
