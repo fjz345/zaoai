@@ -710,7 +710,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 let button_text = self.cached_zaoai_loader.as_ref()
                     .and_then(|loader| loader.label_input_dim.map(|d| format!("Load [{}*{}, {}] spectrogram test", d[0], d[1], 2)))
                     .unwrap_or_else(|| format!("Load [{}, {}] spectrogram test", SPECTROGRAM_WIDTH * SPECTROGRAM_HEIGHT, 2));
-                if ui.button(button_text).clicked()
+                if ui.add(egui::Button::new(button_text).sense(Sense::empty())).clicked()
                 {
                     log::error!("This does not work. Spectrogram crate sucks and can not work with it easily...");
                     let path = "test_files/test0.mkv";
