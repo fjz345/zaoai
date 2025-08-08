@@ -435,7 +435,7 @@ impl VirtualTrainingDataset {
         end - start
     }
 
-    pub fn training_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
+    pub fn training_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
         let (data_start, data_end) = self.get_training_start_end();
         VirtualTrainingBatchIter {
             dataset: self,
@@ -444,7 +444,7 @@ impl VirtualTrainingDataset {
             end: data_end,
         }
     }
-    pub fn validation_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
+    pub fn validation_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
         let (data_start, data_end) = self.get_validation_start_end();
         VirtualTrainingBatchIter {
             dataset: self,
@@ -453,7 +453,7 @@ impl VirtualTrainingDataset {
             end: data_end,
         }
     }
-    pub fn test_batch_iter(&self, batch_size: usize) -> VirtualTrainingBatchIter {
+    pub fn test_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
         let (data_start, data_end) = self.get_test_start_end();
         VirtualTrainingBatchIter {
             dataset: self,
