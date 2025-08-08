@@ -672,8 +672,9 @@ impl ZaoaiApp {
             self.window_training_graph.with_ctx(
                 ctx,
                 &mut WindowTrainingGraphCtx {
-                    training_thread: &self.training_thread,
-                    payload_test_buffer: &self.payload_test_buffer,
+                    payload_training_buffer: &mut self.training_thread.payload_training_buffer,
+                    payload_validation_buffer: &mut self.training_thread.payload_validation_buffer,
+                    payload_test_buffer: &mut self.payload_test_buffer,
                 },
                 |this, state_ctx| {
                     let response = this.draw_ui(ctx, state_ctx);

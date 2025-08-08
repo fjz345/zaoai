@@ -11,7 +11,7 @@ use crate::{
         }, is_correct::ConfusionEvaluator, layer::{ActivationFunctionType, BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TestResults, TrainingSession, TrainingState}
     },
 };
-use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider, SliderClamping};
+use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Response, Sense, Slider, SliderClamping};
 use egui_plot::{Corner, Legend, PlotItem, PlotResponse};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 
@@ -43,8 +43,9 @@ pub trait DrawableWindow<'a> {
 }
 
 pub struct WindowTrainingGraphCtx<'a> {
-    pub(crate) training_thread: &'a TrainingThreadController,
-    pub(crate) payload_test_buffer: &'a Vec<TrainingThreadPayload>,
+    pub(crate) payload_training_buffer: &'a mut Vec<TrainingThreadPayload>,
+    pub(crate) payload_validation_buffer: &'a mut Vec<TrainingThreadPayload>,
+    pub(crate) payload_test_buffer: &'a mut Vec<TrainingThreadPayload>,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -70,7 +71,7 @@ impl From<SerdePlotPoint> for PlotPoint {
 #[derive(Default)]
 pub struct WindowTrainingGraph {
     // Training
-    cached_plot_points_accuracy: Vec<SerdePlotPoint>,
+    cached_plot_points_accuracy: Vec<SerdePlotPoint>, // cached since want to restore the graphs on app load
     cached_plot_points_cost: Vec<SerdePlotPoint>,
     cached_plot_points_last_loss: Vec<SerdePlotPoint>,
     cached_plot_points_learn_rate: Vec<SerdePlotPoint>,
@@ -157,7 +158,18 @@ impl WindowTrainingGraph
     {
         // TODO: optimize this when it starts stuttering
         // Update
-        let payload_buffer = &state_ctx.training_thread.payload_training_buffer;
+        let payload_buffer = &mut *state_ctx.payload_training_buffer;
+
+        ui.horizontal(|ui| {
+            ui.label("Training");
+            
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button("Clear").clicked()
+                {
+                    payload_buffer.clear();
+                }
+            });
+        });
 
         let line_learn_rate = gen_line! {
             self = self,
@@ -168,9 +180,7 @@ impl WindowTrainingGraph
             color = Color32::LIGHT_GRAY,
         };
         let common_lines = self.generate_common_lines(&payload_buffer);
-
-        // Create the plot once and add multiple lines inside it
-        ui.label("Training");
+        
         Self::create_plot_training("Training")
             .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
             .x_axis_label("Epoch")
@@ -191,12 +201,21 @@ impl WindowTrainingGraph
 
         // TODO: optimize this when it starts stuttering
         // Update
-        let payload_buffer = &state_ctx.training_thread.payload_validation_buffer;
+        let payload_buffer = &mut *state_ctx.payload_validation_buffer;
+
+        ui.horizontal(|ui| {
+            ui.label("Validation");
+            
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button("Clear").clicked()
+                {
+                    payload_buffer.clear();
+                }
+            });
+        });
 
         let common_lines = self.generate_common_lines(&payload_buffer); 
 
-        // Create the plot once and add multiple lines inside it
-        ui.label("Validation");
         Self::create_plot_training("Validation")
             .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
             .x_axis_label("Epoch")
@@ -216,12 +235,22 @@ impl WindowTrainingGraph
 
         // TODO: optimize this when it starts stuttering
         // Update
-        let payload_buffer = &state_ctx.payload_test_buffer;
+        let payload_buffer = &mut *state_ctx.payload_test_buffer;
         
+        ui.horizontal(|ui| {
+            ui.label("Testing");
+            
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui.button("Clear").clicked()
+                {
+                    payload_buffer.clear();
+                }
+            });
+        });
+
         let common_lines = self.generate_common_lines(&payload_buffer);
 
         // Create the plot once and add multiple lines inside it
-        ui.label("Testing");
         Self::create_plot_training("Testing")
             .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
             .x_axis_label("Datapoint")

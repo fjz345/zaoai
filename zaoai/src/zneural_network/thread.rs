@@ -25,7 +25,6 @@ pub struct TrainingThreadController {
     pub id: u64,
     pub payload_training_buffer: Vec<TrainingThreadPayload>,
     pub payload_validation_buffer: Vec<TrainingThreadPayload>,
-    pub payload_test_buffer: Vec<TrainingThreadPayload>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub handle: Option<JoinHandle<()>>,
     #[cfg_attr(feature = "serde", serde(skip))]
