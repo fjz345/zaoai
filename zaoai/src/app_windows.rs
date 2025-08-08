@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr};
+use std::{any::Any, cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr, sync::mpsc::{self, Receiver}};
 
 use crate::{
     app::{AppState, MenuWindowData},
@@ -44,6 +44,7 @@ pub trait DrawableWindow<'a> {
 
 pub struct WindowTrainingGraphCtx<'a> {
     pub(crate) training_thread: &'a TrainingThreadController,
+    pub(crate) payload_test_buffer: &'a Vec<TrainingThreadPayload>,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -215,7 +216,7 @@ impl WindowTrainingGraph
 
         // TODO: optimize this when it starts stuttering
         // Update
-        let payload_buffer = &state_ctx.training_thread.payload_training_buffer;
+        let payload_buffer = &state_ctx.payload_test_buffer;
         
         let common_lines = self.generate_common_lines(&payload_buffer);
 
@@ -228,7 +229,7 @@ impl WindowTrainingGraph
             .show(ui, |plot_ui| {
                 for line in common_lines
                 {
-                    // plot_ui.line(line);
+                    plot_ui.line(line);
                 }
             })
     }
@@ -315,7 +316,9 @@ pub struct WindowAiCtx<'a> {
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct WindowAi {}
+pub struct WindowAi {
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub test_nn_rx: Option<Receiver<TrainingThreadPayload>>}
 
 impl<'a> DrawableWindow<'a> for WindowAi {
     type Ctx = WindowAiCtx<'a>;
@@ -337,6 +340,9 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                 if ui.add(test_button).clicked() {
                     if let Some(training_data) = state_ctx.test_button_training_data {
                         if training_data.test_split_len() >= 1 {
+                            // panic!("TODO: MULTITHREAD THIS");
+                            let (tx,rx) = mpsc::channel();
+                            self.test_nn_rx = Some(rx);
                             match test_nn(ai, &training_data.test_split(), *state_ctx.ai_is_corret_fn, None)
                             {
                                 Ok(r) => {

@@ -348,7 +348,7 @@ pub fn test_nn<'a>(
     nn: &'a mut NeuralNetwork,
     test_data: &[DataPoint],
     is_correct_fn: ConfusionEvaluator,
-    tx_test_metadata: Option<&Sender<TrainingThreadPayload>>,
+    tx_test_metadata: Option<Sender<TrainingThreadPayload>>,
 ) -> Result<&'a TestResults, anyhow::Error> {
     if test_data.len() >= 1
         && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
@@ -363,7 +363,7 @@ pub fn test_nn<'a>(
             let mut datapoint = &test_data[i];
             let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
 
-            if let Some(tx_test_metadata) = tx_test_metadata {
+            if let Some(tx_test_metadata) = &tx_test_metadata {
                 let cost = nn.calculate_costs(test_data);
                 let mut metadata_point =
                     AIResultMetadata::new(DatasetUsage::Test, cost as f64, cost as f64, 0.0);

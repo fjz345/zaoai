@@ -98,6 +98,8 @@ pub struct ZaoaiApp {
     window_training_set: WindowTrainingSet,
     window_training_session: WindowTrainingSession,
     window_setup_presets: WindowAiSetupPresets,
+
+    payload_test_buffer: Vec<TrainingThreadPayload>,
 }
 
 impl eframe::App for ZaoaiApp {
@@ -357,12 +359,13 @@ impl Default for ZaoaiApp {
                 0,
             ),
             window_training_graph: WindowTrainingGraph::default(),
-            window_ai: WindowAi {},
+            window_ai: WindowAi { test_nn_rx: None },
             window_training_set: WindowTrainingSet::default(),
             window_training_session: WindowTrainingSession {},
             last_ai_filepath: None,
             training_thread: TrainingThreadController::default(),
             window_setup_presets: WindowAiSetupPresets::default(),
+            payload_test_buffer: vec![],
         }
     }
 }
@@ -611,12 +614,21 @@ impl ZaoaiApp {
                     }
                 },
             );
+
+            if let Some(rx) = &self.window_ai.test_nn_rx {
+                let result_metadata = rx.try_recv();
+                if result_metadata.is_ok() {
+                    log::trace!("Test data recieved!");
+                    self.payload_test_buffer.push(result_metadata.unwrap());
+                }
+            }
         }
         if self.window_data.show_training_graph {
             self.window_training_graph.with_ctx(
                 ctx,
                 &mut WindowTrainingGraphCtx {
                     training_thread: &self.training_thread,
+                    payload_test_buffer: &self.payload_test_buffer,
                 },
                 |this, state_ctx| {
                     let response = this.draw_ui(ctx, state_ctx);
