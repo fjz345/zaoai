@@ -3,7 +3,10 @@ use std::{
     fs::File,
     io::Write,
     path::Path,
-    sync::{mpsc::Sender, Arc},
+    sync::{
+        mpsc::{Receiver, Sender},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -349,6 +352,7 @@ pub fn test_nn<'a>(
     test_data: &[DataPoint],
     is_correct_fn: ConfusionEvaluator,
     tx_test_metadata: Option<Sender<TrainingThreadPayload>>,
+    tx_abort: Option<Receiver<()>>,
 ) -> Result<&'a TestResults, anyhow::Error> {
     if test_data.len() >= 1
         && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
@@ -364,7 +368,7 @@ pub fn test_nn<'a>(
             let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
 
             if let Some(tx_test_metadata) = &tx_test_metadata {
-                let cost = nn.calculate_costs(test_data);
+                let cost = nn.calculate_costs(std::slice::from_ref(&test_data[i]));
                 let mut metadata_point =
                     AIResultMetadata::new(DatasetUsage::Test, cost as f64, cost as f64, 0.0);
 
@@ -393,6 +397,13 @@ pub fn test_nn<'a>(
                         training_metadata: metadata.clone(),
                     })
                     .unwrap();
+
+                if let Some(abort) = &tx_abort {
+                    if abort.try_recv().is_ok() {
+                        log::info!("Abort Recieved, stopping test_nn...");
+                        anyhow::bail!("Aborted")
+                    }
+                }
             }
 
             results.push((test_data[i].clone(), outputs));

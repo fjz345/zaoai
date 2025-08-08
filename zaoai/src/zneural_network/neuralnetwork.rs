@@ -368,7 +368,8 @@ impl NeuralNetwork {
             let mut test_and_send_payload =
                 |tx: &Sender<TrainingThreadPayload>, data: &[DataPoint], payload_index: usize| {
                     // Send training meta data before training for baseline graph point
-                    if let Some(test_results) = test_nn(self, data, is_correct_fn, None).ok() {
+                    if let Some(test_results) = test_nn(self, data, is_correct_fn, None, None).ok()
+                    {
                         let mut initial_metadata = AIResultMetadata::from_accuracy(
                             test_results.accuracy.unwrap_or_default() as f64,
                             test_results.results.len(),

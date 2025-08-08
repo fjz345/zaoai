@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr, sync::mpsc::{self, Receiver}};
+use std::{any::Any, cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr, sync::{mpsc::{self, Receiver, Sender}, Arc, Mutex}, thread::JoinHandle};
 
 use crate::{
     app::{AppState, MenuWindowData},
@@ -8,7 +8,7 @@ use crate::{
         cost::CostFunction, datapoint::{
             create_2x2_test_datapoints,  DataPoint, TrainingData, TrainingDataset,
             VirtualTrainingDataset,
-        }, is_correct::ConfusionEvaluator, layer::{ActivationFunctionType, BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TrainingSession, TrainingState}
+        }, is_correct::ConfusionEvaluator, layer::{ActivationFunctionType, BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TestResults, TrainingSession, TrainingState}
     },
 };
 use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider, SliderClamping};
@@ -313,12 +313,20 @@ pub struct WindowAiCtx<'a> {
     pub ai: &'a mut Option<NeuralNetwork>,
     pub test_button_training_data: &'a Option<&'a TrainingData>,
     pub ai_is_corret_fn: &'a ConfusionEvaluator,
+    pub payload_test_buffer: &'a mut Vec<TrainingThreadPayload>,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct WindowAi {
     #[cfg_attr(feature = "serde", serde(skip))]
-    pub test_nn_rx: Option<Receiver<TrainingThreadPayload>>}
+    pub test_nn_rx: Option<Receiver<TrainingThreadPayload>>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub test_nn_abort_tx: Option<Sender<()>>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub test_nn_handle: Option<JoinHandle<()>>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub test_nn_done: Arc<Mutex<Option<TestResults>>>
+}
 
 impl<'a> DrawableWindow<'a> for WindowAi {
     type Ctx = WindowAiCtx<'a>;
@@ -332,38 +340,101 @@ impl<'a> DrawableWindow<'a> for WindowAi {
             if let Some(ai) = &mut state_ctx.ai {
                 ui.label(ai.to_string());
 
-                let sense = match state_ctx.test_button_training_data {
-                    Some(_) => Sense::click(),
-                    None => Sense::empty(),
-                };
-                let test_button = Button::new("Test").sense(sense);
-                if ui.add(test_button).clicked() {
-                    if let Some(training_data) = state_ctx.test_button_training_data {
-                        if training_data.test_split_len() >= 1 {
-                            // panic!("TODO: MULTITHREAD THIS");
-                            let (tx,rx) = mpsc::channel();
-                            self.test_nn_rx = Some(rx);
-                            match test_nn(ai, &training_data.test_split(), *state_ctx.ai_is_corret_fn, None)
-                            {
-                                Ok(r) => {
-                                    log::info!("{r}");
-                                    r.save_results("testresults.results");
-                                },
-                                Err(e) => log::error!("{e}"),
-                            }
-                        } else {
-                            log::error!(
-                                "Could not start test, training data training len was empty"
-                            );
+                enum TestButtonState {
+                    TestingDone,
+                    AbortTest,
+                    StartTest,
+                }
+                impl TestButtonState {
+                    fn from_handles(test_nn_handle: &Option<std::thread::JoinHandle<()>>, test_done_val: &Option<TestResults>) -> Self {
+                        match (test_nn_handle, test_done_val) {
+                            (Some(_), Some(_)) |
+                            (Some(_), None) => TestButtonState::AbortTest,
+                            (None, Some(_)) => TestButtonState::TestingDone,
+                            (None, None) => TestButtonState::StartTest,
                         }
-                    } else {
-                        log::error!("Training dataset not set, could not train");
+                    }
+
+                    fn label(&self) -> &'static str {
+                        match self {
+                            TestButtonState::TestingDone => "Testing done!",
+                            TestButtonState::AbortTest => "Abort Test",
+                            TestButtonState::StartTest => "Start Test",
+                        }
                     }
                 }
-                let delete_button = Button::new("Delete").sense(sense);
-                if ui.add(delete_button).clicked() {
-                    *state_ctx.ai = None;
-                }
+
+                let test_done_val = {
+                    let lock = self.test_nn_done.lock().unwrap();
+                    lock.clone()
+                };
+
+                let mut ai_clone = ai.clone();
+                ui.horizontal(|ui|{
+                let button_state = TestButtonState::from_handles(&self.test_nn_handle, &test_done_val);
+                let test_button = Button::new(button_state.label()).sense(Sense::click());
+                let test_button_response = ui.add(test_button);
+                match button_state
+                {
+                    TestButtonState::TestingDone => {
+                    },
+                    TestButtonState::AbortTest => {
+                        if test_button_response.clicked()
+                        {
+                            if let Some(abort) = &self.test_nn_abort_tx
+                            {
+                                abort.send(());
+                            }
+                        }
+                    },
+                    TestButtonState::StartTest => {
+                            if test_button_response.clicked() {
+                                if let Some(training_data) = *state_ctx.test_button_training_data {
+                                    if training_data.test_split_len() >= 1 {
+                                        let (tx,rx) = mpsc::channel();
+                                        let (tx_abort, rx_abort) = mpsc::channel();
+
+                                        state_ctx.payload_test_buffer.clear();
+                                        self.test_nn_abort_tx = Some(tx_abort);
+                                        self.test_nn_rx = Some(rx);
+                                        self.test_nn_done = Arc::new(Mutex::new(None));
+                                        let test_nn_done_clone = self.test_nn_done.clone();
+                                        let is_correct_fn = state_ctx.ai_is_corret_fn.clone();
+                                        let training_data_clone = training_data.clone();
+                                        self.test_nn_handle = Some(std::thread::spawn(move || {
+                                            log::trace!("Test Thread test_nn spawned!");
+                                            match test_nn(&mut ai_clone, &training_data_clone.test_split(), is_correct_fn, Some(tx), Some(rx_abort))
+                                            {
+                                                Ok(r) => {
+                                                    log::trace!("Test Thread test_nn complete!");
+                                                    let save_path = "testresults.results";
+                                                    log::trace!("Saving results... {save_path}");
+                                                    r.save_results(save_path);
+                                                    *test_nn_done_clone.lock().unwrap() = Some(r.clone());
+                                                },
+                                                    Err(e) => {log::error!("{e}");
+                                                    *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(vec![], ConfusionEvaluator::LargestLabel, 0.0));
+                                                },
+                                            }
+                                        }));
+                                        
+                                    } else {
+                                        log::error!(
+                                            "Could not start test, training data training len was empty"
+                                        );
+                                    }
+                                } else {
+                                    log::error!("Training dataset not set, could not train");
+                                }
+                            }
+                        }
+                    };
+                
+                    let delete_button = Button::new("Delete").sense(Sense::click());
+                    if ui.add(delete_button).clicked() {
+                        *state_ctx.ai = None;
+                    }
+                });
             } else {
                 ui.label("NN not set");
             }

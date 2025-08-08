@@ -31,7 +31,7 @@ use std::{
     io::{self, Read, Write},
     ops::RangeInclusive,
     str::FromStr,
-    sync::mpsc::Receiver,
+    sync::{mpsc::Receiver, Arc, Mutex},
     thread::JoinHandle,
     time::Duration,
 };
@@ -359,7 +359,12 @@ impl Default for ZaoaiApp {
                 0,
             ),
             window_training_graph: WindowTrainingGraph::default(),
-            window_ai: WindowAi { test_nn_rx: None },
+            window_ai: WindowAi {
+                test_nn_rx: None,
+                test_nn_handle: None,
+                test_nn_done: Arc::new(Mutex::new(None)),
+                test_nn_abort_tx: None,
+            },
             window_training_set: WindowTrainingSet::default(),
             window_training_session: WindowTrainingSession {},
             last_ai_filepath: None,
@@ -606,6 +611,7 @@ impl ZaoaiApp {
                     ai: &mut self.ai,
                     test_button_training_data: &Some(&self.training_data),
                     ai_is_corret_fn: &self.window_data.ai_is_correct_fn,
+                    payload_test_buffer: &mut self.payload_test_buffer,
                 },
                 |this, state_ctx| {
                     let response = this.draw_ui(ctx, state_ctx);
@@ -623,6 +629,19 @@ impl ZaoaiApp {
                 }
             }
         }
+        // TODO: Move this
+        // Handle test_nn thread done
+        if self.window_ai.test_nn_handle.is_some() {
+            if let Ok(mut nn_done) = self.window_ai.test_nn_done.try_lock() {
+                if let Some(r) = &*nn_done {
+                    log::info!("test_nn results recieved!");
+                    log::info!("{r}");
+                    self.window_ai.test_nn_handle = None;
+                    *nn_done = None;
+                }
+            }
+        }
+
         if self.window_data.show_training_graph {
             self.window_training_graph.with_ctx(
                 ctx,
