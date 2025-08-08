@@ -369,13 +369,10 @@ impl<'a> DrawableWindow<'a> for WindowAi {
     ) -> Option<InnerResponse<Option<()>>> {
         egui::Window::new("ZaoAI").default_pos(egui::pos2(700.0, 0.0)).show(ctx, |ui| {
 
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("Clear").clicked()
-                {
-                    let delete_button = Button::new("Delete").sense(Sense::click());
+            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+                let delete_button = Button::new("Delete").sense(Sense::click());
                     if ui.add(delete_button).clicked() {
                         *state_ctx.ai = None;
-                    }
                 }
             });
 
