@@ -324,22 +324,24 @@ impl Layer {
     pub fn apply_activation(input: &[f32], t: ActivationFunctionType) -> Vec<f32> {
         const CHUNK_SIZE: usize = 8;
 
-        let mut result = Vec::with_capacity(input.len());
+        let len = input.len();
+        let mut result = vec![0f32; len];
 
         let chunks = input.chunks_exact(CHUNK_SIZE);
         let remainder = chunks.remainder();
 
-        for chunk in chunks {
+        for (i, chunk) in chunks.enumerate() {
             let input_vec = f32x8::from(chunk);
-
             let activated_vec = t.activate_simd(input_vec);
-
             let out: [f32; CHUNK_SIZE] = activated_vec.into();
-            result.extend_from_slice(&out);
+
+            let start = i * CHUNK_SIZE;
+            result[start..start + CHUNK_SIZE].copy_from_slice(&out);
         }
 
-        for &x in remainder {
-            result.push(t.activate(x));
+        let rem_start = len - remainder.len();
+        for (i, &x) in remainder.iter().enumerate() {
+            result[rem_start + i] = t.activate(x);
         }
 
         result
