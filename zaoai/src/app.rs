@@ -244,37 +244,57 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
                     TrainingState::Training => {
-                        let result_training_metadata = self
+                        let rx_training = self
                             .training_thread
                             .rx_training_payload
                             .as_mut()
-                            .expect("ERROR")
-                            .try_recv();
-
-                        let result_validation_metadata = self
+                            .expect("ERROR");
+                        let rx_validation = self
                             .training_thread
                             .rx_validation_payload
                             .as_mut()
-                            .expect("ERROR")
-                            .try_recv();
+                            .expect("ERROR");
 
-                        let in_progress = self.training_thread.training_in_progress();
-                        if let Ok(result_metadata) = result_validation_metadata {
-                            let payload_buffer =
-                                &mut self.training_thread.payload_validation_buffer;
-                            payload_buffer.push(result_metadata);
+                        const MAX_TO_PROCESS: usize = 1000;
+                        for _ in 0..MAX_TO_PROCESS {
+                            match rx_validation.try_recv() {
+                                Ok(result_metadata) => {
+                                    self.training_thread
+                                        .payload_validation_buffer
+                                        .push(result_metadata);
+                                }
+                                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                    log::warn!("Validation channel disconnected");
+                                    break;
+                                }
+                            }
                         }
 
-                        if let Ok(result_metadata) = result_training_metadata {
-                            let payload_buffer = &mut self.training_thread.payload_training_buffer;
-                            payload_buffer.push(result_metadata);
-
-                            if !in_progress {
-                                if payload_buffer.len() != payload_buffer.capacity() {
-                                    log::error!("payload_buffer.len() != payload_buffer.capacity(), some data was not put in payload_buffer");
+                        let mut received_any_training = false;
+                        for _ in 0..MAX_TO_PROCESS {
+                            match rx_training.try_recv() {
+                                Ok(result_metadata) => {
+                                    self.training_thread
+                                        .payload_training_buffer
+                                        .push(result_metadata);
+                                    received_any_training = true;
                                 }
-                                self.training_session.set_state(TrainingState::Finish);
+                                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                                    log::warn!("Training channel disconnected");
+                                    break;
+                                }
                             }
+                        }
+
+                        let in_progress = self.training_thread.training_in_progress();
+                        if !in_progress && received_any_training {
+                            let payload_buffer = &self.training_thread.payload_training_buffer;
+                            if payload_buffer.len() != payload_buffer.capacity() {
+                                log::error!("payload_buffer.len() != payload_buffer.capacity(), some data was not put in payload_buffer");
+                            }
+                            self.training_session.set_state(TrainingState::Finish);
                         }
                     }
                     TrainingState::Finish => {
@@ -622,10 +642,16 @@ impl ZaoaiApp {
             );
 
             if let Some(rx) = &self.window_ai.test_nn_rx {
-                let result_metadata = rx.try_recv();
-                if result_metadata.is_ok() {
-                    log::trace!("Test data recieved!");
-                    self.payload_test_buffer.push(result_metadata.unwrap());
+                const MAX_TO_PROCESS: usize = 1000;
+                for _ in 0..MAX_TO_PROCESS {
+                    match rx.try_recv() {
+                        Ok(result_metadata) => {
+                            log::trace!("Test data received!");
+                            self.payload_test_buffer.push(result_metadata);
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                    }
                 }
             }
         }

@@ -57,7 +57,11 @@ fn main() -> Result<()> {
         .build()
         .unwrap();
 
-    env::set_var("RUST_LOG", "debug"); // or "info" or "debug"
+    // env::set_var("RUST_LOG", "debug"); // or "info" or "debug"
+    env::set_var(
+        "RUST_LOG",
+        "trace,eframe::native::run=info, egui_winit=info, eframe::native=info",
+    ); // or "info" or "debug"
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
     // let path_testdir = String::from("test_files");
