@@ -453,8 +453,9 @@ impl FloatDecay {
                 step_size,
                 decay_factor,
             } => {
+                let inv_decay_factor = (1.0 - decay_factor.clamp(0.0, 1.0));
                 let exponent = (step / *step_size) as f32;
-                init_val * decay_factor.powf(exponent)
+                init_val * inv_decay_factor.powf(exponent)
             }
             Self::Linear {
                 max_steps,
@@ -478,6 +479,15 @@ impl FloatDecay {
                             * (init_val - min_val)
                             * (1.0 + (std::f32::consts::PI * progress).cos())
                 }
+            }
+        }
+    }
+
+    pub fn set_max_steps(&mut self, in_max_steps: usize) {
+        match self {
+            Self::Exponential { .. } | Self::StepDecay { .. } => {}
+            Self::Linear { max_steps, .. } | Self::Cosine { max_steps, .. } => {
+                *max_steps = in_max_steps
             }
         }
     }

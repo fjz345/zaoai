@@ -884,7 +884,9 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                     });
                 let changed = before != state_ctx.training_session.learn_rate_decay;
 
+                state_ctx.training_session.learn_rate_decay.as_mut().and_then(|f|{f.set_max_steps(state_ctx.training_session.num_epochs); Some(f)});
                 let decay = &state_ctx.training_session.learn_rate_decay;
+                
 
                 let slider_enabled = decay.as_ref().map_or(false, |d| d.uses_decay_rate());
 
