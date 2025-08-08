@@ -171,7 +171,7 @@ impl WindowTrainingGraph
 
         // Create the plot once and add multiple lines inside it
         ui.label("Training");
-        Self::create_plot_training()
+        Self::create_plot_training("Training")
             .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
             .x_axis_label("Epoch")
             .include_x(0.0)
@@ -197,7 +197,7 @@ impl WindowTrainingGraph
 
         // Create the plot once and add multiple lines inside it
         ui.label("Validation");
-        Self::create_plot_training()
+        Self::create_plot_training("Validation")
             .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
             .x_axis_label("Epoch")
             .include_x(0.0)
@@ -222,9 +222,9 @@ impl WindowTrainingGraph
 
         // Create the plot once and add multiple lines inside it
         ui.label("Testing");
-        Self::create_plot_training()
+        Self::create_plot_training("Testing")
             .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
-            .x_axis_label("Epoch")
+            .x_axis_label("Datapoint")
             .include_x(0.0)
             .show(ui, |plot_ui| {
                 for line in common_lines
@@ -254,9 +254,9 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
 }
 
 impl WindowTrainingGraph {
-    fn create_plot_training<'a>() -> Plot<'a> {
+    fn create_plot_training<'a>(id_source: impl std::hash::Hash) -> Plot<'a> {
         const INCLUDE_Y_PADDING: f64 = 0.06;
-        Plot::new("my_plot")
+        Plot::new(id_source)
             .allow_drag(false)
             .allow_zoom(false)
             .allow_scroll(false)
