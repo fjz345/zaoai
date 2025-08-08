@@ -266,6 +266,7 @@ impl eframe::App for ZaoaiApp {
                                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                                     log::warn!("Validation channel disconnected");
+                                    self.training_thread.rx_validation_payload = None;
                                     break;
                                 }
                             }
@@ -283,6 +284,7 @@ impl eframe::App for ZaoaiApp {
                                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                                     log::warn!("Training channel disconnected");
+                                    self.training_thread.rx_training_payload = None;
                                     break;
                                 }
                             }
