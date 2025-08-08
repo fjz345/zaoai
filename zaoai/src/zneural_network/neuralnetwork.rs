@@ -1,7 +1,7 @@
 use crate::layer::*;
 use crate::zneural_network::cost::{cross_entropy_loss_multiclass, mse, CostFunction};
 use crate::zneural_network::datapoint::TrainingData;
-use crate::zneural_network::is_correct::IsCorrectFn;
+use crate::zneural_network::is_correct::ConfusionEvaluator;
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{
     test_nn, AIResultMetadata, DatasetUsage, FloatDecay, TestResults,
@@ -248,7 +248,7 @@ impl NeuralNetwork {
         training_data: &[DataPoint],
         batch_size: usize,
         learn_rate: f32,
-        is_correct_fn: IsCorrectFn,
+        is_correct_fn: ConfusionEvaluator,
         mut epoch_metadata: Option<&mut AIResultMetadata>,
     ) {
         assert!(!training_data.is_empty());
@@ -318,20 +318,27 @@ impl NeuralNetwork {
         epoch_data: &[DataPoint],
         epoch_data_outputs: &Vec<Vec<f32>>,
         epoch_data_cost: f32,
-        is_correct_fn: IsCorrectFn,
+        is_correct_fn: ConfusionEvaluator,
         new_metadata: &mut AIResultMetadata,
     ) {
         for (i, data) in epoch_data.iter().enumerate() {
             let datapoint_output = &epoch_data_outputs[i];
 
-            let correct = is_correct_fn.call(datapoint_output, &data.expected_outputs);
+            let confusion_cat = is_correct_fn.evaluate(datapoint_output, &data.expected_outputs);
 
-            if correct {
-                new_metadata.true_positives += 1;
-                new_metadata.positive_instances += 1;
-            } else {
-                new_metadata.false_positives += 1;
-                new_metadata.negative_instances += 1;
+            match confusion_cat {
+                super::is_correct::ConfusionCategory::TruePositive => {
+                    new_metadata.true_positives += 1;
+                }
+                super::is_correct::ConfusionCategory::TrueNegative => {
+                    new_metadata.true_negatives += 1
+                }
+                super::is_correct::ConfusionCategory::FalsePositive => {
+                    new_metadata.false_positives += 1
+                }
+                super::is_correct::ConfusionCategory::FalseNegative => {
+                    new_metadata.false_negatives += 1
+                }
             }
         }
 
@@ -349,7 +356,7 @@ impl NeuralNetwork {
         learn_rate_decay_rate: f32,
         tx_training_metadata: Option<&Sender<TrainingThreadPayload>>,
         tx_validation_metadata: Option<&Sender<TrainingThreadPayload>>,
-        is_correct_fn: IsCorrectFn,
+        is_correct_fn: ConfusionEvaluator,
         eval_abort_fn: Option<T>,
         validation_each_epoch: usize,
     ) {
@@ -361,7 +368,7 @@ impl NeuralNetwork {
             let mut test_and_send_payload =
                 |tx: &Sender<TrainingThreadPayload>, data: &[DataPoint], payload_index: usize| {
                     // Send training meta data before training for baseline graph point
-                    if let Some(test_results) = test_nn(self, data, is_correct_fn).ok() {
+                    if let Some(test_results) = test_nn(self, data, is_correct_fn, None).ok() {
                         let mut initial_metadata = AIResultMetadata::from_accuracy(
                             test_results.accuracy.unwrap_or_default() as f64,
                             test_results.results.len(),

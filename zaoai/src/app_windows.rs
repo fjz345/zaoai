@@ -8,7 +8,7 @@ use crate::{
         cost::CostFunction, datapoint::{
             create_2x2_test_datapoints,  DataPoint, TrainingData, TrainingDataset,
             VirtualTrainingDataset,
-        }, is_correct::IsCorrectFn, layer::{ActivationFunctionType, BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TrainingSession, TrainingState}
+        }, is_correct::ConfusionEvaluator, layer::{ActivationFunctionType, BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TrainingSession, TrainingState}
     },
 };
 use eframe::egui::{self, Button, Color32, InnerResponse, Response, Sense, Slider, SliderClamping};
@@ -311,7 +311,7 @@ impl WindowTrainingGraph {
 pub struct WindowAiCtx<'a> {
     pub ai: &'a mut Option<NeuralNetwork>,
     pub test_button_training_data: &'a Option<&'a TrainingData>,
-    pub ai_is_corret_fn: &'a IsCorrectFn,
+    pub ai_is_corret_fn: &'a ConfusionEvaluator,
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -337,7 +337,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                 if ui.add(test_button).clicked() {
                     if let Some(training_data) = state_ctx.test_button_training_data {
                         if training_data.test_split_len() >= 1 {
-                            match test_nn(ai, &training_data.test_split(), *state_ctx.ai_is_corret_fn)
+                            match test_nn(ai, &training_data.test_split(), *state_ctx.ai_is_corret_fn, None)
                             {
                                 Ok(r) => {
                                     log::info!("{r}");
@@ -375,7 +375,7 @@ pub struct AiSetupPreset{
     dropout_prob: f32, 
     softmax_output: bool,
     activation_func: ActivationFunctionType,
-    is_correct_fn: IsCorrectFn, 
+    is_correct_fn: ConfusionEvaluator, 
     cost_fn: CostFunction, 
     weight_init: WeightInit, 
     bias_init: BiasInit,
@@ -403,7 +403,7 @@ pub static MNIST_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| {
         dropout_prob: 0.3,
         softmax_output: true,
         activation_func: ActivationFunctionType::ReLU,
-        is_correct_fn: IsCorrectFn::MaxVal,
+        is_correct_fn: ConfusionEvaluator::LargestLabel,
         cost_fn: CostFunction::CrossEntropyMulticlass,
         weight_init: WeightInit::HeUniform,
         bias_init: BiasInit::ZeroPointZeroOne,
@@ -419,8 +419,8 @@ pub static ZLBL_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| {
         },
         dropout_prob: 0.3,
         softmax_output: false,
-        activation_func: ActivationFunctionType::ReLU,
-        is_correct_fn: IsCorrectFn::Zlbl,
+        activation_func: ActivationFunctionType::Sigmoid,
+        is_correct_fn: ConfusionEvaluator::Zlbl,
         cost_fn: CostFunction::CrossEntropyBinary,
         weight_init: WeightInit::XavierUniform,
         bias_init: BiasInit::ZeroPointZeroOne,

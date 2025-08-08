@@ -7,7 +7,7 @@ use crate::{
     zneural_network::{
         cost::CostFunction,
         datapoint::{TrainingData, TrainingDataset},
-        is_correct::IsCorrectFn,
+        is_correct::ConfusionEvaluator,
         layer::{ActivationFunctionType, BiasInit, WeightInit},
         neuralnetwork::load_neural_network,
         training::FloatDecay,
@@ -73,7 +73,7 @@ pub struct MenuWindowData {
     pub ai_activation_function: ActivationFunctionType,
     pub ai_cost_fn: CostFunction,
     pub ai_dropout_prob: f32,
-    pub ai_is_correct_fn: IsCorrectFn,
+    pub ai_is_correct_fn: ConfusionEvaluator,
     pub ai_weight_init: WeightInit,
     pub ai_bias_init: BiasInit,
     // Setup Presets
@@ -332,7 +332,7 @@ impl Default for ZaoaiApp {
                 ai_use_softmax_output: false,
                 ai_activation_function: ActivationFunctionType::ReLU,
                 ai_dropout_prob: 0.5,
-                ai_is_correct_fn: IsCorrectFn::MaxVal,
+                ai_is_correct_fn: ConfusionEvaluator::LargestLabel,
                 ai_cost_fn: CostFunction::Mse,
                 ai_weight_init: WeightInit::default(),
                 ai_bias_init: BiasInit::default(),
@@ -353,7 +353,7 @@ impl Default for ZaoaiApp {
                 0.2,
                 None,
                 0.0,
-                IsCorrectFn::MaxVal,
+                ConfusionEvaluator::LargestLabel,
                 0,
             ),
             window_training_graph: WindowTrainingGraph::default(),
@@ -493,9 +493,9 @@ impl ZaoaiApp {
                     .selected_text(self.window_data.ai_is_correct_fn.to_string())
                     .show_ui(ui, |ui| {
                         for variant in [
-                            IsCorrectFn::MaxVal,
-                            IsCorrectFn::Zlbl,
-                            IsCorrectFn::ZlblLoose,
+                            ConfusionEvaluator::LargestLabel,
+                            ConfusionEvaluator::Zlbl,
+                            ConfusionEvaluator::ZlblLoose,
                         ] {
                             ui.selectable_value(
                                 &mut self.window_data.ai_is_correct_fn,

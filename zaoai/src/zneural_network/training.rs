@@ -1,4 +1,11 @@
-use std::{fmt::Display, fs::File, io::Write, path::Path, sync::Arc, time::Duration};
+use std::{
+    fmt::Display,
+    fs::File,
+    io::Write,
+    path::Path,
+    sync::{mpsc::Sender, Arc},
+    time::Duration,
+};
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -6,10 +13,11 @@ use strum_macros::Display;
 
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
-    is_correct::IsCorrectFn,
+    is_correct::ConfusionEvaluator,
     neuralnetwork::{
         NNExpectedOutputs, NNExpectedOutputsRef, NNOutputs, NNOutputsRef, NeuralNetwork,
     },
+    thread::TrainingThreadPayload,
 };
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -29,8 +37,6 @@ pub struct AIResultMetadata {
     pub true_negatives: usize,
     pub false_positives: usize,
     pub false_negatives: usize,
-    pub positive_instances: usize,
-    pub negative_instances: usize,
     pub cost: f64,
     pub last_loss: f64,
     pub num_merged: usize,
@@ -45,8 +51,6 @@ impl Default for AIResultMetadata {
             true_negatives: Default::default(),
             false_positives: Default::default(),
             false_negatives: Default::default(),
-            positive_instances: Default::default(),
-            negative_instances: Default::default(),
             cost: Default::default(),
             last_loss: Default::default(),
             num_merged: 1,
@@ -83,8 +87,6 @@ impl AIResultMetadata {
             true_negatives,
             false_positives,
             false_negatives,
-            positive_instances: true_positives + false_negatives,
-            negative_instances: true_negatives + false_positives,
             num_merged: 1,
             dataset_usage: DatasetUsage::Test,
             ..Default::default()
@@ -102,8 +104,6 @@ impl AIResultMetadata {
         self.true_negatives += other.true_negatives;
         self.false_positives += other.false_positives;
         self.false_negatives += other.false_negatives;
-        self.positive_instances += other.positive_instances;
-        self.negative_instances += other.negative_instances;
         self.last_loss = other.last_loss;
         self.learn_rate = other.learn_rate;
         self.cost =
@@ -111,14 +111,29 @@ impl AIResultMetadata {
         self
     }
 
+    pub fn add_counts(&mut self, tp: usize, tn: usize, fp: usize, fn_: usize) {
+        self.true_positives += tp;
+        self.true_negatives += tn;
+        self.false_positives += fp;
+        self.false_negatives += fn_;
+    }
+
+    pub fn positive_instances(&self) -> usize {
+        self.true_positives + self.false_negatives
+    }
+
+    pub fn negative_instances(&self) -> usize {
+        self.true_negatives + self.false_positives
+    }
+
     pub fn calc_accuracy(&self) -> f64 {
         (self.true_positives + self.true_negatives) as f64
-            / (self.positive_instances + self.negative_instances) as f64
+            / (self.positive_instances() + self.negative_instances()) as f64
     }
 
     pub fn calc_error_rate(&self) -> f64 {
         (self.false_positives + self.false_negatives) as f64
-            / (self.positive_instances + self.negative_instances) as f64
+            / (self.positive_instances() + self.negative_instances()) as f64
     }
 
     pub fn calc_true_positive_rate(&self) -> f64 {
@@ -158,7 +173,7 @@ pub struct TrainingSession {
     pub learn_rate_decay: Option<FloatDecay>,
     pub learn_rate_decay_rate: f32,
     pub training_data: TrainingData,
-    pub is_correct_fn: IsCorrectFn,
+    pub is_correct_fn: ConfusionEvaluator,
     pub validation_each_epoch: usize,
 }
 
@@ -171,7 +186,7 @@ impl TrainingSession {
         learn_rate: f32,
         learn_rate_decay: Option<FloatDecay>,
         learn_rate_decay_rate: f32,
-        is_correct_fn: IsCorrectFn,
+        is_correct_fn: ConfusionEvaluator,
         validation_each_epoch: usize,
     ) -> Self {
         let mut nn_option: Option<NeuralNetwork> = None;
@@ -249,14 +264,17 @@ pub struct TestResults {
 impl TestResults {
     pub fn new(
         results: Vec<(DataPoint, NNOutputs)>,
-        eval_correct_fn: IsCorrectFn,
+        eval_correct_fn: ConfusionEvaluator,
         avg_cost: f32,
     ) -> Self {
         let mut num_correct = 0;
         for (datapoint, outputs) in &results {
-            let is_correct = eval_correct_fn.call(outputs, &datapoint.expected_outputs);
-            if is_correct {
-                num_correct += 1;
+            let confusion_category = eval_correct_fn.evaluate(outputs, &datapoint.expected_outputs);
+            match confusion_category {
+                super::is_correct::ConfusionCategory::TruePositive => num_correct += 1,
+                super::is_correct::ConfusionCategory::TrueNegative => num_correct += 1,
+                super::is_correct::ConfusionCategory::FalsePositive => {}
+                super::is_correct::ConfusionCategory::FalseNegative => {}
             }
         }
 
@@ -329,7 +347,8 @@ pub enum TrainingState {
 pub fn test_nn<'a>(
     nn: &'a mut NeuralNetwork,
     test_data: &[DataPoint],
-    is_correct_fn: IsCorrectFn,
+    is_correct_fn: ConfusionEvaluator,
+    tx_test_metadata: Option<&Sender<TrainingThreadPayload>>,
 ) -> Result<&'a TestResults, anyhow::Error> {
     if test_data.len() >= 1
         && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
@@ -337,10 +356,45 @@ pub fn test_nn<'a>(
     {
         log::info!("Start test_nn");
 
+        let mut metadata = AIResultMetadata::new(DatasetUsage::Test, 0.0, 0.0, 0.0);
+
         let mut results = Vec::with_capacity(test_data.len());
         for i in 0..test_data.len() {
             let mut datapoint = &test_data[i];
             let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
+
+            if let Some(tx_test_metadata) = tx_test_metadata {
+                let cost = nn.calculate_costs(test_data);
+                let mut metadata_point =
+                    AIResultMetadata::new(DatasetUsage::Test, cost as f64, cost as f64, 0.0);
+
+                let confusion = is_correct_fn.evaluate(&outputs, &datapoint.expected_outputs);
+                match confusion {
+                    crate::zneural_network::is_correct::ConfusionCategory::TruePositive => {
+                        metadata_point.true_positives += 1
+                    }
+                    crate::zneural_network::is_correct::ConfusionCategory::TrueNegative => {
+                        metadata_point.true_negatives += 1
+                    }
+                    crate::zneural_network::is_correct::ConfusionCategory::FalsePositive => {
+                        metadata_point.false_positives += 1
+                    }
+                    crate::zneural_network::is_correct::ConfusionCategory::FalseNegative => {
+                        metadata_point.false_negatives += 1
+                    }
+                }
+
+                metadata.merge(&metadata_point);
+
+                tx_test_metadata
+                    .send(TrainingThreadPayload {
+                        payload_index: i,
+                        payload_max_index: test_data.len(),
+                        training_metadata: metadata.clone(),
+                    })
+                    .unwrap();
+            }
+
             results.push((test_data[i].clone(), outputs));
         }
 
