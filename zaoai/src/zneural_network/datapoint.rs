@@ -75,11 +75,9 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
 
     let mut result: Vec<DataPoint> = Vec::new();
     for i in 0..num_datapoints {
-        // Generate x1 & x2
         let x1_rand = rng.gen_range(x1_min..x1_max);
         let x2_rand = rng.gen_range(x2_min..x2_max);
 
-        // Calculate y1 & y2
         let (y1, y2) = calculate_y_for_datapoint(x1_rand, x2_rand);
 
         result.push(DataPoint {
@@ -169,81 +167,36 @@ impl TrainingData {
         len
     }
 
-    // If out of memory is an issue, need to change return to delay zaoai_label_to_datapoint before learn_batch
+    fn virtual_split<F>(&self, range_fn: F) -> Vec<DataPoint>
+    where
+        F: Fn(&VirtualTrainingDataset) -> (usize, usize),
+    {
+        if let TrainingData::Virtual(v) = self {
+            let (start, end) = range_fn(v);
+            v.convert_labels_to_datapoints(&v.virtual_dataset[start..end])
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn training_split(&self) -> Vec<DataPoint> {
         match self {
-            TrainingData::Physical(training_dataset) => training_dataset.training_split().to_vec(),
-            TrainingData::Virtual(virtual_training_dataset) => {
-                let (start, end) = virtual_training_dataset.get_training_start_end();
-                virtual_training_dataset.virtual_dataset[start..end]
-                .iter()
-                .filter_map(|f| {
-                    zaoai_label_to_datapoint(
-                        virtual_training_dataset.path.clone(),
-                        f,
-                        virtual_training_dataset
-                        .virtual_dataset_input_desiered_dim
-                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
-                    )
-                    .with_context(|| {
-                        format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
-                    })
-                    .ok() // convert Result<DataPoint, _> to Option<DataPoint>, skipping errors
-                })
-                .collect()
-            }
+            TrainingData::Physical(p) => p.training_split().to_vec(),
+            TrainingData::Virtual(_) => self.virtual_split(|v| v.get_training_start_end()),
         }
     }
 
     pub fn validation_split(&self) -> Vec<DataPoint> {
         match self {
-            TrainingData::Physical(training_dataset) => {
-                training_dataset.validation_split().to_vec()
-            }
-            TrainingData::Virtual(virtual_training_dataset) => {
-                let (start, end) = virtual_training_dataset.get_validation_start_end();
-                virtual_training_dataset.virtual_dataset[start..end]
-                .iter()
-                .filter_map(|f| {
-                    zaoai_label_to_datapoint(
-                        virtual_training_dataset.path.clone(),
-                        f,
-                        virtual_training_dataset
-                        .virtual_dataset_input_desiered_dim
-                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
-                    )
-                    .with_context(|| {
-                        format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
-                    })
-                    .ok() // convert Result<DataPoint, _> to Option<DataPoint>, skipping errors
-                })
-                .collect()
-            }
+            TrainingData::Physical(p) => p.validation_split().to_vec(),
+            TrainingData::Virtual(_) => self.virtual_split(|v| v.get_validation_start_end()),
         }
     }
 
     pub fn test_split(&self) -> Vec<DataPoint> {
         match self {
-            TrainingData::Physical(training_dataset) => training_dataset.test_split().to_vec(),
-            TrainingData::Virtual(virtual_training_dataset) => {
-                let (start, end) = virtual_training_dataset.get_test_start_end();
-                virtual_training_dataset.virtual_dataset[start..end]
-                .iter()
-                .filter_map(|f| {
-                    zaoai_label_to_datapoint(
-                        virtual_training_dataset.path.clone(),
-                        f,
-                        virtual_training_dataset
-                        .virtual_dataset_input_desiered_dim
-                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
-                    )
-                    .with_context(|| {
-                        format!("failed to zaoai_label_to_datapoint\nSourcePath:\n{}\nDatapoint\n{:?}", virtual_training_dataset.path.display(), f)
-                    })
-                    .ok() // convert Result<DataPoint, _> to Option<DataPoint>, skipping errors
-                })
-                .collect()
-            }
+            TrainingData::Physical(p) => p.test_split().to_vec(),
+            TrainingData::Virtual(_) => self.virtual_split(|v| v.get_test_start_end()),
         }
     }
 
@@ -305,25 +258,10 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
         }
 
         let batch_end = (self.index + self.batch_size).min(len);
-        if self.index == 2255 && batch_end == 2254 {
-            dbg!(&self);
-        }
         let slice = &self.dataset.virtual_dataset[self.index..batch_end];
 
         // Convert the slice of ZaoaiLabel to Vec<DataPoint>
-        let batch: Vec<DataPoint> = slice
-            .iter()
-            .map(|label| {
-                zaoai_label_to_datapoint(
-                    self.dataset.path.clone(),
-                    label,
-                    self.dataset
-                        .virtual_dataset_input_desiered_dim
-                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
-                )
-                .expect("failed to zaoai_label_to_datapoint")
-            })
-            .collect();
+        let batch = self.dataset.convert_labels_to_datapoints(slice);
 
         self.index = batch_end;
 
@@ -368,6 +306,12 @@ fn zaoai_label_to_datapoint(
     Ok(DataPoint::from_anime_data_point(new_point, dim[0], dim[1]))
 }
 
+pub enum SplitType {
+    Training,
+    Validation,
+    Test,
+}
+
 impl VirtualTrainingDataset {
     pub fn new(
         path: PathBuf,
@@ -400,26 +344,26 @@ impl VirtualTrainingDataset {
         }
     }
 
-    fn get_training_start_end(&self) -> (usize, usize) {
-        let traning_data_end: usize =
-            (self.thresholds[0] * (self.virtual_dataset.len() as f64)) as usize;
+    fn get_split_range(&self, split: SplitType) -> (usize, usize) {
+        let len = self.virtual_dataset.len();
+        let train_end = (self.thresholds[0] * (len as f64)) as usize;
+        let val_end = (self.thresholds[1] * (len as f64)) as usize;
 
-        (0, traning_data_end)
+        match split {
+            SplitType::Training => (0, train_end),
+            SplitType::Validation => (train_end, val_end),
+            SplitType::Test => (val_end, len),
+        }
+    }
+
+    fn get_training_start_end(&self) -> (usize, usize) {
+        self.get_split_range(SplitType::Training)
     }
     fn get_validation_start_end(&self) -> (usize, usize) {
-        let traning_data_end: usize =
-            (self.thresholds[0] * (self.virtual_dataset.len() as f64)) as usize;
-        let validadtion_data_end: usize =
-            (self.thresholds[1] * (self.virtual_dataset.len() as f64)) as usize;
-
-        (traning_data_end, validadtion_data_end)
+        self.get_split_range(SplitType::Validation)
     }
     fn get_test_start_end(&self) -> (usize, usize) {
-        let validadtion_data_end: usize =
-            (self.thresholds[1] * (self.virtual_dataset.len() as f64)) as usize;
-        let test_data_end: usize = self.virtual_dataset.len();
-
-        (validadtion_data_end, test_data_end)
+        self.get_split_range(SplitType::Test)
     }
 
     pub fn training_len(&self) -> usize {
@@ -435,32 +379,46 @@ impl VirtualTrainingDataset {
         end - start
     }
 
-    pub fn training_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
-        let (data_start, data_end) = self.get_training_start_end();
+    pub fn batch_iter(
+        &'_ self,
+        split: SplitType,
+        batch_size: usize,
+    ) -> VirtualTrainingBatchIter<'_> {
+        let (start, end) = self.get_split_range(split);
         VirtualTrainingBatchIter {
             dataset: self,
             batch_size,
-            index: data_start,
-            end: data_end,
+            index: start,
+            end,
         }
+    }
+
+    pub fn training_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
+        self.batch_iter(SplitType::Training, batch_size)
     }
     pub fn validation_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
-        let (data_start, data_end) = self.get_validation_start_end();
-        VirtualTrainingBatchIter {
-            dataset: self,
-            batch_size,
-            index: data_start,
-            end: data_end,
-        }
+        self.batch_iter(SplitType::Validation, batch_size)
     }
     pub fn test_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
-        let (data_start, data_end) = self.get_test_start_end();
-        VirtualTrainingBatchIter {
-            dataset: self,
-            batch_size,
-            index: data_start,
-            end: data_end,
-        }
+        self.batch_iter(SplitType::Test, batch_size)
+    }
+
+    fn convert_labels_to_datapoints(
+        &self,
+        slice: &[ZaoaiLabel], // or whatever the label type is
+    ) -> Vec<DataPoint> {
+        slice
+            .iter()
+            .filter_map(|label| {
+                zaoai_label_to_datapoint(
+                    self.path.clone(),
+                    label,
+                    self.virtual_dataset_input_desiered_dim
+                        .unwrap_or([SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]),
+                )
+                .ok()
+            })
+            .collect()
     }
 }
 
@@ -510,28 +468,31 @@ impl TrainingDataset {
         new_self
     }
 
-    pub fn training_split(&self) -> &[DataPoint] {
-        let traning_data_end: usize =
-            (self.thresholds[0] * (self.full_dataset.len() as f64)) as usize;
+    fn get_split_range(&self, split: SplitType) -> (usize, usize) {
+        let len = self.full_dataset.len();
+        let train_end = (self.thresholds[0] * (len as f64)) as usize;
+        let val_end = (self.thresholds[1] * (len as f64)) as usize;
 
-        &self.full_dataset[0..traning_data_end]
+        match split {
+            SplitType::Training => (0, train_end),
+            SplitType::Validation => (train_end, val_end),
+            SplitType::Test => (val_end, len),
+        }
+    }
+
+    pub fn training_split(&self) -> &[DataPoint] {
+        let (start, end) = self.get_split_range(SplitType::Training);
+        &self.full_dataset[start..end]
     }
 
     pub fn validation_split(&self) -> &[DataPoint] {
-        let traning_data_end: usize =
-            (self.thresholds[0] * (self.full_dataset.len() as f64)) as usize;
-        let validadtion_data_end: usize =
-            (self.thresholds[1] * (self.full_dataset.len() as f64)) as usize;
-
-        &self.full_dataset[traning_data_end..validadtion_data_end]
+        let (start, end) = self.get_split_range(SplitType::Validation);
+        &self.full_dataset[start..end]
     }
 
     pub fn test_split(&self) -> &[DataPoint] {
-        let validadtion_data_end: usize =
-            (self.thresholds[1] * (self.full_dataset.len() as f64)) as usize;
-        let test_data_end: usize = self.full_dataset.len();
-
-        &self.full_dataset[validadtion_data_end..test_data_end]
+        let (start, end) = self.get_split_range(SplitType::Test);
+        &self.full_dataset[start..end]
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &DataPoint> + '_ {
@@ -547,13 +508,9 @@ impl TrainingDataset {
 
     // Returns the number of (in, out) nodes needed in layers
     pub fn get_dimensions(&self) -> (usize, usize) {
-        if self.full_dataset.len() >= 1 {
-            (
-                self.full_dataset[0].inputs.len(),
-                self.full_dataset[0].expected_outputs.len(),
-            )
-        } else {
-            (0, 0)
-        }
+        self.full_dataset
+            .get(0)
+            .map(|dp| (dp.inputs.len(), dp.expected_outputs.len()))
+            .unwrap_or((0, 0))
     }
 }

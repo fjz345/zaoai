@@ -1,7 +1,7 @@
 use rand::prelude::*;
 use rand::rngs::StdRng;
 use rand_chacha::{self, ChaCha8Rng};
-use rand_distr::{Distribution, Normal, Uniform};
+use rand_distr::{num_traits::FromPrimitive, Distribution, Normal, Uniform};
 use rayon::iter::{
     IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
     IntoParallelRefMutIterator, ParallelIterator,
@@ -64,6 +64,89 @@ pub enum BiasInit {
     // Random,
 }
 
+pub struct WeightInitContext<T>
+where
+    T: rand_distr::num_traits::Float + FromPrimitive,
+    rand_distr::StandardNormal: Distribution<T>,
+{
+    pub weight_init: WeightInit,
+    pub num_inputs: usize,
+    pub num_outputs: usize,
+    pub normal_dist: Option<rand_distr::Normal<T>>,
+    pub limit: Option<T>,
+}
+
+impl<T> WeightInitContext<T>
+where
+    T: rand_distr::num_traits::Float + FromPrimitive,
+    rand_distr::StandardNormal: rand::distributions::Distribution<T>,
+{
+    #[inline(always)]
+    fn to_t(x: f64) -> T {
+        T::from_f64(x).expect("conversion from f64 to T failed")
+    }
+
+    pub fn new(weight_init: WeightInit, num_inputs: usize, num_outputs: usize) -> Self {
+        let (normal_dist, limit) = match weight_init {
+            WeightInit::NormalDist => (
+                Some(Normal::new(Self::to_t(0.0), Self::to_t(1.0)).unwrap()),
+                None,
+            ),
+            WeightInit::XavierUniform => {
+                let limit = (Self::to_t(6.0)
+                    / (Self::to_t(num_inputs as f64) + Self::to_t(num_outputs as f64)))
+                .sqrt();
+                (None, Some(limit))
+            }
+            WeightInit::XavierNormal => {
+                let std_dev = (Self::to_t(2.0)
+                    / (Self::to_t(num_inputs as f64) + Self::to_t(num_outputs as f64)))
+                .sqrt();
+                (Some(Normal::new(Self::to_t(0.0), std_dev).unwrap()), None)
+            }
+            WeightInit::HeUniform => {
+                let limit = (Self::to_t(6.0) / Self::to_t(num_inputs as f64)).sqrt();
+                (None, Some(limit))
+            }
+            WeightInit::HeNormal => {
+                let std_dev = (Self::to_t(2.0) / Self::to_t(num_inputs as f64)).sqrt();
+                (Some(Normal::new(Self::to_t(0.0), std_dev).unwrap()), None)
+            }
+            WeightInit::LeCun => {
+                let std_dev = (Self::to_t(1.0) / Self::to_t(num_inputs as f64)).sqrt();
+                (Some(Normal::new(Self::to_t(0.0), std_dev).unwrap()), None)
+            }
+            _ => (None, None), // Zero and Uniform don't need precalc
+        };
+
+        Self {
+            weight_init,
+            num_inputs,
+            num_outputs,
+            normal_dist,
+            limit,
+        }
+    }
+
+    pub fn sample_weight(&self, rng: &mut ChaCha8Rng) -> T {
+        match self.weight_init {
+            WeightInit::Zero => Self::to_t(0.0),
+            WeightInit::Uniform => {
+                T::from_f64(rng.gen_range(0.0..1.0)).expect("Uniform range failed")
+            }
+            WeightInit::NormalDist
+            | WeightInit::XavierNormal
+            | WeightInit::HeNormal
+            | WeightInit::LeCun => self.normal_dist.as_ref().unwrap().sample(rng),
+            WeightInit::XavierUniform | WeightInit::HeUniform => {
+                let limit = self.limit.unwrap();
+                let val = rng.gen_range(-limit.to_f64().unwrap()..limit.to_f64().unwrap());
+                T::from_f64(val).unwrap()
+            }
+        }
+    }
+}
+
 impl WeightInit {
     pub fn all() -> &'static [Self] {
         use crate::WeightInit::*;
@@ -77,41 +160,6 @@ impl WeightInit {
             HeNormal,
             LeCun,
         ]
-    }
-    pub fn sample_weight(self, rng: &mut ChaCha8Rng, num_inputs: usize, num_outputs: usize) -> f32 {
-        match self {
-            Self::Zero => 0.0,
-            Self::Uniform => rng.gen_range(0.0..1.0),
-            Self::NormalDist => {
-                let normal = Normal::new(0.0, 1.0).unwrap();
-                normal.sample(rng)
-            }
-            Self::XavierUniform => {
-                let limit = (6.0 / (num_inputs + num_outputs) as f32).sqrt();
-                rng.gen_range(-limit..limit)
-            }
-            Self::XavierNormal => {
-                let std_dev = (2.0 / (num_inputs + num_outputs) as f32).sqrt();
-                let normal = Normal::new(0.0, std_dev).unwrap();
-                normal.sample(rng)
-            }
-            Self::HeUniform => {
-                let limit = (6.0 / num_inputs as f32).sqrt();
-                rng.gen_range(-limit..limit)
-            }
-
-            Self::HeNormal => {
-                let std_dev = (2.0 / num_inputs as f32).sqrt();
-                let normal = Normal::new(0.0, std_dev).unwrap();
-                normal.sample(rng)
-            }
-
-            Self::LeCun => {
-                let std_dev = (1.0 / num_inputs as f32).sqrt();
-                let normal = Normal::new(0.0, std_dev).unwrap();
-                normal.sample(rng)
-            }
-        }
     }
 }
 
@@ -137,41 +185,17 @@ impl Layer {
         dropout_prob: Option<f32>,
         weight_init: WeightInit,
         bias_init: BiasInit,
-    ) -> Layer {
-        if num_in_nodes <= 0 {
-            panic!(
-                "NumInNodes must be > 0, got [{} {}]",
-                num_in_nodes, num_out_nodes
-            );
-        }
-        if num_out_nodes <= 0 {
-            panic!(
-                "NumOutNodes must be > 0, got [{} {}]",
-                num_in_nodes, num_out_nodes
-            );
-        }
+    ) -> Self {
+        assert!(num_in_nodes > 0, "NumInNodes must be > 0");
+        assert!(num_out_nodes > 0, "NumOutNodes must be > 0");
 
-        // Bias
-        let mut biases = vec![0.0; num_out_nodes];
-        let mut biases_cost_grads: Vec<f32> = Vec::new();
-        biases_cost_grads.resize(num_out_nodes, 0.0);
+        // Initialize weights and gradients with zeros
+        let weights = vec![vec![0.0; num_in_nodes]; num_out_nodes];
+        let weights_cost_grads = vec![vec![0.0; num_in_nodes]; num_out_nodes];
+        let biases = vec![0.0; num_out_nodes];
+        let biases_cost_grads = vec![0.0; num_out_nodes];
 
-        // Weight
-        let mut weights: Vec<Vec<f32>> = Vec::new();
-        weights.reserve(num_out_nodes);
-        for i in 0..num_out_nodes {
-            weights.push(vec![0.0; num_in_nodes]);
-        }
-        let mut weights_cost_grads: Vec<Vec<f32>> = Vec::new();
-        weights_cost_grads.reserve(num_out_nodes);
-        for i in 0..num_out_nodes {
-            weights_cost_grads.push(vec![0.0; num_in_nodes]);
-        }
-
-        let mut activation_values: Vec<f32> = vec![0.0; num_in_nodes];
-        let mut weighted_inputs: Vec<f32> = vec![0.0; num_out_nodes];
-
-        let mut new_layer = Layer {
+        let mut layer = Layer {
             num_in_nodes,
             num_out_nodes,
             weights,
@@ -182,9 +206,9 @@ impl Layer {
             dropout_prob,
         };
 
-        new_layer.init_weights_and_biases(0, weight_init, bias_init);
+        layer.init_weights_and_biases(0, weight_init, bias_init);
 
-        new_layer
+        layer
     }
 
     pub fn init_weights_and_biases(
@@ -194,13 +218,13 @@ impl Layer {
         bias_init: BiasInit,
     ) {
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let ctx = WeightInitContext::<f32>::new(weight_init, self.num_in_nodes, self.num_out_nodes);
 
         for i in 0..self.num_out_nodes {
             self.biases[i] = bias_init.sample_bias();
 
             for j in 0..self.num_in_nodes {
-                self.weights[i][j] =
-                    weight_init.sample_weight(&mut rng, self.num_in_nodes, self.num_out_nodes);
+                self.weights[i][j] = ctx.sample_weight(&mut rng);
             }
         }
     }
@@ -209,13 +233,15 @@ impl Layer {
         assert_eq!(inputs.len(), self.num_in_nodes);
         assert_eq!(output_buf.len(), self.num_out_nodes);
 
-        for out_i in 0..self.num_out_nodes {
-            let mut sum = self.biases[out_i];
+        for (out_i, output) in output_buf.iter_mut().enumerate() {
             let weights_row = &self.weights[out_i];
-            for in_i in 0..self.num_in_nodes {
-                sum += inputs[in_i] * weights_row[in_i];
-            }
-            output_buf[out_i] = sum;
+            let sum = self.biases[out_i]
+                + inputs
+                    .iter()
+                    .zip(weights_row.iter())
+                    .map(|(input, weight)| input * weight)
+                    .sum::<f32>();
+            *output = sum;
         }
     }
 
@@ -241,8 +267,10 @@ impl Layer {
 
             let mut weighted_sum = sum.reduce_add();
 
-            for i in (self.num_in_nodes - remainder)..self.num_in_nodes {
-                weighted_sum += inputs[i] * weights_row[i];
+            if remainder != 0 {
+                for i in (self.num_in_nodes - remainder)..self.num_in_nodes {
+                    weighted_sum += inputs[i] * weights_row[i];
+                }
             }
 
             output_buf[out_i] = weighted_sum + self.biases[out_i];
@@ -311,7 +339,7 @@ impl Layer {
         }
 
         for &x in remainder {
-            result.push(t.activate(x)); // Or a scalar fallback version of your activation function
+            result.push(t.activate(x));
         }
 
         result
@@ -352,7 +380,6 @@ impl Layer {
         learn_data.activation_values.clear();
         learn_data.activation_values.reserve(len);
 
-        // Process full chunks with SIMD activate_simd
         for chunk in chunks {
             let input_vec = f32x8::from(chunk);
             let activated_vec = self.activation_type.activate_simd(input_vec);
@@ -360,15 +387,10 @@ impl Layer {
             learn_data.activation_values.extend_from_slice(&out);
         }
 
-        // Process remainder with SIMD (zero-padded)
         if !remainder.is_empty() {
-            // Create an array of zeros first
             let mut padded = [0.0f32; CHUNK_SIZE];
-            // Copy remainder slice into beginning of padded
             padded[..remainder.len()].copy_from_slice(remainder);
-            // Load into SIMD vector
             let input_vec = f32x8::from(padded);
-            // Activate SIMD
             let activated_vec = self.activation_type.activate_simd(input_vec);
             let out: [f32; CHUNK_SIZE] = activated_vec.into();
             // Copy only the valid elements (remainder.len())
@@ -480,7 +502,6 @@ impl Layer {
         let remainder = num_in_nodes % CHUNK_SIZE;
         let node_value_vec = f32x8::splat(node_value);
 
-        // SIMD chunks
         for i in 0..chunks {
             let offset = i * CHUNK_SIZE;
             let input_vec = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
@@ -489,7 +510,6 @@ impl Layer {
             weight_grad_row[offset..offset + CHUNK_SIZE].copy_from_slice(&grad_vec.to_array());
         }
 
-        // Scalar tail
         for i in (num_in_nodes - remainder)..num_in_nodes {
             weight_grad_row[i] += inputs[i] * node_value;
         }
@@ -621,14 +641,10 @@ impl Layer {
         let chunks_expected = expected_outputs.chunks_exact(CHUNK_SIZE);
         let mut chunks_node_vals = node_vals.chunks_exact_mut(CHUNK_SIZE);
 
-        // Save remainders *before* consuming the iterators
         let remainder_activation = chunks_activation.remainder();
         let remainder_weighted = chunks_weighted.remainder();
         let remainder_expected = chunks_expected.remainder();
-        // For chunks_node_vals, we have to consume it before calling into_remainder()
-        // So no remainder here yet
 
-        // Use .by_ref() to iterate chunks_node_vals without moving it
         for ((chunk_activation, chunk_weighted), (chunk_expected, chunk_node_vals)) in
             chunks_activation
                 .zip(chunks_weighted)
@@ -649,10 +665,8 @@ impl Layer {
             chunk_node_vals.copy_from_slice(&result_arr);
         }
 
-        // Now get the remainder from chunks_node_vals *after* the loop
         let remainder_node_vals = chunks_node_vals.into_remainder();
 
-        // Handle remainder scalars (fallback)
         if !remainder_activation.is_empty() {
             for i in 0..remainder_activation.len() {
                 let dcost =

@@ -17,9 +17,7 @@ use strum_macros::Display;
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
     is_correct::ConfusionEvaluator,
-    neuralnetwork::{
-        NNExpectedOutputs, NNExpectedOutputsRef, NNOutputs, NNOutputsRef, NeuralNetwork,
-    },
+    neuralnetwork::{self, NNOutputs, NeuralNetwork},
     thread::TrainingThreadPayload,
 };
 
@@ -192,13 +190,8 @@ impl TrainingSession {
         is_correct_fn: ConfusionEvaluator,
         validation_each_epoch: usize,
     ) -> Self {
-        let mut nn_option: Option<NeuralNetwork> = None;
-        if nn.is_some() {
-            nn_option = Some(nn.unwrap().clone());
-        }
-
         Self {
-            nn: nn_option,
+            nn: nn.cloned(),
             state: TrainingState::Idle,
             num_epochs,
             batch_size,
@@ -214,31 +207,24 @@ impl TrainingSession {
     pub fn set_nn(&mut self, nn: &NeuralNetwork) {
         self.nn = Some(nn.clone());
     }
-
     pub fn set_state(&mut self, new_state: TrainingState) {
         self.state = new_state;
     }
-
     pub fn get_state(&self) -> TrainingState {
         self.state
     }
-
     pub fn get_num_epochs(&self) -> usize {
         self.num_epochs
     }
-
     pub fn get_batch_size(&self) -> usize {
         self.batch_size
     }
-
     pub fn get_learn_rate(&self) -> f32 {
         self.learn_rate
     }
-
     pub fn set_training_data(&mut self, in_data: TrainingData) {
         self.training_data = in_data;
     }
-
     pub fn ready(&self) -> bool {
         self.nn.is_some()
             && self.training_data.get_in_out_dimensions().0 > 0

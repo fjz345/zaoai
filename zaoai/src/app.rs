@@ -5,10 +5,11 @@ use crate::{
     app_windows::{WindowAiSetupPresets, WindowAiSetupPresetsCtx},
     error::Result,
     zneural_network::{
+        activation::ActivationFunctionType,
         cost::CostFunction,
         datapoint::{TrainingData, TrainingDataset},
         is_correct::ConfusionEvaluator,
-        layer::{ActivationFunctionType, BiasInit, WeightInit},
+        layer::{BiasInit, WeightInit},
         neuralnetwork::load_neural_network,
         training::FloatDecay,
     },

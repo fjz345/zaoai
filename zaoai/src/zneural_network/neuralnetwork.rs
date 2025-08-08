@@ -1,4 +1,5 @@
 use crate::layer::*;
+use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::{cross_entropy_loss_multiclass, mse, CostFunction};
 use crate::zneural_network::datapoint::TrainingData;
 use crate::zneural_network::is_correct::ConfusionEvaluator;
@@ -120,12 +121,7 @@ pub struct NeuralNetwork {
     cost_fn: CostFunction,
 }
 
-pub type NNGreatestValueResult = (usize, f32);
 pub type NNOutputs = Vec<f32>;
-pub type NNOutputsRef = [f32];
-pub type NNExpectedOutputs = Vec<f32>;
-pub type NNExpectedOutputsRef = [f32];
-
 impl NeuralNetwork {
     const VERSION: u8 = 2;
     pub fn new(
@@ -208,8 +204,6 @@ impl NeuralNetwork {
         batch_data_cost: &mut f32,
         batch_data_loss: &mut f32,
     ) -> Vec<Vec<f32>> {
-        // let new_metadata = AIResultMetadata::new(DatasetUsage::Training);
-
         if (batch_data.len() <= 0) {
             panic!("DataPoints length was 0");
         }
@@ -325,7 +319,6 @@ impl NeuralNetwork {
             let datapoint_output = &epoch_data_outputs[i];
 
             let confusion_cat = is_correct_fn.evaluate(datapoint_output, &data.expected_outputs);
-
             match confusion_cat {
                 super::is_correct::ConfusionCategory::TruePositive => {
                     new_metadata.true_positives += 1;
@@ -341,7 +334,6 @@ impl NeuralNetwork {
                 }
             }
         }
-
         new_metadata.cost = epoch_data_cost as f64;
     }
 
@@ -441,88 +433,78 @@ impl NeuralNetwork {
     }
 
     pub fn learn_calculate_outputs(&mut self, datapoint: &DataPoint) -> Vec<f32> {
-        // Forward pass
-        let mut current_inputs = datapoint.inputs.to_vec();
-        for (i, layer) in self.layers.iter_mut().enumerate() {
-            #[cfg(feature = "simd")]
-            {
-                current_inputs = layer.calculate_outputs_learn_simd(
-                    &mut current_inputs,
-                    &mut self.layer_learn_data[i],
-                );
-            }
-            #[cfg(not(feature = "simd"))]
-            {
-                current_inputs = layer
-                    .calculate_outputs_learn(&mut current_inputs, &mut self.layer_learn_data[i]);
-            }
+        let outputs = self.forward(&datapoint.inputs);
+        self.backpropagation(datapoint);
+        outputs
+    }
 
-            // Dropout
+    fn forward(&mut self, inputs: &[f32]) -> Vec<f32> {
+        let mut current_inputs = inputs.to_vec();
+
+        for (i, layer) in self.layers.iter_mut().enumerate() {
+            let learn_data = &mut self.layer_learn_data[i];
+            learn_data.inputs.reserve(current_inputs.len());
+
+            current_inputs = if cfg!(feature = "simd") {
+                layer.calculate_outputs_learn_simd(&mut current_inputs, learn_data)
+            } else {
+                layer.calculate_outputs_learn(&mut current_inputs, learn_data)
+            };
+
             if let Some(prob) = layer.dropout_prob {
-                let learn_data = &mut self.layer_learn_data[i];
-                if learn_data.dropout_mask.is_none() {
-                    learn_data.dropout_mask = Some(vec![0.0; current_inputs.len()]);
-                }
-                Self::apply_dropout(
-                    &mut current_inputs,
-                    learn_data.dropout_mask.as_mut().unwrap(),
-                    prob,
-                );
+                let mask = learn_data
+                    .dropout_mask
+                    .get_or_insert_with(|| vec![0.0; current_inputs.len()]);
+                Self::apply_dropout(&mut current_inputs, mask, prob);
             }
         }
-        let output_inputs = current_inputs;
 
-        // Backward pass (backpropagation)
-        self.backpropagation(datapoint);
-
-        output_inputs
+        current_inputs
     }
 
     fn backpropagation(&mut self, datapoint: &DataPoint) {
-        let layer_len = self.layers.len();
+        let last = self.layers.len() - 1;
 
-        // Output layer error & gradients
-        let output_layer = &mut self.layers[layer_len - 1];
-        let learn_data_output = &mut self.layer_learn_data[layer_len - 1];
-        output_layer.calculate_output_layer_node_cost_values(
-            learn_data_output,
-            &datapoint.expected_outputs,
-            self.cost_fn,
-        );
-        #[cfg(feature = "simd")]
+        // --- Output layer ---
         {
-            output_layer.update_cost_gradients_simd(learn_data_output);
-        }
-        #[cfg(not(feature = "simd"))]
-        {
-            output_layer.update_cost_gradients(learn_data_output);
+            let (layer, learn_data) = self.layers.split_at_mut(last);
+            let output_layer = &mut learn_data[0];
+            let learn_data_output = &mut self.layer_learn_data[last];
+
+            output_layer.calculate_output_layer_node_cost_values(
+                learn_data_output,
+                &datapoint.expected_outputs,
+                self.cost_fn,
+            );
+            Self::update_gradients(output_layer, learn_data_output);
         }
 
-        // Hidden layers error & gradients, back to front
-        for i in (0..layer_len - 1).rev() {
+        // --- Hidden layers (reverse) ---
+        for i in (0..last).rev() {
             let (left, right) = self.layer_learn_data.split_at_mut(i + 1);
             let learn_data_hidden = &mut left[i];
-            let learn_data_hidden_next = &right[0];
+            let learn_data_next = &right[0];
 
             let hidden_layer = &self.layers[i];
             let next_layer = &self.layers[i + 1];
             hidden_layer.calculate_hidden_layer_node_cost_values(
                 learn_data_hidden,
                 next_layer,
-                &learn_data_hidden_next.node_values,
+                &learn_data_next.node_values,
             );
 
-            let mut_hidden_layer = &mut self.layers[i];
-
-            #[cfg(feature = "simd")]
-            {
-                mut_hidden_layer.update_cost_gradients_simd(learn_data_hidden);
-            }
-            #[cfg(not(feature = "simd"))]
-            {
-                mut_hidden_layer.update_cost_gradients(learn_data_hidden);
-            }
+            let mut_layer = &mut self.layers[i];
+            Self::update_gradients(mut_layer, learn_data_hidden);
         }
+    }
+
+    #[inline]
+    fn update_gradients(layer: &mut Layer, learn_data: &mut LayerLearnData) {
+        #[cfg(feature = "simd")]
+        layer.update_cost_gradients_simd(learn_data);
+
+        #[cfg(not(feature = "simd"))]
+        layer.update_cost_gradients(learn_data);
     }
 
     fn apply_all_cost_gradients(&mut self, learn_rate: f32) {
@@ -556,49 +538,30 @@ impl NeuralNetwork {
         current_inputs
     }
 
-    // returns index of max value, max value
-    pub fn determine_output_greatest_value_result(inputs: &[f32]) -> NNGreatestValueResult {
-        let mut max = -99999999999.0;
-        let mut max_index = 0;
-        // Choose the greatest value
-        for (i, input) in inputs.iter().enumerate() {
-            if (*input > max) {
-                max = *input;
-                max_index = i;
-            }
-        }
-
-        (max_index, max)
-    }
-
     fn cost_function(&self, predicted: &[f32], expected: &[f32]) -> f32 {
         self.cost_fn.call(predicted, expected)
     }
 
     fn calculate_cost_datapoint(&self, datapoint: &DataPoint) -> f32 {
-        // cost
-        let datapoint_outputs = self.calculate_outputs(&datapoint.inputs[..]);
-        let cost = self.cost_function(&datapoint_outputs, &datapoint.expected_outputs);
+        // Prediction cost
+        let outputs = self.calculate_outputs(&datapoint.inputs);
+        let cost = self.cost_function(&outputs, &datapoint.expected_outputs);
 
-        // L2 Regularization: add sum of all weights squared
-        let mut l2_penalty = 0.0;
-        for layer in &self.layers {
-            for weight_matrix in &layer.weights {
-                for weight in weight_matrix {
-                    l2_penalty += weight.powi(2);
-                }
-            }
-        }
+        // L2 regularization penalty (sum of squared weights)
+        let l2_penalty: f32 = self
+            .layers
+            .iter()
+            .flat_map(|layer| layer.weights.iter())
+            .flat_map(|matrix| matrix.iter())
+            .map(|w| w.powi(2))
+            .sum();
 
-        let lambda = 0.001;
-        // Combine: total cost = prediction + regularization penalty
-        cost + lambda * l2_penalty
+        const LAMBDA: f32 = 0.001;
+        cost + LAMBDA * l2_penalty
     }
 
     pub fn calculate_costs(&self, data: &[DataPoint]) -> f32 {
-        if data.len() <= 0 {
-            panic!("Input data was len: {}", data.len());
-        }
+        assert!(!data.is_empty(), "Input data was empty");
 
         #[cfg(feature = "simd")]
         {
@@ -611,42 +574,42 @@ impl NeuralNetwork {
     }
 
     fn calculate_cost(&self, data: &[DataPoint]) -> f32 {
-        let mut cost: f32 = 0.0;
-        for datapoint in &data[..] {
-            cost += self.calculate_cost_datapoint(datapoint);
-        }
+        let total: f32 = data
+            .iter()
+            .map(|dp| self.calculate_cost_datapoint(dp))
+            .sum();
 
-        cost / (data.len() as f32)
+        total / (data.len() as f32)
     }
 
     #[cfg(feature = "simd")]
     fn calculate_cost_simd(&self, data: &[DataPoint]) -> f32 {
-        let mut total_cost = 0.0;
         let output_layer = self.layers.last().unwrap();
         let num_outputs = output_layer.num_out_nodes;
 
-        for datapoint in data {
-            let output = self.calculate_outputs(&datapoint.inputs);
+        let total_cost: f32 = data
+            .iter()
+            .map(|datapoint| {
+                let output = self.calculate_outputs(&datapoint.inputs);
+                let mut sum = f32x8::splat(0.0);
+                let mut i = 0;
 
-            let mut i = 0;
-            let mut sum = f32x8::splat(0.0);
-            while i + 8 <= num_outputs {
-                let pred = f32x8::from(&output[i..i + 8]);
-                let expected = f32x8::from(&datapoint.expected_outputs[i..i + 8]);
-                sum += self.cost_fn.call_simd(pred, expected);
-                i += 8;
-            }
+                while i + 8 <= num_outputs {
+                    let pred = f32x8::from(&output[i..i + 8]);
+                    let expected = f32x8::from(&datapoint.expected_outputs[i..i + 8]);
+                    sum += self.cost_fn.call_simd(pred, expected);
+                    i += 8;
+                }
 
-            let mut cost = sum.reduce_add();
-
-            if i < num_outputs {
-                cost += self
-                    .cost_fn
-                    .call(&output[i..], &datapoint.expected_outputs[i..]);
-            }
-
-            total_cost += cost;
-        }
+                let mut cost = sum.reduce_add();
+                if i < num_outputs {
+                    cost += self
+                        .cost_fn
+                        .call(&output[i..], &datapoint.expected_outputs[i..]);
+                }
+                cost
+            })
+            .sum();
 
         total_cost / (data.len() as f32)
     }

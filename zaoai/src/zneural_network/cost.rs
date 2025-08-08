@@ -53,30 +53,6 @@ impl CostFunction {
             }
         }
     }
-
-    // fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
-    //     let epsilon = 1e-12;
-    //     predicted
-    //         .iter()
-    //         .zip(expected.iter())
-    //         .map(|(p, e)| {
-    //             let p_clamped = p.max(epsilon).min(1.0 - epsilon);
-    //             -(e * p_clamped.ln() + (1.0 - e) * (1.0 - p_clamped).ln())
-    //         })
-    //         .sum()
-    // }
-
-    // fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32 {
-    //     let epsilon = 1e-12;
-    //     predicted
-    //         .iter()
-    //         .zip(expected.iter())
-    //         .map(|(p, e)| {
-    //             let p_clamped = p.max(epsilon).min(1.0 - epsilon);
-    //             -e * p_clamped.ln()
-    //         })
-    //         .sum()
-    // }
 }
 
 // ============================
@@ -121,14 +97,12 @@ pub fn mse_d(predicted: &[f32], expected: &[f32]) -> f32 {
 }
 
 pub fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32 {
-    // Small epsilon to avoid log(0)
     let epsilon = 1e-12;
 
     predicted
         .iter()
         .zip(expected.iter())
         .map(|(p, e)| {
-            // Clamp p to avoid log(0)
             let p_clamped = p.max(epsilon).min(1.0 - epsilon);
             -e * p_clamped.ln()
         })
@@ -140,10 +114,7 @@ pub fn cross_entropy_loss_multiclass_simd(predicted: f32x8, expected: f32x8) -> 
     let epsilon = f32x8::splat(1e-12);
     let one = f32x8::splat(1.0);
 
-    // Clamp predicted to [epsilon, 1 - epsilon]
     let clamped = predicted.min(one - epsilon).max(epsilon);
-
-    // -expected * ln(clamped)
     -expected * clamped.ln()
 }
 

@@ -5,10 +5,10 @@ use crate::{
     egui_ext::{add_slider_sized, Interval},
     mnist::get_mnist,
     zneural_network::{
-        cost::CostFunction, datapoint::{
+        activation::ActivationFunctionType, cost::CostFunction, datapoint::{
             create_2x2_test_datapoints,  DataPoint, TrainingData, TrainingDataset,
             VirtualTrainingDataset,
-        }, is_correct::ConfusionEvaluator, layer::{ActivationFunctionType, BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TestResults, TrainingSession, TrainingState}
+        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TestResults, TrainingSession, TrainingState}
     },
 };
 use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Response, Sense, Slider, SliderClamping};
@@ -371,8 +371,8 @@ impl<'a> DrawableWindow<'a> for WindowAi {
 
             ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                 let delete_button = Button::new("Delete").sense(Sense::click());
-                    if ui.add(delete_button).clicked() {
-                        *state_ctx.ai = None;
+                if ui.add(delete_button).clicked() {
+                    *state_ctx.ai = None;
                 }
             });
 
@@ -419,12 +419,12 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                     },
                     TestButtonState::AbortTest => {
                         if test_button_response.clicked()
+                        {
+                            if let Some(abort) = &self.test_nn_abort_tx
                             {
-                                if let Some(abort) = &self.test_nn_abort_tx
-                                {
-                                    abort.send(());
-                                }
+                                abort.send(());
                             }
+                        }
                     },
                     TestButtonState::StartTest => {
                         if test_button_response.clicked() {
