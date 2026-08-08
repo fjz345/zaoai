@@ -6,7 +6,7 @@ use eframe::egui::{
     Widget,
 };
 use eframe::emath::NumExt;
-use eframe::epaint::{vec2, PathShape, Rect, Vec2};
+use eframe::epaint::{vec2, PathShape};
 use eframe::{egui, emath};
 
 pub fn add_slider_sized(ui: &mut egui::Ui, size: f32, slider: egui::Slider) -> Response {
@@ -45,6 +45,7 @@ fn set(get_set_value: &mut GetSetValue<'_>, value: f64) {
     (get_set_value)(Some(value));
 }
 
+#[allow(dead_code)]
 pub struct Interval<'a> {
     get_set_value_0: GetSetValue<'a>, // upper bound
     get_set_value_1: GetSetValue<'a>, // lower bound
@@ -107,7 +108,7 @@ impl<'a> Interval<'a> {
                         if lb_dist_to_p <= TRIANGLE_SNAP_DISTANCE
                             || ub_dist_to_p <= TRIANGLE_SNAP_DISTANCE
                         {
-                            if (lb_dist_to_p <= ub_dist_to_p) {
+                            if lb_dist_to_p <= ub_dist_to_p {
                                 // dragging the lower one
                                 lb_pos.x = p.x.min(ub_pos.x);
                             } else {
@@ -213,7 +214,7 @@ impl<'a> Interval<'a> {
     }
 
     /// Just the slider, no text
-    fn allocate_slider_space(&self, ui: &mut Ui, thickness: f32) -> (Response) {
+    fn allocate_slider_space(&self, ui: &mut Ui, thickness: f32) -> Response {
         let desired_size = match self.orientation {
             SliderOrientation::Horizontal => vec2(ui.spacing().slider_width, thickness),
             SliderOrientation::Vertical => vec2(thickness, ui.spacing().slider_width),

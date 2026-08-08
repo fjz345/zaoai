@@ -49,7 +49,7 @@ impl ActivationFunctionType {
 
         // Normalize
         for (i, &val) in layer_values.iter().enumerate() {
-            output[i] = ((val - max_val).exp() / sum_f32);
+            output[i] = (val - max_val).exp() / sum_f32;
         }
 
         output

@@ -3,7 +3,6 @@
 
 use crate::{
     app_windows::{WindowAiSetupPresets, WindowAiSetupPresetsCtx},
-    error::Result,
     zneural_network::{
         activation::ActivationFunctionType,
         cost::CostFunction,
@@ -11,49 +10,34 @@ use crate::{
         is_correct::ConfusionEvaluator,
         layer::{BiasInit, WeightInit},
         neuralnetwork::load_neural_network,
-        training::FloatDecay,
     },
 };
 use eframe::{
-    egui::{self, style::Widgets, InnerResponse, RawInput, Response, Slider},
-    epaint::{Color32, Pos2, Rect},
-    glow::TESS_EVALUATION_TEXTURE,
-    App,
+    egui::{self, InnerResponse, Slider},
+    epaint::Rect,
 };
-use egui_plot::PlotPoint;
-use graphviz_rust::{dot_structures::Graph, print};
-use ndarray::{Array2, ArrayBase, Dim, OwnedRepr};
-
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 use std::{
-    fs::File,
-    io::{self, Read, Write},
     ops::RangeInclusive,
     str::FromStr,
-    sync::{mpsc::Receiver, Arc, Mutex},
-    thread::JoinHandle,
-    time::Duration,
+    sync::{Arc, Mutex},
 };
-use zaoai_types::ai_labels::ZaoaiLabel;
 
 use crate::{
     app_windows::{
         DrawableWindow, WindowAi, WindowAiCtx, WindowTrainingGraph, WindowTrainingGraphCtx,
         WindowTrainingSession, WindowTrainingSessionCtx, WindowTrainingSet, WindowTrainingSetCtx,
     },
-    egui_ext::{add_slider_sized, Interval},
-    mnist::get_mnist,
+    egui_ext::add_slider_sized,
     zneural_network::{
-        datapoint::{create_2x2_test_datapoints, split_datapoints, DataPoint},
+        datapoint::DataPoint,
         neuralnetwork::{GraphStructure, NeuralNetwork},
         thread::{TrainingThreadController, TrainingThreadPayload},
-        training::{self, TrainingSession, TrainingState},
+        training::{TrainingSession, TrainingState},
     },
 };
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MenuWindowData {
     // Main Menu
     pub graph_structure_string: String,
@@ -81,7 +65,7 @@ pub struct MenuWindowData {
     pub show_setup_presets: bool,
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ZaoaiApp {
     #[cfg_attr(feature = "serde", serde(skip))]
     state: AppState,
@@ -111,7 +95,6 @@ impl eframe::App for ZaoaiApp {
     #[cfg(not(feature = "linux-profile"))]
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         use crate::zneural_network::neuralnetwork::save_neural_network;
-        use std::path::Path;
 
         const NUM_SAVING: usize = 3;
         log::info!("[0/{NUM_SAVING}] Save Initiated");
@@ -120,7 +103,9 @@ impl eframe::App for ZaoaiApp {
             const DEFAULT_NN_FILEPATH: &'static str = "NN/save.znn";
             let save_nn_filepath = DEFAULT_NN_FILEPATH;
             log::info!("[1/{NUM_SAVING}] Saving neural network: {save_nn_filepath}");
-            save_neural_network(nn, save_nn_filepath);
+            if let Err(e) = save_neural_network(nn, save_nn_filepath) {
+                log::error!("Failed to save neural network to {save_nn_filepath}: {e}");
+            }
             self.last_ai_filepath = Some(save_nn_filepath.to_owned());
         } else {
             log::info!("[1/{NUM_SAVING}] Neural network not saved, not set");
@@ -198,7 +183,7 @@ impl eframe::App for ZaoaiApp {
                 self.state = AppState::Idle;
             }
             AppState::Idle => {
-                let (response, rect) = self.draw_ui(ctx, frame);
+                let (_response, rect) = self.draw_ui(ctx, frame);
 
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
             }
@@ -316,21 +301,19 @@ impl eframe::App for ZaoaiApp {
                             self.training_session.set_state(TrainingState::Idle);
                             self.state = AppState::Idle;
                         }
-                    }
-                    TrainingState::Abort => {
-                        panic!("Not Implemented");
-                    }
+                    } // TrainingState::Abort => {
+                      //     panic!("Not Implemented");
+                      // }
                 }
 
-                let (response, rect) = self.draw_ui(ctx, frame);
+                let (_response, rect) = self.draw_ui(ctx, frame);
                 ctx.request_repaint();
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
             }
             AppState::Exit => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-
-            default => {
+            _default => {
                 panic!("Not a valid state {:?}", self.state);
             }
         }
@@ -399,7 +382,7 @@ impl Default for ZaoaiApp {
     }
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Debug, Clone, Copy, PartialEq, strum_macros::Display)]
 pub enum AppState {
     #[default]
@@ -412,22 +395,22 @@ pub enum AppState {
 }
 
 impl ZaoaiApp {
-    pub fn new(cc: &eframe::CreationContext) -> Self {
+    pub fn new(_cc: &eframe::CreationContext) -> Self {
         Self::default()
     }
 
     // Should only be called once per application launch
-    fn startup(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn startup(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Try load NN from disk
         if let Some(last_ai_filepath) = &self.last_ai_filepath {
             log::info!("Loading neural network from: {last_ai_filepath}...");
             match load_neural_network(&last_ai_filepath) {
-                Ok(r) => log::info!("Loaded neural network from: {last_ai_filepath}"),
+                Ok(_) => log::info!("Loaded neural network from: {last_ai_filepath}"),
                 Err(e) => log::error!("{e}"),
             }
         }
 
-        let mut visuals: egui::Visuals = egui::Visuals::dark();
+        let visuals: egui::Visuals = egui::Visuals::dark();
         // visuals.panel_fill = Color32::from_rgba_unmultiplied(24, 36, 41, 255);
         ctx.set_visuals(visuals);
     }
@@ -451,7 +434,7 @@ impl ZaoaiApp {
     fn draw_ui(
         &mut self,
         ctx: &egui::Context,
-        frame: &mut eframe::Frame,
+        _frame: &mut eframe::Frame,
     ) -> (InnerResponse<InnerResponse<()>>, Rect) {
         let mut min_rect = Rect::ZERO;
         let response = egui::CentralPanel::default().show(ctx, |ui| {
@@ -502,7 +485,7 @@ impl ZaoaiApp {
                 change_state_to_setupai |= changed;
 
                 let act_before = self.window_data.ai_activation_function;
-                let combo_response = egui::ComboBox::from_label("Activation Function")
+                let _combo_response = egui::ComboBox::from_label("Activation Function")
                     .selected_text(self.window_data.ai_activation_function.to_string())
                     .show_ui(ui, |ui| {
                         for variant in [
@@ -521,7 +504,7 @@ impl ZaoaiApp {
                 change_state_to_setupai |= changed;
 
                 let is_correct_before = self.window_data.ai_is_correct_fn;
-                let combo_response = egui::ComboBox::from_label("Is Correct Fn")
+                let _combo_response = egui::ComboBox::from_label("Is Correct Fn")
                     .selected_text(self.window_data.ai_is_correct_fn.to_string())
                     .show_ui(ui, |ui| {
                         for variant in [
@@ -540,7 +523,7 @@ impl ZaoaiApp {
                 change_state_to_setupai |= changed;
 
                 let cost_fn_before = self.window_data.ai_cost_fn;
-                let combo_response = egui::ComboBox::from_label("Cost Fn")
+                let _combo_response = egui::ComboBox::from_label("Cost Fn")
                     .selected_text(self.window_data.ai_cost_fn.to_string())
                     .show_ui(ui, |ui| {
                         for variant in [
@@ -559,7 +542,7 @@ impl ZaoaiApp {
                 change_state_to_setupai |= changed;
 
                 let weight_init_before = self.window_data.ai_weight_init;
-                let combo_response = egui::ComboBox::from_label("Weight Init")
+                let _combo_response = egui::ComboBox::from_label("Weight Init")
                     .selected_text(self.window_data.ai_weight_init.to_string())
                     .show_ui(ui, |ui| {
                         for variant in WeightInit::all() {
@@ -574,7 +557,7 @@ impl ZaoaiApp {
                 change_state_to_setupai |= changed;
 
                 let bias_init_before = self.window_data.ai_bias_init;
-                let combo_response = egui::ComboBox::from_label("Bias Init")
+                let _combo_response = egui::ComboBox::from_label("Bias Init")
                     .selected_text(self.window_data.ai_bias_init.to_string())
                     .show_ui(ui, |ui| {
                         for variant in BiasInit::all() {

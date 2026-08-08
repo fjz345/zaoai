@@ -1,5 +1,5 @@
 use std::{
-    sync::mpsc::{self, Receiver, Sender},
+    sync::mpsc::{self, Receiver, SendError, Sender},
     thread::JoinHandle,
 };
 
@@ -39,7 +39,7 @@ pub struct TrainingThreadController {
 
 impl TrainingThreadController {
     pub fn begin_training(&mut self, training_session: &TrainingSession) -> bool {
-        if let Some(mut nn) = training_session.nn.as_ref() {
+        if let Some(nn) = training_session.nn.as_ref() {
             let mut nn = nn.clone();
             let training_data = training_session.training_data.clone();
             let num_epochs = training_session.num_epochs;
@@ -73,7 +73,9 @@ impl TrainingThreadController {
                     validation_each_epoch,
                 );
 
-                tx_nn.send(nn);
+                if let Err(e) = tx_nn.send(nn) {
+                    log::error!("Failed to send neural network through channel {}", e);
+                }
             });
 
             self.rx_neuralnetwork = Some(rx_nn);
@@ -98,9 +100,10 @@ impl TrainingThreadController {
         }
     }
 
-    pub fn send_abort_training(&self) {
+    pub fn send_abort_training(&self) -> Result<(), SendError<()>> {
         if let Some(tx) = &self.tx_abort {
-            tx.send(());
+            tx.send(())?;
         }
+        Ok(())
     }
 }

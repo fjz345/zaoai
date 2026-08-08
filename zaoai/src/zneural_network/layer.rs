@@ -1,10 +1,8 @@
 use rand::prelude::*;
-use rand::rngs::StdRng;
 use rand_chacha::{self, ChaCha8Rng};
-use rand_distr::{num_traits::FromPrimitive, Distribution, Normal, Uniform};
+use rand_distr::{num_traits::FromPrimitive, Distribution, Normal};
 use rayon::iter::{
-    IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
-    IntoParallelRefMutIterator, ParallelIterator,
+    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
 };
 
 #[cfg(feature = "serde")]
@@ -70,7 +68,9 @@ where
     rand_distr::StandardNormal: Distribution<T>,
 {
     pub weight_init: WeightInit,
+    #[allow(clippy::collection_is_never_read)]
     pub num_inputs: usize,
+    #[allow(clippy::collection_is_never_read)]
     pub num_outputs: usize,
     pub normal_dist: Option<rand_distr::Normal<T>>,
     pub limit: Option<T>,
@@ -277,6 +277,7 @@ impl Layer {
         }
     }
 
+    #[allow(dead_code)]
     #[cfg(feature = "simd")]
     fn compute_weighted_inputs_simd_rayon(&self, inputs: &[f32], output_buf: &mut [f32]) {
         use rayon::prelude::*;
@@ -411,6 +412,7 @@ impl Layer {
         self.compute_weighted_inputs_simd(inputs, &mut weighted_inputs);
         Self::apply_activation(&weighted_inputs, self.activation_type)
     }
+    #[allow(dead_code)]
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_simd_rayon(&self, inputs: &[f32]) -> Vec<f32> {
         let mut weighted_inputs = vec![0.0; self.num_out_nodes];
@@ -445,6 +447,7 @@ impl Layer {
         self.fill_learn_data(learn_data, &weighted_inputs);
         learn_data.activation_values.clone()
     }
+    #[allow(dead_code)]
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd_rayon(
         &mut self,
@@ -562,6 +565,7 @@ impl Layer {
             );
         }
     }
+    #[allow(dead_code)]
     #[cfg(feature = "simd")]
     pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
         let num_in_nodes = self.num_in_nodes;
@@ -622,7 +626,6 @@ impl Layer {
         use wide::f32x8;
 
         const CHUNK_SIZE: usize = 8;
-        let len = learn_data.node_values.len();
 
         let activation_vals = &learn_data.activation_values;
         let weighted_inputs = &learn_data.weighted_inputs;
@@ -642,8 +645,6 @@ impl Layer {
                 .zip(chunks_weighted)
                 .zip(chunks_expected.zip(chunks_node_vals.by_ref()))
         {
-            use crate::zneural_network::cost::mse_d_simd;
-
             let act_vec = f32x8::from(chunk_activation);
             let weighted_vec = f32x8::from(chunk_weighted);
             let expected_vec = f32x8::from(chunk_expected);

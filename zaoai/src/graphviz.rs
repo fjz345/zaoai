@@ -1,18 +1,8 @@
-use crate::filesystem::*;
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
 use crate::GraphStructure;
 use crate::Layer;
-
-use graphviz_rust::dot_generator::*;
-use graphviz_rust::dot_structures::*;
-use graphviz_rust::{
-    attributes::*,
-    cmd::{CommandArg, Format},
-    exec, exec_dot, parse,
-    printer::{DotPrinter, PrinterContext},
-};
-
-use std::fmt;
 
 // Sets general style
 fn header_generate_nn_graph_string(layer_spacing: f32) -> String {
@@ -64,7 +54,7 @@ fn body_input_generate_nn_graph_string(num_input_nodes: i32) -> String {
 }
 
 fn body_hidden_generate_nn_graph_string(num_hidden_nodes: &[i32]) -> String {
-    let string_start = r##"
+    let _string_start = r##"
     {
         node [shape=circle, color=dodgerblue, style=filled, fillcolor=dodgerblue];
     "##;
@@ -93,7 +83,7 @@ fn body_hidden_generate_nn_graph_string(num_hidden_nodes: &[i32]) -> String {
 
     // Prevent tilting
     const PREVENT_TILING: bool = false;
-    if (PREVENT_TILING) {
+    if PREVENT_TILING {
         string_hidden += "// Prevent tilting\n";
         for i in (0 + 2)..(num_hidden_nodes.len() - 1 + 2) {
             string_hidden += "a0";

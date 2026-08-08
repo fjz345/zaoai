@@ -61,7 +61,7 @@ pub fn mse_single(output_activation: f32, expected_activation: f32) -> f32 {
     0.5 * error * error
 }
 pub fn mse_single_d(output_activation: f32, expected_activation: f32) -> f32 {
-    (output_activation - expected_activation)
+    output_activation - expected_activation
 }
 
 #[cfg(feature = "simd")]

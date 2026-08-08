@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, env, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr, sync::{Arc, Mutex, mpsc::{self, Receiver, Sender}}, thread::JoinHandle};
+use std::{ ops::RangeInclusive, path::PathBuf, sync::{Arc, Mutex, mpsc::{self, Receiver, Sender}}, thread::JoinHandle};
 
 use crate::{
     app::{AppState, MenuWindowData},
@@ -11,14 +11,10 @@ use crate::{
         }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TestResults, TrainingSession, TrainingState}
     },
 };
-use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Response, Sense, Slider, SliderClamping};
-use egui_plot::{Corner, Legend, PlotItem, PlotResponse};
+use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Sense, Slider, SliderClamping};
+use egui_plot::{Corner, Legend, PlotResponse};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
 
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-
-use strum_macros::Display;
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabelsLoader},
     sound::get_spectrogram_dims,
@@ -28,7 +24,7 @@ use zaoai_types::{
 pub trait DrawableWindow<'a> {
     type Ctx;
 
-    fn with_ctx<F>(&mut self, egui_ctx: &egui::Context, ctx: &mut Self::Ctx, f: F)
+    fn with_ctx<F>(&mut self, _egui_ctx: &egui::Context, ctx: &mut Self::Ctx, f: F)
     where
         F: FnOnce(&mut Self, &mut Self::Ctx),
     {
@@ -48,7 +44,7 @@ pub struct WindowTrainingGraphCtx<'a> {
     pub(crate) payload_test_buffer: &'a mut Vec<TrainingThreadPayload>,
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Clone)]
 struct SerdePlotPoint {
     x: f64,
@@ -67,7 +63,7 @@ impl From<SerdePlotPoint> for PlotPoint {
     }
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default)]
 pub struct WindowTrainingGraph {
     // Training
@@ -203,11 +199,9 @@ impl WindowTrainingGraph
         Self::render_plot(ui, "Training", "Epoch", buffer, common_lines, vec![learn_rate_line])
     }
 
-    fn show_validation_plot(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,
+    fn show_validation_plot(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context,
         state_ctx: &mut WindowTrainingGraphCtx,) -> PlotResponse<()>
     {
-        use crate::app_windows::PlotPoints::Owned;
-
         // TODO: optimize this when it starts stuttering
         let payload_buffer = &mut *state_ctx.payload_validation_buffer;
 
@@ -236,11 +230,9 @@ impl WindowTrainingGraph
             })
     }
 
-    fn show_test_plot(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,
+    fn show_test_plot(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context,
         state_ctx: &mut WindowTrainingGraphCtx,) -> PlotResponse<()>
     {
-        use crate::app_windows::PlotPoints::Owned;
-
         // TODO: optimize this when it starts stuttering
         // Update
         let payload_buffer = &mut *state_ctx.payload_test_buffer;
@@ -281,9 +273,9 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
         let window = egui::Window::new("Training Graph").default_pos(egui::Pos2::new(1000.0, 0.0)).show(ctx, |ui| {
-            let training_plot = self.show_training_plot(ui, state_ctx);
-            let validation_plot = self.show_validation_plot(ui, ctx, state_ctx);
-            let test_plot = self.show_test_plot(ui, ctx, state_ctx);
+            let _training_plot = self.show_training_plot(ui, state_ctx);
+            let _validation_plot = self.show_validation_plot(ui, ctx, state_ctx);
+            let _test_plot = self.show_test_plot(ui, ctx, state_ctx);
         });
 
         window
@@ -312,7 +304,7 @@ impl WindowTrainingGraph {
             .height(300.0)
     }
 
-    fn create_plot_training_y_spacer_func(grid: GridInput) -> Vec<GridMark> {
+    fn create_plot_training_y_spacer_func(_grid: GridInput) -> Vec<GridMark> {
         let mut marks = Vec::new();
 
         for &value in &[
@@ -350,7 +342,7 @@ pub struct WindowAiCtx<'a> {
     pub payload_test_buffer: &'a mut Vec<TrainingThreadPayload>,
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WindowAi {
     #[cfg_attr(feature = "serde", serde(skip))]
     pub test_nn_rx: Option<Receiver<TrainingThreadPayload>>,
@@ -417,7 +409,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                 let button_state = TestButtonState::from_handles(&self.test_nn_handle, &test_done_val);
                 let test_button = Button::new(button_state.label()).sense(Sense::click());
                 let test_button_response = ui.add(test_button);
-                let test_graph_checkbox = ui.checkbox(&mut self.test_nn_graph, "Graph");
+                let _test_graph_checkbox = ui.checkbox(&mut self.test_nn_graph, "Graph");
                 match button_state
                 {
                     TestButtonState::TestingDone => {
@@ -427,7 +419,10 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                         {
                             if let Some(abort) = &self.test_nn_abort_tx
                             {
-                                abort.send(());
+                                if let Err(e) = abort.send(())
+                                {
+                                    log::error!("Failed to send abort test signal: {:?}", e);
+                                }
                             }
                         }
                     },
@@ -460,7 +455,10 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                                 log::trace!("Test Thread test_nn complete!");
                                                 let save_path = "testresults.results";
                                                 log::trace!("Saving results... {save_path}");
-                                                r.save_results(save_path);
+                                                if let Err(e) = r.save_results(save_path)
+                                                {
+                                                    log::error!("Failed to save results to {save_path}: {e}");
+                                                }
                                                 *test_nn_done_clone.lock().unwrap() = Some(r.clone());
                                             },
                                                 Err(e) => {log::error!("{e}");
@@ -491,7 +489,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
 impl WindowAi {}
 
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(PartialEq, Clone)]
 pub struct AiSetupPreset{
     graph: GraphStructure, 
@@ -558,7 +556,7 @@ pub struct WindowAiSetupPresetsCtx<'a> {
     pub state: &'a mut AppState,
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WindowAiSetupPresets {
     pub cached_ai_preset: AiSetupPreset
 }
@@ -581,8 +579,8 @@ impl<'a> DrawableWindow<'a> for WindowAiSetupPresets {
         egui::Window::new("Setup Presets").default_pos(egui::pos2(0.0, 500.0)).show(ctx, |ui| {
            
             // TODO: use &AiSetupPreset instead of AiSetupPreset to avoid clones.
-            let before = self.cached_ai_preset.clone();
-            let combo_response = egui::ComboBox::from_label("AiSetup")
+            let _before = self.cached_ai_preset.clone();
+            let _combo_response = egui::ComboBox::from_label("AiSetup")
                 .selected_text(self.cached_ai_preset.to_string())
                 .show_ui(ui, |ui| {
                     for variant in *ALL_PRESETS {
@@ -618,7 +616,7 @@ pub struct WindowTrainingSetCtx<'a> {
     pub training_data: &'a mut TrainingData, // Probably should store on heap to avoid copy, not an issue for now
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WindowTrainingSet {
     ui_training_dataset_split_thresholds_0: f64,
     ui_training_dataset_split_thresholds_1: f64,
@@ -768,7 +766,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
             {
                 match state_ctx.training_data
                 {
-                    TrainingData::Physical(training_dataset) => {},
+                    TrainingData::Physical(_training_dataset) => {},
                     TrainingData::Virtual(virtual_training_dataset) => {
                         log::info!("Set virtual trainingdata desiered dim: [{},{}]", self.cached_resize_input_dim[0], self.cached_resize_input_dim[1]);
                         virtual_training_dataset.set_desiered_input_dim([self.cached_resize_input_dim[0], self.cached_resize_input_dim[1]]);
@@ -787,7 +785,7 @@ pub struct WindowTrainingSessionCtx<'a> {
     pub training_thread: &'a mut TrainingThreadController,
 }
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WindowTrainingSession {
 }
 
@@ -847,7 +845,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                 
                 let before = state_ctx.training_session.learn_rate_decay.clone();
                 let text_none = "None";
-                let combo_response = egui::ComboBox::from_label("Decay")
+                let _combo_response = egui::ComboBox::from_label("Decay")
                     .selected_text(state_ctx.training_session.learn_rate_decay.as_ref().and_then(|f|Some(f.to_string())).unwrap_or(text_none.to_string()))
                     .show_ui(ui, |ui| {
                         for variant in [
@@ -873,7 +871,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                             );
                         }
                     });
-                let changed = before != state_ctx.training_session.learn_rate_decay;
+                let _changed = before != state_ctx.training_session.learn_rate_decay;
 
                 state_ctx.training_session.learn_rate_decay.as_mut().and_then(|f|{f.set_max_steps(state_ctx.training_session.num_epochs); Some(f)});
                 let decay = &state_ctx.training_session.learn_rate_decay;
@@ -906,7 +904,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                 });
 
                 ui.horizontal(|ui| {
-                    let slider = ui.add(Slider::new(&mut state_ctx.training_session.validation_each_epoch,0..=5)
+                    let _slider = ui.add(Slider::new(&mut state_ctx.training_session.validation_each_epoch,0..=5)
                             .clamping(egui::SliderClamping::Never)
                             .integer());
 
@@ -917,7 +915,10 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                 if *state_ctx.app_state == AppState::Training {
                     if ui.button("Abort Training").clicked() {
                         log::info!("Interupting Training");
-                        state_ctx.training_thread.send_abort_training();
+                        if let Err(e) = state_ctx.training_thread.send_abort_training()
+                        {
+                            log::error!("Failed to send abort training signal: {:?}", e);
+                        }
                         state_ctx.training_session.set_state(TrainingState::Finish);
                     }
                 } else {

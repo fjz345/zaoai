@@ -1,25 +1,20 @@
 use std::{
-    fs::File,
     path::{Path, PathBuf},
     usize,
 };
 
-use crate::neuralnetwork::*;
-
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rand::*;
 use rand_chacha::ChaCha8Rng;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use zaoai_types::spectrogram::load_spectrogram;
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabel},
     file::relative_after,
-    spectrogram::{
-        generate_spectrogram, resize_spectrogram, SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH,
-    },
+    spectrogram::{resize_spectrogram, SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH},
     FrequencyScale,
 };
-use zaoai_types::{sound::decode_samples_from_file, spectrogram::load_spectrogram};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
@@ -73,7 +68,7 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
     let x2_max = 1.0;
 
     let mut result: Vec<DataPoint> = Vec::new();
-    for i in 0..num_datapoints {
+    for _i in 0..num_datapoints {
         let x1_rand = rng.gen_range(x1_min..x1_max);
         let x2_rand = rng.gen_range(x2_min..x2_max);
 
@@ -437,7 +432,6 @@ impl TrainingDataset {
     ) -> Self {
         let training_split_len = training_split.len();
         let validation_split_len = validation_split.len();
-        let test_split_len = test_split.len();
 
         let full_dataset: Vec<DataPoint> = training_split
             .iter()

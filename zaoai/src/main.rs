@@ -1,7 +1,3 @@
-#![allow(dead_code)]
-#![allow(unreachable_code)]
-#![allow(unused)]
-#![allow(unused_mut)]
 #![allow(clippy::redundant_closure)]
 
 // Video -> Audio convert: ffmpeg
@@ -28,20 +24,12 @@ mod mnist;
 mod zneural_network;
 
 use crate::app::*;
-use crate::filesystem::save_string_to_file;
-use crate::graphviz::*;
-use crate::graphviz_examples::*;
 use crate::layer::*;
 use crate::neuralnetwork::*;
-use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::*;
 
 use eframe::egui;
 use std::env;
-
-use std::fs::File;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 
 static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 
@@ -91,7 +79,7 @@ fn main() -> Result<()> {
         viewport: egui::ViewportBuilder::default().with_inner_size([2560.0, 1440.0]),
         ..Default::default()
     };
-    eframe::run_native(
+    if let Err(e) = eframe::run_native(
         "ZaoAI",
         native_options,
         Box::new(move |cc: &eframe::CreationContext<'_>| {
@@ -125,7 +113,9 @@ fn main() -> Result<()> {
             let app = ZaoaiApp::new(cc);
             Ok(Box::<ZaoaiApp>::new(app))
         }),
-    );
+    ) {
+        log::error!("Failed to start eframe: {}", e);
+    };
 
     #[cfg(feature = "linux-profile")]
     {

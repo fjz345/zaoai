@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
-use crate::zneural_network::datapoint::{self, DataPoint};
-
 pub enum ConfusionCategory {
     TruePositive,
     TrueNegative,

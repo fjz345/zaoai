@@ -3,11 +3,7 @@ use std::{
     fs::File,
     io::Write,
     path::Path,
-    sync::{
-        mpsc::{Receiver, Sender},
-        Arc,
-    },
-    time::Duration,
+    sync::mpsc::{Receiver, Sender},
 };
 
 #[cfg(feature = "serde")]
@@ -17,7 +13,7 @@ use strum_macros::Display;
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
     is_correct::ConfusionEvaluator,
-    neuralnetwork::{self, NNOutputs, NeuralNetwork},
+    neuralnetwork::{NNOutputs, NeuralNetwork},
     thread::TrainingThreadPayload,
 };
 
@@ -61,6 +57,7 @@ impl Default for AIResultMetadata {
     }
 }
 
+#[allow(dead_code)]
 impl AIResultMetadata {
     pub fn new(dataset_usage: DatasetUsage, cost: f64, last_loss: f64, learn_rate: f32) -> Self {
         Self {
@@ -112,12 +109,12 @@ impl AIResultMetadata {
         self
     }
 
-    pub fn add_counts(&mut self, tp: usize, tn: usize, fp: usize, fn_: usize) {
-        self.true_positives += tp;
-        self.true_negatives += tn;
-        self.false_positives += fp;
-        self.false_negatives += fn_;
-    }
+    // pub fn add_counts(&mut self, tp: usize, tn: usize, fp: usize, fn_: usize) {
+    //     self.true_positives += tp;
+    //     self.true_negatives += tn;
+    //     self.false_positives += fp;
+    //     self.false_negatives += fn_;
+    // }
 
     pub fn positive_instances(&self) -> usize {
         self.true_positives + self.false_negatives
@@ -225,14 +222,14 @@ impl TrainingSession {
     pub fn set_training_data(&mut self, in_data: TrainingData) {
         self.training_data = in_data;
     }
-    pub fn ready(&self) -> bool {
-        self.nn.is_some()
-            && self.training_data.get_in_out_dimensions().0 > 0
-            && self.training_data.get_in_out_dimensions().1 > 0
-            && self.num_epochs > 0
-            && self.batch_size > 0
-            && self.learn_rate > 0.0
-    }
+    // pub fn ready(&self) -> bool {
+    //     self.nn.is_some()
+    //         && self.training_data.get_in_out_dimensions().0 > 0
+    //         && self.training_data.get_in_out_dimensions().1 > 0
+    //         && self.num_epochs > 0
+    //         && self.batch_size > 0
+    //         && self.learn_rate > 0.0
+    // }
 }
 
 #[derive(Serialize)]
@@ -278,12 +275,12 @@ impl TestResults {
     pub fn save_results(&self, path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
         return self.save_results_no_inputs(path);
 
-        let mut file = File::create(path.as_ref())?;
+        // let mut file = File::create(path.as_ref())?;
 
-        let mut json = serde_json::to_string_pretty(&self.results)?;
-        file.write_all(json.as_bytes())?;
+        // let mut json = serde_json::to_string_pretty(&self.results)?;
+        // file.write_all(json.as_bytes())?;
 
-        Ok(())
+        // Ok(())
     }
 
     pub fn save_results_no_inputs(&self, path: impl AsRef<Path>) -> Result<(), anyhow::Error> {
@@ -330,7 +327,7 @@ pub enum TrainingState {
     StartTraining,
     Training,
     Finish,
-    Abort,
+    // Abort,
 }
 
 pub fn test_nn<'a>(
@@ -350,7 +347,7 @@ pub fn test_nn<'a>(
 
         let mut results = Vec::with_capacity(test_data.len());
         for i in 0..test_data.len() {
-            let mut datapoint = &test_data[i];
+            let datapoint = &test_data[i];
             let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
 
             if let Some(tx_test_metadata) = &tx_test_metadata {
@@ -439,7 +436,7 @@ impl FloatDecay {
                 step_size,
                 decay_factor,
             } => {
-                let inv_decay_factor = (1.0 - decay_factor.clamp(0.0, 1.0));
+                let inv_decay_factor = 1.0 - decay_factor.clamp(0.0, 1.0);
                 let exponent = (step / *step_size) as f32;
                 init_val * inv_decay_factor.powf(exponent)
             }

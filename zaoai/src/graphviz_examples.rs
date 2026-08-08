@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use std::fs::File;
 use std::io::prelude::*;
 
@@ -5,7 +6,7 @@ use graphviz_rust::dot_generator::*;
 use graphviz_rust::dot_structures::*;
 use graphviz_rust::{
     attributes::*,
-    cmd::{CommandArg, Format},
+    cmd::Format,
     exec, exec_dot, parse,
     printer::{DotPrinter, PrinterContext},
 };
@@ -51,7 +52,7 @@ pub fn parse_test() {
 }
 
 pub fn print_test() {
-    let mut g = graph!(strict di id!("id"));
+    let g = graph!(strict di id!("id"));
     assert_eq!(
         "strict digraph id {\n\n}".to_string(),
         g.print(&mut PrinterContext::default())
@@ -59,7 +60,7 @@ pub fn print_test() {
 }
 
 pub fn output_test() {
-    let mut g = graph!(id!("id");
+    let g = graph!(id!("id");
          node!("nod"),
          subgraph!("sb";
              edge!(node_id!("a") => subgraph!(;
@@ -69,11 +70,11 @@ pub fn output_test() {
         ),
         edge!(node_id!("a1") => node_id!(esc "a2"))
     );
-    let graph_svg = exec(g, &mut PrinterContext::default(), vec![Format::Svg.into()]).unwrap();
+    let _graph_svg = exec(g, &mut PrinterContext::default(), vec![Format::Svg.into()]).unwrap();
 }
 
 pub fn output_exec_from_test() {
-    let mut g = graph!(id!("id");
+    let g = graph!(id!("id");
          node!("nod"),
          subgraph!("sb";
              edge!(node_id!("a") => subgraph!(;
@@ -87,9 +88,9 @@ pub fn output_exec_from_test() {
     log::info!("{}", dot);
     let format = Format::Svg;
 
-    let graph_svg = exec_dot(dot.clone(), vec![format.into()]).unwrap();
+    let _graph_svg = exec_dot(dot.clone(), vec![format.into()]).unwrap();
 
-    let graph_svg = exec_dot(dot, vec![format.clone().into()]).unwrap();
+    let _graph_svg = exec_dot(dot, vec![format.clone().into()]).unwrap();
 }
 
 pub fn graph_test() {
@@ -108,5 +109,7 @@ pub fn graph_test() {
             "#;
 
     let mut file = File::create("test.dot").expect("Failed to write to file");
-    file.write_all(unsafe { g.as_bytes() });
+    if let Err(e) = file.write_all(g.as_bytes()) {
+        log::error!("Failed to write to file: {}", e);
+    }
 }

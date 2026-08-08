@@ -1,7 +1,6 @@
 use crate::layer::*;
 use crate::zneural_network::activation::ActivationFunctionType;
-use crate::zneural_network::cost::{cross_entropy_loss_multiclass, mse, CostFunction};
-use crate::zneural_network::datapoint::TrainingData;
+use crate::zneural_network::cost::CostFunction;
 use crate::zneural_network::is_correct::ConfusionEvaluator;
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{
@@ -10,17 +9,12 @@ use crate::zneural_network::training::{
 
 use super::datapoint::DataPoint;
 use rand::prelude::*;
-use rand::rngs::StdRng;
-use rand_chacha;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::mpsc::Receiver;
-use std::sync::mpsc::{self, Sender};
-use std::thread::JoinHandle;
-use std::time::Duration;
+use std::sync::mpsc::Sender;
 use wide::f32x8;
 
 impl LayerLearnData {
@@ -94,16 +88,12 @@ impl GraphStructure {
         layer_sizes.push(self.output_nodes);
 
         for (i, layer) in layer_sizes.iter().enumerate() {
-            if (i >= 1) {
+            if i >= 1 {
                 result_string += ", ";
             }
             result_string += layer.to_string().as_str();
         }
         result_string
-    }
-
-    fn print(&self) {
-        log::info!("{}", self.to_string());
     }
 }
 
@@ -177,10 +167,6 @@ impl NeuralNetwork {
         }
     }
 
-    pub fn get_layers(&self) -> &Vec<Layer> {
-        &self.layers
-    }
-
     fn apply_dropout(inputs: &mut [f32], mask: &mut Vec<f32>, dropout_prob: f32) {
         let keep_prob = 1.0 - dropout_prob;
         let mut rng = rand::thread_rng();
@@ -203,7 +189,7 @@ impl NeuralNetwork {
         batch_data_cost: &mut f32,
         batch_data_loss: &mut f32,
     ) -> Vec<Vec<f32>> {
-        if (batch_data.len() <= 0) {
+        if batch_data.len() <= 0 {
             panic!("DataPoints length was 0");
         }
 
@@ -212,8 +198,8 @@ impl NeuralNetwork {
         let mut batch_data_outputs = Vec::with_capacity(batch_data.len());
         for (i, datapoint) in batch_data.iter().enumerate() {
             let datapoint_outputs = self.learn_calculate_outputs(datapoint);
-            let loss =
-                cross_entropy_loss_multiclass(&datapoint_outputs, &datapoint.expected_outputs);
+            // let loss =
+            //     cross_entropy_loss_multiclass(&datapoint_outputs, &datapoint.expected_outputs);
             let cost = self.cost_function(&datapoint_outputs, &datapoint.expected_outputs);
 
             total_cost += cost;
@@ -374,7 +360,9 @@ impl NeuralNetwork {
                             payload_max_index: num_epochs - 1,
                             training_metadata: initial_metadata,
                         };
-                        tx.send(payload);
+                        if let Err(e) = tx.send(payload) {
+                            log::error!("Failed to send training metadata through channel: {}", e);
+                        }
                     }
                 };
             if e == 0 {
@@ -416,7 +404,9 @@ impl NeuralNetwork {
                     payload_max_index: num_epochs - 1,
                     training_metadata: metadata,
                 };
-                tx_training_metadata.unwrap().send(payload);
+                if let Err(e) = tx_training_metadata.unwrap().send(payload) {
+                    log::error!("Failed to send training metadata through channel: {}", e)
+                };
             }
 
             if let Some(post_fn) = &eval_abort_fn {
@@ -466,7 +456,7 @@ impl NeuralNetwork {
 
         // --- Output layer ---
         {
-            let (layer, learn_data) = self.layers.split_at_mut(last);
+            let (_layer, learn_data) = self.layers.split_at_mut(last);
             let output_layer = &mut learn_data[0];
             let learn_data_output = &mut self.layer_learn_data[last];
 
@@ -518,7 +508,7 @@ impl NeuralNetwork {
 
     pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
         let mut current_inputs = inputs.to_vec();
-        for (i, layer) in self.layers.iter().enumerate() {
+        for (_, layer) in self.layers.iter().enumerate() {
             #[cfg(feature = "simd")]
             {
                 current_inputs = layer.calculate_outputs_simd(&current_inputs);
@@ -618,7 +608,7 @@ impl NeuralNetwork {
         // Ensure that the layers input/output numbers match
         let mut prev_out_size: usize = self.graph_structure.input_nodes;
         for layer in &self.layers[..] {
-            if (layer.num_in_nodes != prev_out_size) {
+            if layer.num_in_nodes != prev_out_size {
                 is_valid = false;
                 break;
             }
