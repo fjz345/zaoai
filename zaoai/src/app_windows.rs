@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr, sync::{mpsc::{self, Receiver, Sender}, Arc, Mutex}, thread::JoinHandle};
+use std::{any::Any, cell::RefCell, env, ops::RangeInclusive, path::PathBuf, rc::Rc, str::FromStr, sync::{Arc, Mutex, mpsc::{self, Receiver, Sender}}, thread::JoinHandle};
 
 use crate::{
     app::{AppState, MenuWindowData},
@@ -749,7 +749,12 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 let zaoai_label_path  = "training_data\\firstoutputlabels\\zaoai_labels";
                 if self.cached_zaoai_loader.is_none()
                 {
-                    self.cached_zaoai_loader = Some(ZaoaiLabelsLoader::new(&zaoai_label_path).expect("Zaoailablesloader::new"));
+                    let new_label_loader = ZaoaiLabelsLoader::new(&zaoai_label_path);
+                    match new_label_loader
+                    {
+                        Ok(ok) => {self.cached_zaoai_loader = Some(ok);}
+                        Err(e) => log::debug!("Failed to load ZaoaiLabelsLoader: {:?}", e),
+                    }
                 }
                 if let  Some(zaoai_label_loader) = &self.cached_zaoai_loader 
                 {

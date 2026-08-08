@@ -49,6 +49,8 @@ static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 fn main() -> Result<()> {
+    color_backtrace::install();
+
     env::set_var("RUST_BACKTRACE", "1");
     #[cfg(feature = "linux-profile")]
     let guard = pprof::ProfilerGuardBuilder::default()
