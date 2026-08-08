@@ -319,7 +319,6 @@ impl Layer {
     pub fn apply_activation(weighted_inputs: &[f32], t: ActivationFunctionType) -> Vec<f32> {
         weighted_inputs.iter().map(|&x| t.activate(x)).collect()
     }
-
     #[cfg(feature = "simd")]
     pub fn apply_activation(input: &[f32], t: ActivationFunctionType) -> Vec<f32> {
         const CHUNK_SIZE: usize = 8;
@@ -362,7 +361,6 @@ impl Layer {
             *act = self.activation_type.activate(*w_in);
         }
     }
-
     // not tested
     #[cfg(feature = "simd")]
     fn fill_learn_data(&self, learn_data: &mut LayerLearnData, weighted_inputs: &[f32]) {
@@ -407,14 +405,12 @@ impl Layer {
         self.compute_weighted_inputs_scalar(inputs, &mut weighted_inputs);
         Self::apply_activation(&weighted_inputs, self.activation_type)
     }
-
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_simd(&self, inputs: &[f32]) -> Vec<f32> {
         let mut weighted_inputs = vec![0.0; self.num_out_nodes];
         self.compute_weighted_inputs_simd(inputs, &mut weighted_inputs);
         Self::apply_activation(&weighted_inputs, self.activation_type)
     }
-
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_simd_rayon(&self, inputs: &[f32]) -> Vec<f32> {
         let mut weighted_inputs = vec![0.0; self.num_out_nodes];
@@ -435,7 +431,6 @@ impl Layer {
         self.fill_learn_data(learn_data, &weighted_inputs);
         learn_data.activation_values.clone()
     }
-
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd(
         &mut self,
@@ -450,7 +445,6 @@ impl Layer {
         self.fill_learn_data(learn_data, &weighted_inputs);
         learn_data.activation_values.clone()
     }
-
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd_rayon(
         &mut self,
@@ -490,7 +484,6 @@ impl Layer {
         }
         *bias_grad += node_value; // same as 1.0 * node_value
     }
-
     #[cfg(feature = "simd")]
     fn update_cost_gradient_for_node_simd(
         weight_grad_row: &mut [f32],
@@ -515,7 +508,6 @@ impl Layer {
         for i in (num_in_nodes - remainder)..num_in_nodes {
             weight_grad_row[i] += inputs[i] * node_value;
         }
-
         // Update bias gradient
         *bias_grad += node_value;
     }
@@ -570,7 +562,6 @@ impl Layer {
             );
         }
     }
-
     #[cfg(feature = "simd")]
     pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
         let num_in_nodes = self.num_in_nodes;
@@ -621,7 +612,6 @@ impl Layer {
             learn_data.node_values[i] = dactivation * dcost;
         }
     }
-
     #[cfg(feature = "simd")]
     pub fn calculate_output_layer_node_cost_values(
         &self,

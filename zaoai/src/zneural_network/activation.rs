@@ -54,7 +54,6 @@ impl ActivationFunctionType {
 
         output
     }
-
     #[cfg(not(feature = "simd"))]
     pub fn apply_softmax(layer_values: &[f32]) -> Vec<f32> {
         let max_val = layer_values
@@ -80,7 +79,6 @@ impl ActivationFunctionType {
             }
         }
     }
-
     #[cfg(feature = "simd")]
     pub fn activate_simd(&self, x: f32x8) -> f32x8 {
         match self {
@@ -91,7 +89,6 @@ impl ActivationFunctionType {
             }
         }
     }
-
     pub fn activate_derivative(&self, x: f32) -> f32 {
         match self {
             ActivationFunctionType::ReLU => relu_d(x),
@@ -101,7 +98,6 @@ impl ActivationFunctionType {
             }
         }
     }
-
     #[cfg(feature = "simd")]
     pub fn activate_derivative_simd(&self, x: f32x8) -> f32x8 {
         match self {

@@ -69,7 +69,6 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
 
     let x1_min = 0.0;
     let x1_max = 1.0;
-
     let x2_min = 0.0;
     let x2_max = 1.0;
 
@@ -85,7 +84,6 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
             expected_outputs: vec![y1, y2],
         });
     }
-
     result
 }
 
@@ -185,21 +183,18 @@ impl TrainingData {
             TrainingData::Virtual(_) => self.virtual_split(|v| v.get_training_start_end()),
         }
     }
-
     pub fn validation_split(&self) -> Vec<DataPoint> {
         match self {
             TrainingData::Physical(p) => p.validation_split().to_vec(),
             TrainingData::Virtual(_) => self.virtual_split(|v| v.get_validation_start_end()),
         }
     }
-
     pub fn test_split(&self) -> Vec<DataPoint> {
         match self {
             TrainingData::Physical(p) => p.test_split().to_vec(),
             TrainingData::Virtual(_) => self.virtual_split(|v| v.get_test_start_end()),
         }
     }
-
     pub fn training_split_len(&self) -> usize {
         match self {
             TrainingData::Physical(training_dataset) => training_dataset.training_split().len(),
@@ -256,7 +251,6 @@ impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
         if self.index >= len {
             return None;
         }
-
         let batch_end = (self.index + self.batch_size).min(len);
         let slice = &self.dataset.virtual_dataset[self.index..batch_end];
 
@@ -436,7 +430,6 @@ impl TrainingDataset {
             thresholds: [0.6, 0.8],
         }
     }
-
     pub fn new_from_splits(
         training_split: &[DataPoint],
         validation_split: &[DataPoint],
@@ -484,12 +477,10 @@ impl TrainingDataset {
         let (start, end) = self.get_split_range(SplitType::Training);
         &self.full_dataset[start..end]
     }
-
     pub fn validation_split(&self) -> &[DataPoint] {
         let (start, end) = self.get_split_range(SplitType::Validation);
         &self.full_dataset[start..end]
     }
-
     pub fn test_split(&self) -> &[DataPoint] {
         let (start, end) = self.get_split_range(SplitType::Test);
         &self.full_dataset[start..end]
@@ -505,7 +496,6 @@ impl TrainingDataset {
     pub fn get_thresholds(&self) -> [f64; 2] {
         self.thresholds
     }
-
     // Returns the number of (in, out) nodes needed in layers
     pub fn get_dimensions(&self) -> (usize, usize) {
         self.full_dataset

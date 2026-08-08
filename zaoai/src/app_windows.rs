@@ -153,45 +153,54 @@ impl WindowTrainingGraph
         vec![line_accuracy, line_cost, line_last_loss, line_f1_score]
     }
 
-    fn show_training_plot(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,
-        state_ctx: &mut WindowTrainingGraphCtx,) -> PlotResponse<()>
-    {
-        // TODO: optimize this when it starts stuttering
-        // Update
-        let payload_buffer = &mut *state_ctx.payload_training_buffer;
-
+    fn render_plot(
+        ui: &mut egui::Ui,
+        title: &str,
+        x_label: &str,
+        payload_buffer: &mut Vec<TrainingThreadPayload>,
+        common_lines: Vec<Line<'_>>,
+        extra_lines: impl IntoIterator<Item = Line<'static>>,
+    ) -> PlotResponse<()> {
         ui.horizontal(|ui| {
-            ui.label("Training");
-            
+            ui.label(title);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("Clear").clicked()
-                {
+                if ui.button("Clear").clicked() {
                     payload_buffer.clear();
                 }
             });
         });
 
-        let line_learn_rate = gen_line! {
-            self = self,
-            payload = &payload_buffer,
-            cache_field = cached_plot_points_learn_rate,
-            generator = generate_learn_rate_plotpoints_from_training_thread_payloads,
-            label = "Learn Rate",
-            color = Color32::LIGHT_GRAY,
-        };
-        let common_lines = self.generate_common_lines(&payload_buffer);
-        
-        Self::create_plot_training("Training")
+        Self::create_plot_training(title)
             .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
-            .x_axis_label("Epoch")
+            .x_axis_label(x_label)
             .include_x(0.0)
             .show(ui, |plot_ui| {
-                for line in common_lines
-                {
+                for line in common_lines {
                     plot_ui.line(line);
                 }
-                plot_ui.line(line_learn_rate);
+                for line in extra_lines {
+                    plot_ui.line(line);
+                }
             })
+    }
+
+    fn show_training_plot(
+        &mut self,
+        ui: &mut egui::Ui,
+        state_ctx: &mut WindowTrainingGraphCtx,
+    ) -> PlotResponse<()> {
+        let buffer = &mut *state_ctx.payload_training_buffer;
+        let learn_rate_line = gen_line! {
+                self = self,
+                payload = &buffer,
+                cache_field = cached_plot_points_learn_rate,
+                generator = generate_learn_rate_plotpoints_from_training_thread_payloads,
+                label = "Learn Rate",
+                color = Color32::LIGHT_GRAY,
+            };
+        let common_lines = self.generate_common_lines(buffer);
+
+        Self::render_plot(ui, "Training", "Epoch", buffer, common_lines, vec![learn_rate_line])
     }
 
     fn show_validation_plot(&mut self, ui: &mut egui::Ui, ctx: &egui::Context,
@@ -200,7 +209,6 @@ impl WindowTrainingGraph
         use crate::app_windows::PlotPoints::Owned;
 
         // TODO: optimize this when it starts stuttering
-        // Update
         let payload_buffer = &mut *state_ctx.payload_validation_buffer;
 
         ui.horizontal(|ui| {
@@ -273,7 +281,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
         let window = egui::Window::new("Training Graph").default_pos(egui::Pos2::new(1000.0, 0.0)).show(ctx, |ui| {
-            let training_plot = self.show_training_plot(ui, ctx, state_ctx);
+            let training_plot = self.show_training_plot(ui, state_ctx);
             let validation_plot = self.show_validation_plot(ui, ctx, state_ctx);
             let test_plot = self.show_test_plot(ui, ctx, state_ctx);
         });
@@ -307,7 +315,6 @@ impl WindowTrainingGraph {
     fn create_plot_training_y_spacer_func(grid: GridInput) -> Vec<GridMark> {
         let mut marks = Vec::new();
 
-        // 0.05 step marks
         for &value in &[
             0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9,
             0.95,
@@ -318,7 +325,6 @@ impl WindowTrainingGraph {
             });
         }
 
-        // 0.25 step marks
         for &value in &[0.0, 0.25, 0.5, 0.75] {
             marks.push(GridMark {
                 value,
@@ -326,7 +332,6 @@ impl WindowTrainingGraph {
             });
         }
 
-        // 1.0 step marks
         for &value in &[0.0, 1.0] {
             marks.push(GridMark {
                 value,
@@ -502,7 +507,6 @@ pub struct AiSetupPreset{
 
 impl std::fmt::Display for AiSetupPreset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // You can customize this string however you want.
         write!(
             f,
             "{}", self.display
@@ -677,47 +681,27 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     self.ui_training_dataset_split_thresholds_0 = state_ctx.training_data.get_thresholds()[0];
                     self.ui_training_dataset_split_thresholds_1 = state_ctx.training_data.get_thresholds()[1];
                 }
-                if ui.button("Load [784, 10] MNIST dataset").clicked()
-                {
-                    let mnist = get_mnist();
-                    let dataset_train: Vec<DataPoint> = mnist.train_data.iter()
-                    .zip(mnist.train_labels.iter())
-                    .map(|(image, &label)| {
-                        // Normalize pixels to [0.0, 1.0]
-                        let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
+                if ui.button("Load [784, 10] MNIST dataset").clicked() {
+                let mnist = get_mnist();
+                
+                let map_mnist = |(image, &label): (&[u8; 784], &u8)| -> DataPoint {
+                    let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
+                    let mut expected_outputs = vec![0.0; 10];
+                    if (label as usize) < 10 {
+                        expected_outputs[label as usize] = 1.0;
+                    }
+                    DataPoint { inputs, expected_outputs }
+                };
 
-                        let one_hot_encode = |label: u8, num_classes: usize| -> Vec<f32> {
-                            let mut v = vec![0.0; num_classes];
-                            if (label as usize) < num_classes {
-                                v[label as usize] = 1.0;
-                            }
-                            v
-                        };
-                        let expected_outputs = one_hot_encode(label, 10);
-                        DataPoint { inputs, expected_outputs }
-                    })
-                    .collect();
-                    let dataset_test: Vec<DataPoint> = mnist.train_data.iter()
-                    .zip(mnist.train_labels.iter())
-                    .map(|(image, &label)| {
-                        // Normalize pixels to [0.0, 1.0]
-                        let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
-
-                        let one_hot_encode = |label: u8, num_classes: usize| -> Vec<f32> {
-                            let mut v = vec![0.0; num_classes];
-                            if (label as usize) < num_classes {
-                                v[label as usize] = 1.0;
-                            }
-                            v
-                        };
-                        let expected_outputs = one_hot_encode(label, 10);
-                        DataPoint { inputs, expected_outputs }
-                    })
-                    .collect();
-                    *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new_from_splits(&dataset_train, &vec![], &dataset_test));
-                    self.ui_training_dataset_split_thresholds_0 = state_ctx.training_data.get_thresholds()[0];
-                    self.ui_training_dataset_split_thresholds_1 = state_ctx.training_data.get_thresholds()[1];
-                }
+                let dataset_train: Vec<DataPoint> = mnist.train_data.iter().zip(mnist.train_labels.iter()).map(map_mnist).collect();
+                let dataset_test: Vec<DataPoint> = mnist.train_data.iter().zip(mnist.train_labels.iter()).map(map_mnist).collect();
+                
+                *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new_from_splits(&dataset_train, &vec![], &dataset_test));
+                
+                let thresholds = state_ctx.training_data.get_thresholds();
+                self.ui_training_dataset_split_thresholds_0 = thresholds[0];
+                self.ui_training_dataset_split_thresholds_1 = thresholds[1];
+            }
 
                 let button_text = self.cached_zaoai_loader.as_ref()
                     .and_then(|loader| loader.label_input_dim.map(|d| format!("Load [{}*{}, {}] spectrogram test", d[0], d[1], 2)))
@@ -767,21 +751,11 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                         }
 
                         let name_label = ui.label("Resize");
-                        if (ui
-                            .text_edit_singleline(&mut self.resize_text)
-                            .labelled_by(name_label.id)
-                            .lost_focus())
-                        {
-                            let mut parsed_resize_dim = self
-                                .resize_text.split(|c| c == ',' || c == ' ')
-                                .collect::<Vec<_>>()
-                                .into_iter()
-                                .filter_map(|str| {
-                                    FromStr::from_str(str).ok()
-                                })
-                                .collect::<Vec<_>>();
-
-                            self.cached_resize_input_dim = parsed_resize_dim;
+                        if ui.text_edit_singleline(&mut self.resize_text).labelled_by(name_label.id).lost_focus() {
+                            self.cached_resize_input_dim = self.resize_text
+                                .split(|c| c == ',' || c == ' ')
+                                .filter_map(|s| s.parse().ok())
+                                .collect();
                         }
                     });
                 }

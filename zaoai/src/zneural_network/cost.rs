@@ -21,7 +21,6 @@ impl CostFunction {
             }
         }
     }
-
     pub fn call_d(&self, predicted: &[f32], expected: &[f32]) -> f32 {
         match self {
             CostFunction::Mse => mse(predicted, expected),
@@ -31,7 +30,6 @@ impl CostFunction {
             }
         }
     }
-
     pub fn call_simd(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
         match self {
             CostFunction::Mse => mse_simd(predicted, expected),
@@ -41,7 +39,6 @@ impl CostFunction {
             }
         }
     }
-
     pub fn call_simd_d(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
         match self {
             CostFunction::Mse => mse_d_simd(predicted, expected),
@@ -63,7 +60,6 @@ pub fn mse_single(output_activation: f32, expected_activation: f32) -> f32 {
     let error = output_activation - expected_activation;
     0.5 * error * error
 }
-
 pub fn mse_single_d(output_activation: f32, expected_activation: f32) -> f32 {
     (output_activation - expected_activation)
 }
@@ -74,7 +70,6 @@ pub fn mse_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
     // 0.5 * error^2
     f32x8::splat(0.5) * error * error
 }
-
 #[cfg(feature = "simd")]
 pub fn mse_d_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
     output_activation - expected_activation
@@ -87,7 +82,6 @@ pub fn mse(predicted: &[f32], expected: &[f32]) -> f32 {
         .map(|(p, e)| mse_single(*p, *e))
         .sum()
 }
-
 pub fn mse_d(predicted: &[f32], expected: &[f32]) -> f32 {
     predicted
         .iter()
@@ -108,7 +102,6 @@ pub fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32
         })
         .sum()
 }
-
 #[cfg(feature = "simd")]
 pub fn cross_entropy_loss_multiclass_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
     let epsilon = f32x8::splat(1e-12);
@@ -117,7 +110,6 @@ pub fn cross_entropy_loss_multiclass_simd(predicted: f32x8, expected: f32x8) -> 
     let clamped = predicted.min(one - epsilon).max(epsilon);
     -expected * clamped.ln()
 }
-
 pub fn cross_entropy_loss_multiclass_d(predicted: &[f32], expected: &[f32]) -> f32 {
     predicted
         .iter()
@@ -125,7 +117,6 @@ pub fn cross_entropy_loss_multiclass_d(predicted: &[f32], expected: &[f32]) -> f
         .map(|(p, y)| p - y)
         .sum()
 }
-
 #[cfg(feature = "simd")]
 pub fn cross_entropy_loss_multiclass_d_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
     // Assumes inputs are after softmax
@@ -144,7 +135,6 @@ pub fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
         })
         .sum()
 }
-
 #[cfg(feature = "simd")]
 pub fn cross_entropy_loss_binary_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
     let epsilon = f32x8::splat(1e-12);
@@ -154,7 +144,6 @@ pub fn cross_entropy_loss_binary_simd(predicted: f32x8, expected: f32x8) -> f32x
 
     -(expected * clamped.ln() + (one - expected) * (one - clamped).ln())
 }
-
 pub fn cross_entropy_loss_binary_d(predicted: &[f32], expected: &[f32]) -> f32 {
     let epsilon = 1e-12;
     let mut result = 0.0;
@@ -166,7 +155,6 @@ pub fn cross_entropy_loss_binary_d(predicted: &[f32], expected: &[f32]) -> f32 {
 
     result
 }
-
 #[cfg(feature = "simd")]
 pub fn cross_entropy_loss_binary_d_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
     let epsilon = f32x8::splat(1e-12);

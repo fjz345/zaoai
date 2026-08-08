@@ -75,7 +75,6 @@ impl GraphStructure {
 
     pub fn validate(&self) -> bool {
         let mut is_valid = true;
-
         if self.input_nodes < 1 {
             is_valid = false;
         } else if self.output_nodes < 1 {
@@ -506,13 +505,11 @@ impl NeuralNetwork {
         #[cfg(not(feature = "simd"))]
         layer.update_cost_gradients(learn_data);
     }
-
     fn apply_all_cost_gradients(&mut self, learn_rate: f32) {
         for layer in self.layers.iter_mut() {
             layer.apply_cost_gradient(learn_rate);
         }
     }
-
     fn clear_all_cost_gradients(&mut self) {
         for layer in self.layers.iter_mut() {
             layer.clear_cost_gradient();
@@ -541,7 +538,6 @@ impl NeuralNetwork {
     fn cost_function(&self, predicted: &[f32], expected: &[f32]) -> f32 {
         self.cost_fn.call(predicted, expected)
     }
-
     fn calculate_cost_datapoint(&self, datapoint: &DataPoint) -> f32 {
         // Prediction cost
         let outputs = self.calculate_outputs(&datapoint.inputs);
@@ -559,7 +555,6 @@ impl NeuralNetwork {
         const LAMBDA: f32 = 0.001;
         cost + LAMBDA * l2_penalty
     }
-
     pub fn calculate_costs(&self, data: &[DataPoint]) -> f32 {
         assert!(!data.is_empty(), "Input data was empty");
 
@@ -572,7 +567,6 @@ impl NeuralNetwork {
             self.calculate_cost(data)
         }
     }
-
     fn calculate_cost(&self, data: &[DataPoint]) -> f32 {
         let total: f32 = data
             .iter()
@@ -581,7 +575,6 @@ impl NeuralNetwork {
 
         total / (data.len() as f32)
     }
-
     #[cfg(feature = "simd")]
     fn calculate_cost_simd(&self, data: &[DataPoint]) -> f32 {
         let output_layer = self.layers.last().unwrap();
