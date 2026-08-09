@@ -248,7 +248,7 @@ impl eframe::App for ZaoaiApp {
                             self.training_thread.rx_training_payload = None;
                         }
 
-                        let (_received_any_validation, validation_disconnected) =
+                        let (received_any_validation, validation_disconnected) =
                             process_payload_channel(
                                 rx_validation,
                                 &mut self.training_thread.payload_validation_buffer,
@@ -256,6 +256,10 @@ impl eframe::App for ZaoaiApp {
                             );
                         if validation_disconnected {
                             self.training_thread.rx_validation_payload = None;
+                        }
+
+                        if received_any_training || received_any_validation {
+                            ctx.request_repaint();
                         }
 
                         let training_in_progress = self.training_thread.training_in_progress();
@@ -284,11 +288,11 @@ impl eframe::App for ZaoaiApp {
                             self.training_session.set_state(TrainingState::Idle);
                             self.state = AppState::Idle;
                         }
+                        ctx.request_repaint();
                     }
                 }
 
                 let (_response, _rect) = self.draw_ui(ctx, frame);
-                ctx.request_repaint();
                 // ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
             }
             AppState::Exit => {

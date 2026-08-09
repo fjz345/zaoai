@@ -342,23 +342,22 @@ impl NeuralNetwork {
         assert!(batch_size > 0);
 
         for e in 0..num_epochs {
-            let mut test_and_send_payload =
+            let mut test_nn_and_send_payload =
                 |tx: &Sender<TrainingThreadPayload>, data: &[DataPoint], payload_index: usize| {
-                    // Send training meta data before training for baseline graph point
                     if let Some(test_results) = test_nn(self, data, is_correct_fn, None, None).ok()
                     {
-                        let mut initial_metadata = AIResultMetadata::from_accuracy(
+                        let mut result_metadata = AIResultMetadata::from_accuracy(
                             test_results.accuracy.unwrap_or_default() as f64,
                             test_results.results.len(),
                         );
-                        initial_metadata.cost = test_results.cost as f64;
-                        initial_metadata.last_loss = test_results.cost as f64;
-                        initial_metadata.learn_rate = learn_rate;
+                        result_metadata.cost = test_results.cost as f64;
+                        result_metadata.last_loss = test_results.cost as f64;
+                        result_metadata.learn_rate = learn_rate;
 
                         let payload = TrainingThreadPayload {
                             payload_index: payload_index,
                             payload_max_index: num_epochs - 1,
-                            training_metadata: initial_metadata,
+                            training_metadata: result_metadata,
                         };
                         if let Err(e) = tx.send(payload) {
                             log::error!("Failed to send training metadata through channel: {}", e);
@@ -367,13 +366,14 @@ impl NeuralNetwork {
                 };
             if e == 0 {
                 if let Some(tx_testing_metadata) = tx_training_metadata {
-                    test_and_send_payload(tx_testing_metadata, training_data, e);
+                    // Send training meta data before training for baseline graph point
+                    test_nn_and_send_payload(tx_testing_metadata, training_data, e);
                 }
             }
             if validation_each_epoch != 0 && e % validation_each_epoch == 0 {
                 if let Some(tx_validation_metadata) = tx_validation_metadata {
                     log::trace!("Testing and sending validation data...");
-                    test_and_send_payload(tx_validation_metadata, validation_data, e);
+                    test_nn_and_send_payload(tx_validation_metadata, validation_data, e);
                 }
             }
 
@@ -528,6 +528,7 @@ impl NeuralNetwork {
     fn cost_function(&self, predicted: &[f32], expected: &[f32]) -> f32 {
         self.cost_fn.call(predicted, expected)
     }
+    #[cfg(not(feature = "simd"))]
     fn calculate_cost_datapoint(&self, datapoint: &DataPoint) -> f32 {
         // Prediction cost
         let outputs = self.calculate_outputs(&datapoint.inputs);
@@ -557,6 +558,7 @@ impl NeuralNetwork {
             self.calculate_cost(data)
         }
     }
+    #[cfg(not(feature = "simd"))]
     fn calculate_cost(&self, data: &[DataPoint]) -> f32 {
         let total: f32 = data
             .iter()
