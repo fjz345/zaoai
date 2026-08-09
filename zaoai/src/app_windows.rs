@@ -1,14 +1,10 @@
 use std::{ ops::RangeInclusive, path::PathBuf, sync::{Arc, Mutex, mpsc::{self, Receiver, Sender}}, thread::JoinHandle};
 
 use crate::{
-    app::{AppState, MenuWindowData},
-    egui_ext::{add_slider_sized, Interval},
-    mnist::get_mnist,
-    zneural_network::{
+    app::{AppState, MenuWindowData}, egui_ext::{Interval, add_slider_sized}, mnist::get_mnist, zneural_network::{
         activation::ActivationFunctionType, cost::CostFunction, datapoint::{
-            create_2x2_test_datapoints,  DataPoint, TrainingData, TrainingDataset,
-            VirtualTrainingDataset,
-        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{test_nn, FloatDecay, TestResults, TrainingSession, TrainingState}
+            DataPoint, TrainingData, TrainingDataset, VirtualTrainingDataset, create_2x2_test_datapoints,
+        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn}
     },
 };
 use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Sense, Slider, SliderClamping};
@@ -449,7 +445,8 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                     let training_data_clone = training_data.clone();
                                     self.test_nn_handle = Some(std::thread::spawn(move || {
                                         log::trace!("Test Thread test_nn spawned!");
-                                        match test_nn(&mut ai_clone, &training_data_clone.test_split(), is_correct_fn, maybe_tx, Some(rx_abort))
+                                        let pingpong = &mut NeuralNetworkPingPong::new(ai_clone.max_layer_nodes());
+                                        match test_nn(&mut ai_clone, &training_data_clone.test_split(), is_correct_fn, maybe_tx, Some(rx_abort), pingpong)
                                         {
                                             Ok(r) => {
                                                 log::trace!("Test Thread test_nn complete!");

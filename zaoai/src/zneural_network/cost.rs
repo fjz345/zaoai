@@ -23,13 +23,14 @@ impl CostFunction {
     }
     pub fn call_d(&self, predicted: &[f32], expected: &[f32]) -> f32 {
         match self {
-            CostFunction::Mse => mse(predicted, expected),
+            CostFunction::Mse => mse_d(predicted, expected),
             CostFunction::CrossEntropyBinary => cross_entropy_loss_binary_d(predicted, expected),
             CostFunction::CrossEntropyMulticlass => {
-                cross_entropy_loss_multiclass(predicted, expected)
+                cross_entropy_loss_multiclass_d(predicted, expected)
             }
         }
     }
+    #[cfg(feature = "simd")]
     pub fn call_simd(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
         match self {
             CostFunction::Mse => mse_simd(predicted, expected),
@@ -39,6 +40,7 @@ impl CostFunction {
             }
         }
     }
+    #[cfg(feature = "simd")]
     pub fn call_simd_d(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
         match self {
             CostFunction::Mse => mse_d_simd(predicted, expected),

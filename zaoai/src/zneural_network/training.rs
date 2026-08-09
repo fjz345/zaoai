@@ -13,7 +13,7 @@ use strum_macros::Display;
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
     is_correct::ConfusionEvaluator,
-    neuralnetwork::{NNOutputs, NeuralNetwork},
+    neuralnetwork::{NNOutputs, NeuralNetwork, NeuralNetworkPingPong},
     thread::TrainingThreadPayload,
 };
 
@@ -336,6 +336,7 @@ pub fn test_nn<'a>(
     is_correct_fn: ConfusionEvaluator,
     tx_test_metadata: Option<Sender<TrainingThreadPayload>>,
     tx_abort: Option<Receiver<()>>,
+    pingpong: &mut NeuralNetworkPingPong,
 ) -> Result<&'a TestResults, anyhow::Error> {
     if test_data.len() >= 1
         && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
@@ -348,14 +349,12 @@ pub fn test_nn<'a>(
         let mut results = Vec::with_capacity(test_data.len());
         for i in 0..test_data.len() {
             let datapoint = &test_data[i];
-            let outputs = nn.calculate_outputs(&datapoint.inputs[..]);
-
+            let cost = nn.calculate_costs(std::slice::from_ref(&test_data[i]), pingpong);
             if let Some(tx_test_metadata) = &tx_test_metadata {
-                let cost = nn.calculate_costs(std::slice::from_ref(&test_data[i]));
                 let mut metadata_point =
                     AIResultMetadata::new(DatasetUsage::Test, cost as f64, cost as f64, 0.0);
 
-                let confusion = is_correct_fn.evaluate(&outputs, &datapoint.expected_outputs);
+                let confusion = is_correct_fn.evaluate(&pingpong.next, &datapoint.expected_outputs);
                 match confusion {
                     crate::zneural_network::is_correct::ConfusionCategory::TruePositive => {
                         metadata_point.true_positives += 1
@@ -389,10 +388,11 @@ pub fn test_nn<'a>(
                 }
             }
 
-            results.push((test_data[i].clone(), outputs));
+            results.push((test_data[i].clone(), pingpong.next.clone()));
         }
 
-        let cost = nn.calculate_costs(test_data);
+        // TODO: Do not calculate_cost another time here
+        let cost = nn.calculate_costs(test_data, pingpong);
         // let test_results = TestResults::new(results, None, avg_cost);
         let test_results = TestResults::new(results, is_correct_fn, cost);
         nn.last_test_results = Some(test_results);

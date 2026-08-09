@@ -258,9 +258,10 @@ impl eframe::App for ZaoaiApp {
                             self.training_thread.rx_validation_payload = None;
                         }
 
-                        if received_any_training || received_any_validation {
-                            ctx.request_repaint();
-                        }
+                        // if received_any_training || received_any_validation {
+                        // Need to repaint each frame for now. Otherwise crash due to channel disconnect on complete
+                        ctx.request_repaint();
+                        // }
 
                         let training_in_progress = self.training_thread.training_in_progress();
                         if !training_in_progress && received_any_training {

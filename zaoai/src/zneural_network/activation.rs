@@ -17,10 +17,7 @@ pub enum ActivationFunctionType {
 
 impl ActivationFunctionType {
     #[cfg(feature = "simd")]
-    pub fn apply_softmax(layer_values: &[f32]) -> Vec<f32> {
-        let len = layer_values.len();
-        let mut output = vec![0.0f32; len];
-
+    pub fn apply_softmax(layer_values: &mut [f32]) {
         let max_val = layer_values
             .iter()
             .copied()
@@ -33,6 +30,7 @@ impl ActivationFunctionType {
         for chunk in chunks {
             use wide::f32x8;
 
+            // TODO: as_mut_chunk
             let v = f32x8::from(chunk);
             let e = (v - f32x8::splat(max_val)).exp();
             let temp = e.to_array();
@@ -48,11 +46,9 @@ impl ActivationFunctionType {
         let sum_f32 = sum as f32;
 
         // Normalize
-        for (i, &val) in layer_values.iter().enumerate() {
-            output[i] = (val - max_val).exp() / sum_f32;
+        for val in layer_values.iter_mut() {
+            *val = (*val - max_val).exp() / sum_f32;
         }
-
-        output
     }
     #[cfg(not(feature = "simd"))]
     pub fn apply_softmax(layer_values: &[f32]) -> Vec<f32> {

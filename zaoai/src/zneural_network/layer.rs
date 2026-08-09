@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 use wide::f32x8;
 
-use crate::zneural_network::activation::ActivationFunctionType;
-#[cfg(feature = "simd")]
 use crate::zneural_network::cost::CostFunction;
+use crate::zneural_network::{
+    activation::ActivationFunctionType, neuralnetwork::NeuralNetworkPingPong,
+};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -317,34 +318,29 @@ impl Layer {
     }
 
     #[cfg(not(feature = "simd"))]
-    pub fn apply_activation(weighted_inputs: &[f32], t: ActivationFunctionType) -> Vec<f32> {
-        weighted_inputs.iter().map(|&x| t.activate(x)).collect()
+    pub fn apply_activation(weighted_inputs: &mut [f32], t: ActivationFunctionType) {
+        weighted_inputs.iter_mut().for_each(|x| *x = t.activate(*x));
     }
     #[cfg(feature = "simd")]
-    pub fn apply_activation(input: &[f32], t: ActivationFunctionType) -> Vec<f32> {
+    pub fn apply_activation(input: &mut [f32], t: ActivationFunctionType) {
         const CHUNK_SIZE: usize = 8;
 
-        let len = input.len();
-        let mut result = vec![0f32; len];
+        let mut chunks = input.chunks_exact_mut(CHUNK_SIZE);
+        // let mut chunks = input.as_chunks_mut::<CHUNK_SIZE>().0;
 
-        let chunks = input.chunks_exact(CHUNK_SIZE);
-        let remainder = chunks.remainder();
+        for chunk in chunks.by_ref() {
+            let arr: [f32; CHUNK_SIZE] = (&*chunk).try_into().unwrap();
+            let input_vec = f32x8::from(arr);
 
-        for (i, chunk) in chunks.enumerate() {
-            let input_vec = f32x8::from(chunk);
             let activated_vec = t.activate_simd(input_vec);
             let out: [f32; CHUNK_SIZE] = activated_vec.into();
 
-            let start = i * CHUNK_SIZE;
-            result[start..start + CHUNK_SIZE].copy_from_slice(&out);
+            chunk.copy_from_slice(&out);
         }
 
-        let rem_start = len - remainder.len();
-        for (i, &x) in remainder.iter().enumerate() {
-            result[rem_start + i] = t.activate(x);
+        for x in chunks.into_remainder() {
+            *x = t.activate(*x);
         }
-
-        result
     }
 
     #[cfg(not(feature = "simd"))]
@@ -401,66 +397,64 @@ impl Layer {
         }
     }
 
-    pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-        self.compute_weighted_inputs_scalar(inputs, &mut weighted_inputs);
-        Self::apply_activation(&weighted_inputs, self.activation_type)
+    #[cfg(not(feature = "simd"))]
+    pub fn calculate_outputs(&self, inputs: &[f32], outputs: &mut [f32]) {
+        self.compute_weighted_inputs_scalar(inputs, outputs);
+        Self::apply_activation(outputs, self.activation_type);
     }
     #[cfg(feature = "simd")]
-    pub fn calculate_outputs_simd(&self, inputs: &[f32]) -> Vec<f32> {
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-        self.compute_weighted_inputs_simd(inputs, &mut weighted_inputs);
-        Self::apply_activation(&weighted_inputs, self.activation_type)
+    pub fn calculate_outputs_simd(&self, inputs: &[f32], outputs: &mut [f32]) {
+        self.compute_weighted_inputs_simd(inputs, outputs);
+        Self::apply_activation(outputs, self.activation_type);
     }
     #[allow(dead_code)]
     #[cfg(feature = "simd")]
-    pub fn calculate_outputs_simd_rayon(&self, inputs: &[f32]) -> Vec<f32> {
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-        self.compute_weighted_inputs_simd_rayon(inputs, &mut weighted_inputs);
-        Self::apply_activation(&weighted_inputs, self.activation_type)
+    pub fn calculate_outputs_simd_rayon(&self, inputs: &[f32], outputs: &mut [f32]) {
+        self.compute_weighted_inputs_simd_rayon(inputs, outputs);
+        Self::apply_activation(outputs, self.activation_type);
     }
 
     pub fn calculate_outputs_learn(
         &mut self,
         inputs: &[f32],
+        outputs: &mut [f32],
         learn_data: &mut LayerLearnData,
-    ) -> Vec<f32> {
-        learn_data.inputs.clone_from_slice(inputs);
+    ) {
+        learn_data.inputs.clear();
+        learn_data.inputs.extend_from_slice(inputs);
 
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-        self.compute_weighted_inputs_scalar(inputs, &mut weighted_inputs);
-
-        self.fill_learn_data(learn_data, &weighted_inputs);
-        learn_data.activation_values.clone()
+        self.compute_weighted_inputs_scalar(inputs, outputs);
+        self.fill_learn_data(learn_data, &outputs);
+        outputs.copy_from_slice(&learn_data.activation_values);
     }
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd(
         &mut self,
         inputs: &[f32],
+        outputs: &mut [f32],
         learn_data: &mut LayerLearnData,
-    ) -> Vec<f32> {
-        learn_data.inputs.clone_from_slice(inputs);
+    ) {
+        learn_data.inputs.clear();
+        learn_data.inputs.extend_from_slice(inputs);
 
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-        self.compute_weighted_inputs_simd(inputs, &mut weighted_inputs);
-
-        self.fill_learn_data(learn_data, &weighted_inputs);
-        learn_data.activation_values.clone()
+        self.compute_weighted_inputs_simd(inputs, outputs);
+        self.fill_learn_data(learn_data, &outputs);
+        outputs.copy_from_slice(&learn_data.activation_values);
     }
     #[allow(dead_code)]
     #[cfg(feature = "simd")]
     pub fn calculate_outputs_learn_simd_rayon(
         &mut self,
         inputs: &[f32],
+        outputs: &mut [f32],
         learn_data: &mut LayerLearnData,
-    ) -> Vec<f32> {
-        learn_data.inputs.clone_from_slice(inputs);
+    ) {
+        learn_data.inputs.clear();
+        learn_data.inputs.extend_from_slice(inputs);
 
-        let mut weighted_inputs = vec![0.0; self.num_out_nodes];
-        self.compute_weighted_inputs_simd_rayon(inputs, &mut weighted_inputs);
-
-        self.fill_learn_data(learn_data, &weighted_inputs);
-        learn_data.activation_values.clone()
+        self.compute_weighted_inputs_simd_rayon(inputs, outputs);
+        self.fill_learn_data(learn_data, &outputs);
+        outputs.copy_from_slice(&learn_data.activation_values);
     }
 
     pub fn apply_cost_gradient(&mut self, learn_rate: f32) {
@@ -609,7 +603,10 @@ impl Layer {
         cost_fn: CostFunction,
     ) {
         for i in 0..learn_data.node_values.len() {
-            let dcost = cost_fn.call_d(learn_data.activation_values[i], expected_outputs[i]);
+            let dcost = cost_fn.call_d(
+                &vec![learn_data.activation_values[i]],
+                &vec![expected_outputs[i]],
+            );
             let dactivation = self
                 .activation_type
                 .activate_derivative(learn_data.weighted_inputs[i]);

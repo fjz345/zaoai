@@ -97,6 +97,20 @@ impl GraphStructure {
     }
 }
 
+pub struct NeuralNetworkPingPong {
+    pub current: Vec<f32>, // in
+    pub next: Vec<f32>,    // out
+}
+
+impl NeuralNetworkPingPong {
+    pub fn new(max_layer_nodes: usize) -> Self {
+        Self {
+            current: Vec::with_capacity(max_layer_nodes),
+            next: Vec::with_capacity(max_layer_nodes),
+        }
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, bincode::Encode, bincode::Decode)]
 pub struct NeuralNetwork {
@@ -167,6 +181,21 @@ impl NeuralNetwork {
         }
     }
 
+    pub fn max_layer_nodes(&self) -> usize {
+        let hidden_layers_max = *self
+            .graph_structure
+            .hidden_layers
+            .iter()
+            .max()
+            .unwrap_or(&0);
+        let max = self
+            .graph_structure
+            .input_nodes
+            .max(self.graph_structure.output_nodes)
+            .max(hidden_layers_max);
+        max
+    }
+
     fn apply_dropout(inputs: &mut [f32], mask: &mut Vec<f32>, dropout_prob: f32) {
         let keep_prob = 1.0 - dropout_prob;
         let mut rng = rand::thread_rng();
@@ -188,6 +217,7 @@ impl NeuralNetwork {
         learn_rate: f32,
         batch_data_cost: &mut f32,
         batch_data_loss: &mut f32,
+        pingpong: &mut NeuralNetworkPingPong,
     ) -> Vec<Vec<f32>> {
         if batch_data.len() <= 0 {
             panic!("DataPoints length was 0");
@@ -197,17 +227,16 @@ impl NeuralNetwork {
         let mut last_loss = 0.0; // last batches cost
         let mut batch_data_outputs = Vec::with_capacity(batch_data.len());
         for (i, datapoint) in batch_data.iter().enumerate() {
-            let datapoint_outputs = self.learn_calculate_outputs(datapoint);
+            self.learn_calculate_outputs(datapoint, pingpong);
             // let loss =
             //     cross_entropy_loss_multiclass(&datapoint_outputs, &datapoint.expected_outputs);
-            let cost = self.cost_function(&datapoint_outputs, &datapoint.expected_outputs);
+            let cost = self.cost_function(&pingpong.next, &datapoint.expected_outputs);
 
             total_cost += cost;
             if i == batch_data.len() - 1 {
                 last_loss = cost;
             }
-
-            batch_data_outputs.push(datapoint_outputs);
+            batch_data_outputs.push(pingpong.next.clone());
         }
         // Adjust weights & biases
         self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
@@ -229,6 +258,7 @@ impl NeuralNetwork {
         learn_rate: f32,
         is_correct_fn: ConfusionEvaluator,
         mut epoch_metadata: Option<&mut AIResultMetadata>,
+        pingpong: &mut NeuralNetworkPingPong,
     ) {
         assert!(!training_data.is_empty());
         assert_eq!(
@@ -256,8 +286,13 @@ impl NeuralNetwork {
 
                 let mut batch_data_cost = 0.0;
                 let mut batch_data_loss = 0.0;
-                let batch_data_outputs =
-                    self.learn_batch(data, learn_rate, &mut batch_data_cost, &mut batch_data_loss);
+                let batch_data_outputs = self.learn_batch(
+                    data,
+                    learn_rate,
+                    &mut batch_data_cost,
+                    &mut batch_data_loss,
+                    pingpong,
+                );
 
                 if let Some(metadata) = epoch_metadata.as_mut() {
                     let mut new_metadata = AIResultMetadata::new(
@@ -341,10 +376,13 @@ impl NeuralNetwork {
         assert!(training_data.len() > 0);
         assert!(batch_size > 0);
 
+        let pingpong = &mut NeuralNetworkPingPong::new(self.max_layer_nodes());
+
         for e in 0..num_epochs {
             let mut test_nn_and_send_payload =
                 |tx: &Sender<TrainingThreadPayload>, data: &[DataPoint], payload_index: usize| {
-                    if let Some(test_results) = test_nn(self, data, is_correct_fn, None, None).ok()
+                    if let Some(test_results) =
+                        test_nn(self, data, is_correct_fn, None, None, pingpong).ok()
                     {
                         let mut result_metadata = AIResultMetadata::from_accuracy(
                             test_results.accuracy.unwrap_or_default() as f64,
@@ -396,6 +434,7 @@ impl NeuralNetwork {
                 maybe_decayed_learn_rate,
                 is_correct_fn,
                 Some(&mut metadata),
+                pingpong,
             );
 
             if tx_training_metadata.is_some() {
@@ -421,34 +460,39 @@ impl NeuralNetwork {
         log::info!("Training...Complete! [@{} Epochs]", num_epochs);
     }
 
-    pub fn learn_calculate_outputs(&mut self, datapoint: &DataPoint) -> Vec<f32> {
-        let outputs = self.forward(&datapoint.inputs);
+    pub fn learn_calculate_outputs(
+        &mut self,
+        datapoint: &DataPoint,
+        pingpong: &mut NeuralNetworkPingPong,
+    ) {
+        self.forward(&datapoint.inputs, pingpong);
         self.backpropagation(datapoint);
-        outputs
+        // Now results should be in pingpong.next
     }
 
-    fn forward(&mut self, inputs: &[f32]) -> Vec<f32> {
-        let mut current_inputs = inputs.to_vec();
+    fn forward(&mut self, inputs: &[f32], pingpong: &mut NeuralNetworkPingPong) {
+        pingpong.current.clear();
+        pingpong.current.extend_from_slice(inputs);
 
         for (i, layer) in self.layers.iter_mut().enumerate() {
-            let learn_data = &mut self.layer_learn_data[i];
-            learn_data.inputs.reserve(current_inputs.len());
+            pingpong.next.resize(layer.num_out_nodes, 0.0);
 
-            current_inputs = if cfg!(feature = "simd") {
-                layer.calculate_outputs_learn_simd(&mut current_inputs, learn_data)
-            } else {
-                layer.calculate_outputs_learn(&mut current_inputs, learn_data)
-            };
+            let learn_data = &mut self.layer_learn_data[i];
+            #[cfg(feature = "simd")]
+            layer.calculate_outputs_learn_simd(&pingpong.current, &mut pingpong.next, learn_data);
+            #[cfg(not(feature = "simd"))]
+            layer.calculate_outputs_learn(&pingpong.current, &mut pingpong.next, learn_data);
 
             if let Some(prob) = layer.dropout_prob {
                 let mask = learn_data
                     .dropout_mask
-                    .get_or_insert_with(|| vec![0.0; current_inputs.len()]);
-                Self::apply_dropout(&mut current_inputs, mask, prob);
+                    .get_or_insert_with(|| vec![0.0; pingpong.next.len()]);
+                Self::apply_dropout(&mut pingpong.next, mask, prob);
             }
+            std::mem::swap(&mut pingpong.current, &mut pingpong.next);
         }
-
-        current_inputs
+        // For simplicity, keep input at current, output at next
+        std::mem::swap(&mut pingpong.current, &mut pingpong.next);
     }
 
     fn backpropagation(&mut self, datapoint: &DataPoint) {
@@ -506,33 +550,59 @@ impl NeuralNetwork {
         }
     }
 
-    pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
-        let mut current_inputs = inputs.to_vec();
-        for (_, layer) in self.layers.iter().enumerate() {
+    // pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
+    //     let mut current_inputs = inputs.to_vec();
+    //     for (_, layer) in self.layers.iter().enumerate() {
+    //         #[cfg(feature = "simd")]
+    //         {
+    //             current_inputs = layer.calculate_outputs_simd(&current_inputs);
+    //         }
+    //         #[cfg(not(feature = "simd"))]
+    //         {
+    //             current_inputs = layer.calculate_outputs(&current_inputs);
+    //         }
+    //     }
+
+    //     if self.is_softmax_output {
+    //         ActivationFunctionType::apply_softmax(&mut current_inputs);
+    //     }
+    //     current_inputs
+    // }
+    pub fn calculate_outputs(&self, inputs: &[f32], pingpong: &mut NeuralNetworkPingPong) {
+        pingpong.current.clear();
+        pingpong.current.extend_from_slice(inputs);
+
+        for layer in &self.layers {
+            pingpong.next.resize(layer.num_out_nodes, 0.0);
+
             #[cfg(feature = "simd")]
-            {
-                current_inputs = layer.calculate_outputs_simd(&current_inputs);
-            }
+            layer.calculate_outputs_simd(&pingpong.current, &mut pingpong.next);
             #[cfg(not(feature = "simd"))]
-            {
-                current_inputs = layer.calculate_outputs(&current_inputs);
-            }
+            layer.calculate_outputs(&pingpong.current, &mut pingpong.next);
+
+            std::mem::swap(&mut pingpong.current, &mut pingpong.next);
         }
 
+        // Simplicity, keep input at current, output at next
+        std::mem::swap(&mut pingpong.current, &mut pingpong.next);
+
         if self.is_softmax_output {
-            current_inputs = ActivationFunctionType::apply_softmax(&current_inputs)
+            ActivationFunctionType::apply_softmax(&mut pingpong.next);
         }
-        current_inputs
     }
 
     fn cost_function(&self, predicted: &[f32], expected: &[f32]) -> f32 {
         self.cost_fn.call(predicted, expected)
     }
     #[cfg(not(feature = "simd"))]
-    fn calculate_cost_datapoint(&self, datapoint: &DataPoint) -> f32 {
+    fn calculate_cost_datapoint(
+        &self,
+        datapoint: &DataPoint,
+        pingpong: &mut NeuralNetworkPingPong,
+    ) -> f32 {
         // Prediction cost
-        let outputs = self.calculate_outputs(&datapoint.inputs);
-        let cost = self.cost_function(&outputs, &datapoint.expected_outputs);
+        self.calculate_outputs(&datapoint.inputs, pingpong);
+        let cost = self.cost_function(&pingpong.next, &datapoint.expected_outputs);
 
         // L2 regularization penalty (sum of squared weights)
         let l2_penalty: f32 = self
@@ -546,41 +616,41 @@ impl NeuralNetwork {
         const LAMBDA: f32 = 0.001;
         cost + LAMBDA * l2_penalty
     }
-    pub fn calculate_costs(&self, data: &[DataPoint]) -> f32 {
+    pub fn calculate_costs(&self, data: &[DataPoint], pingpong: &mut NeuralNetworkPingPong) -> f32 {
         assert!(!data.is_empty(), "Input data was empty");
 
         #[cfg(feature = "simd")]
         {
-            self.calculate_cost_simd(data)
+            self.calculate_cost_simd(data, pingpong)
         }
         #[cfg(not(feature = "simd"))]
         {
-            self.calculate_cost(data)
+            self.calculate_cost(data, pingpong)
         }
     }
     #[cfg(not(feature = "simd"))]
-    fn calculate_cost(&self, data: &[DataPoint]) -> f32 {
+    fn calculate_cost(&self, data: &[DataPoint], pingpong: &mut NeuralNetworkPingPong) -> f32 {
         let total: f32 = data
             .iter()
-            .map(|dp| self.calculate_cost_datapoint(dp))
+            .map(|dp| self.calculate_cost_datapoint(dp, pingpong))
             .sum();
 
         total / (data.len() as f32)
     }
     #[cfg(feature = "simd")]
-    fn calculate_cost_simd(&self, data: &[DataPoint]) -> f32 {
+    fn calculate_cost_simd(&self, data: &[DataPoint], pingpong: &mut NeuralNetworkPingPong) -> f32 {
         let output_layer = self.layers.last().unwrap();
         let num_outputs = output_layer.num_out_nodes;
 
         let total_cost: f32 = data
             .iter()
             .map(|datapoint| {
-                let output = self.calculate_outputs(&datapoint.inputs);
+                self.calculate_outputs(&datapoint.inputs, pingpong);
                 let mut sum = f32x8::splat(0.0);
                 let mut i = 0;
 
                 while i + 8 <= num_outputs {
-                    let pred = f32x8::from(&output[i..i + 8]);
+                    let pred = f32x8::from(&pingpong.next[i..i + 8]);
                     let expected = f32x8::from(&datapoint.expected_outputs[i..i + 8]);
                     sum += self.cost_fn.call_simd(pred, expected);
                     i += 8;
@@ -590,7 +660,7 @@ impl NeuralNetwork {
                 if i < num_outputs {
                     cost += self
                         .cost_fn
-                        .call(&output[i..], &datapoint.expected_outputs[i..]);
+                        .call(&pingpong.next[i..], &datapoint.expected_outputs[i..]);
                 }
                 cost
             })
