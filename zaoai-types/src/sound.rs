@@ -560,3 +560,24 @@ pub unsafe fn get_spectrogram_dims(spectrogram: &Spectrogram) -> (usize, usize) 
         (width, height)
     }
 }
+
+// let path_testdir = String::from("test_files");
+// // let filename = String::from("mp3.mp3");
+// let filename = String::from("test0.mkv");
+// let mut path = std::path::PathBuf::from(path_testdir);
+// path.push(filename);
+// let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
+
+// // let mut wav = audio::Wav::default();
+// // unsafe {
+// //     wav.load_raw_wav(&samples)?;
+// // }
+// // wav.set_volume(0.2);
+// // preview_sound_file(wav);
+
+// save_spectrograph_as_png(
+//     &PathBuf::from("").join("test2.png"),
+//     &samples,
+//     sample_rate,
+//     [512, 512],
+// );

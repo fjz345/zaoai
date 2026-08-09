@@ -51,29 +51,8 @@ fn main() -> Result<()> {
         "RUST_LOG",
         "debug,
         eframe::native::run=info, egui_winit=info, eframe::native=info",
-    ); // or "info" or "debug"
+    );
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
-
-    // let path_testdir = String::from("test_files");
-    // // let filename = String::from("mp3.mp3");
-    // let filename = String::from("test0.mkv");
-    // let mut path = std::path::PathBuf::from(path_testdir);
-    // path.push(filename);
-    // let (samples, sample_rate) = decode_samples_from_file(&path.as_path());
-
-    // // let mut wav = audio::Wav::default();
-    // // unsafe {
-    // //     wav.load_raw_wav(&samples)?;
-    // // }
-    // // wav.set_volume(0.2);
-    // // preview_sound_file(wav);
-
-    // save_spectrograph_as_png(
-    //     &PathBuf::from("").join("test2.png"),
-    //     &samples,
-    //     sample_rate,
-    //     [512, 512],
-    // );
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([2560.0, 1440.0]),
@@ -83,7 +62,6 @@ fn main() -> Result<()> {
         "ZaoAI",
         native_options,
         Box::new(move |cc: &eframe::CreationContext<'_>| {
-            // This gives us image support:
             egui_extras::install_image_loaders(&cc.egui_ctx);
 
             // Persistent storage started bugging out, disabled for now.

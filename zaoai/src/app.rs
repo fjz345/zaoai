@@ -192,7 +192,6 @@ impl eframe::App for ZaoaiApp {
                     TrainingState::Idle => {
                         log::trace!("TrainingState::Idle");
                     }
-
                     TrainingState::StartTraining => {
                         if let Some(ai) = &self.ai {
                             if !self.training_thread.training_in_progress() {
@@ -241,45 +240,30 @@ impl eframe::App for ZaoaiApp {
                             .as_mut()
                             .expect("ERROR");
 
-                        const MAX_TO_PROCESS: usize = 1000;
-                        for _ in 0..MAX_TO_PROCESS {
-                            match rx_validation.try_recv() {
-                                Ok(result_metadata) => {
-                                    self.training_thread
-                                        .payload_validation_buffer
-                                        .push(result_metadata);
-                                }
-                                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                                    log::warn!("Validation channel disconnected");
-                                    self.training_thread.rx_validation_payload = None;
-                                    break;
-                                }
-                            }
+                        let (received_any_training, train_disconnected) = process_payload_channel(
+                            rx_training,
+                            &mut self.training_thread.payload_training_buffer,
+                            "Training channel disconnected",
+                        );
+                        if train_disconnected {
+                            self.training_thread.rx_training_payload = None;
                         }
 
-                        let mut received_any_training = false;
-                        for _ in 0..MAX_TO_PROCESS {
-                            match rx_training.try_recv() {
-                                Ok(result_metadata) => {
-                                    self.training_thread
-                                        .payload_training_buffer
-                                        .push(result_metadata);
-                                    received_any_training = true;
-                                }
-                                Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                                    log::warn!("Training channel disconnected");
-                                    self.training_thread.rx_training_payload = None;
-                                    break;
-                                }
-                            }
+                        let (_received_any_validation, validation_disconnected) =
+                            process_payload_channel(
+                                rx_validation,
+                                &mut self.training_thread.payload_validation_buffer,
+                                "Validation channel disconnected",
+                            );
+                        if validation_disconnected {
+                            self.training_thread.rx_validation_payload = None;
                         }
 
-                        let in_progress = self.training_thread.training_in_progress();
-                        if !in_progress && received_any_training {
-                            let payload_buffer = &self.training_thread.payload_training_buffer;
-                            if payload_buffer.len() != payload_buffer.capacity() {
+                        let training_in_progress = self.training_thread.training_in_progress();
+                        if !training_in_progress && received_any_training {
+                            let training_payload_buffer =
+                                &self.training_thread.payload_training_buffer;
+                            if training_payload_buffer.len() != training_payload_buffer.capacity() {
                                 log::error!("payload_buffer.len() != payload_buffer.capacity(), some data was not put in payload_buffer");
                             }
                             self.training_session.set_state(TrainingState::Finish);
@@ -294,16 +278,14 @@ impl eframe::App for ZaoaiApp {
                             .as_ref()
                             .expect("ERROR")
                             .try_recv();
-                        if result.is_ok() {
-                            log::info!("Training result recieved, updating ai");
-                            self.ai = Some(result.unwrap());
+                        if let Ok(result) = result {
+                            log::info!("Training result recieved, updating AI");
+                            self.ai = Some(result);
 
                             self.training_session.set_state(TrainingState::Idle);
                             self.state = AppState::Idle;
                         }
-                    } // TrainingState::Abort => {
-                      //     panic!("Not Implemented");
-                      // }
+                    }
                 }
 
                 let (_response, rect) = self.draw_ui(ctx, frame);
@@ -382,6 +364,32 @@ impl Default for ZaoaiApp {
     }
 }
 
+fn process_payload_channel<T>(
+    rx: &std::sync::mpsc::Receiver<T>,
+    buffer: &mut Vec<T>,
+    warn_msg: &str,
+) -> (bool, bool) {
+    const MAX_TO_PROCESS: usize = 1000;
+    let mut received = false;
+    let mut disconnected = false;
+
+    for _ in 0..MAX_TO_PROCESS {
+        match rx.try_recv() {
+            Ok(item) => {
+                buffer.push(item);
+                received = true;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                log::warn!("{}", warn_msg);
+                disconnected = true;
+                break;
+            }
+        }
+    }
+    (received, disconnected)
+}
+
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Default, Debug, Clone, Copy, PartialEq, strum_macros::Display)]
 pub enum AppState {
@@ -438,257 +446,184 @@ impl ZaoaiApp {
     ) -> (InnerResponse<InnerResponse<()>>, Rect) {
         let mut min_rect = Rect::ZERO;
         let response = egui::CentralPanel::default().show(ctx, |ui| {
-            let mut change_state_to_setupai = false;
+            let mut change_state = false;
 
             ui.vertical(|ui| {
                 ui.checkbox(&mut self.window_data.show_ai, "Show AI");
                 ui.checkbox(&mut self.window_data.show_traning_dataset, "Show Dataset");
-
                 ui.checkbox(&mut self.window_data.show_training_session, "Show Training");
-
                 ui.checkbox(
                     &mut self.window_data.show_training_graph,
                     "Show Training Graph",
                 );
 
                 let name_label = ui.label("Create new NN with layers");
-                let changed = ui
+                change_state |= ui
                     .text_edit_singleline(&mut self.window_data.graph_structure_string)
                     .labelled_by(name_label.id)
                     .lost_focus();
-                change_state_to_setupai |= changed;
 
                 ui.horizontal(|ui| {
                     let dropout_slider = add_slider_sized(
                         ui,
                         100.0,
-                        Slider::new(
-                            &mut self.window_data.ai_dropout_prob,
-                            RangeInclusive::new(0.01, 0.5),
-                        )
-                        .clamping(egui::SliderClamping::Never)
-                        .min_decimals(2)
-                        .max_decimals_opt(Some(5)),
+                        Slider::new(&mut self.window_data.ai_dropout_prob, 0.01..=0.5)
+                            .clamping(egui::SliderClamping::Never)
+                            .min_decimals(2)
+                            .max_decimals_opt(Some(5)),
                     );
-                    let changed = dropout_slider.drag_stopped();
-                    change_state_to_setupai |= changed;
-
+                    change_state |= dropout_slider.drag_stopped();
                     ui.label("Dropout %");
                 });
 
-                let changed = ui
+                change_state |= ui
                     .checkbox(
                         &mut self.window_data.ai_use_softmax_output,
                         "Use softmax output",
                     )
                     .changed();
-                change_state_to_setupai |= changed;
 
-                let act_before = self.window_data.ai_activation_function;
-                let _combo_response = egui::ComboBox::from_label("Activation Function")
-                    .selected_text(self.window_data.ai_activation_function.to_string())
-                    .show_ui(ui, |ui| {
-                        for variant in [
-                            ActivationFunctionType::ReLU,
-                            ActivationFunctionType::Sigmoid,
-                        ] {
-                            ui.selectable_value(
-                                &mut self.window_data.ai_activation_function,
-                                variant,
-                                variant.to_string(),
-                            );
-                        }
-                    });
+                macro_rules! combo {
+                    ($label:expr, $field:expr, $variants:expr) => {{
+                        let before = $field;
+                        egui::ComboBox::from_label($label)
+                            .selected_text($field.to_string())
+                            .show_ui(ui, |ui| {
+                                for variant in $variants {
+                                    ui.selectable_value(&mut $field, variant, variant.to_string());
+                                }
+                            });
+                        before != $field
+                    }};
+                }
 
-                let changed = act_before != self.window_data.ai_activation_function;
-                change_state_to_setupai |= changed;
+                change_state |= combo!(
+                    "Activation Function",
+                    self.window_data.ai_activation_function,
+                    [
+                        ActivationFunctionType::ReLU,
+                        ActivationFunctionType::Sigmoid
+                    ]
+                );
+                change_state |= combo!(
+                    "Is Correct Fn",
+                    self.window_data.ai_is_correct_fn,
+                    [
+                        ConfusionEvaluator::LargestLabel,
+                        ConfusionEvaluator::Zlbl,
+                        ConfusionEvaluator::ZlblLoose
+                    ]
+                );
+                change_state |= combo!(
+                    "Cost Fn",
+                    self.window_data.ai_cost_fn,
+                    [
+                        CostFunction::Mse,
+                        CostFunction::CrossEntropyMulticlass,
+                        CostFunction::CrossEntropyBinary
+                    ]
+                );
+                change_state |= combo!(
+                    "Weight Init",
+                    self.window_data.ai_weight_init,
+                    WeightInit::all().into_iter().map(|v| *v)
+                );
+                change_state |= combo!(
+                    "Bias Init",
+                    self.window_data.ai_bias_init,
+                    BiasInit::all().into_iter().map(|v| *v)
+                );
 
-                let is_correct_before = self.window_data.ai_is_correct_fn;
-                let _combo_response = egui::ComboBox::from_label("Is Correct Fn")
-                    .selected_text(self.window_data.ai_is_correct_fn.to_string())
-                    .show_ui(ui, |ui| {
-                        for variant in [
-                            ConfusionEvaluator::LargestLabel,
-                            ConfusionEvaluator::Zlbl,
-                            ConfusionEvaluator::ZlblLoose,
-                        ] {
-                            ui.selectable_value(
-                                &mut self.window_data.ai_is_correct_fn,
-                                variant,
-                                variant.to_string(),
-                            );
-                        }
-                    });
-                let changed = is_correct_before != self.window_data.ai_is_correct_fn;
-                change_state_to_setupai |= changed;
-
-                let cost_fn_before = self.window_data.ai_cost_fn;
-                let _combo_response = egui::ComboBox::from_label("Cost Fn")
-                    .selected_text(self.window_data.ai_cost_fn.to_string())
-                    .show_ui(ui, |ui| {
-                        for variant in [
-                            CostFunction::Mse,
-                            CostFunction::CrossEntropyMulticlass,
-                            CostFunction::CrossEntropyBinary,
-                        ] {
-                            ui.selectable_value(
-                                &mut self.window_data.ai_cost_fn,
-                                variant,
-                                variant.to_string(),
-                            );
-                        }
-                    });
-                let changed = cost_fn_before != self.window_data.ai_cost_fn;
-                change_state_to_setupai |= changed;
-
-                let weight_init_before = self.window_data.ai_weight_init;
-                let _combo_response = egui::ComboBox::from_label("Weight Init")
-                    .selected_text(self.window_data.ai_weight_init.to_string())
-                    .show_ui(ui, |ui| {
-                        for variant in WeightInit::all() {
-                            ui.selectable_value(
-                                &mut self.window_data.ai_weight_init,
-                                *variant,
-                                variant.to_string(),
-                            );
-                        }
-                    });
-                let changed = weight_init_before != self.window_data.ai_weight_init;
-                change_state_to_setupai |= changed;
-
-                let bias_init_before = self.window_data.ai_bias_init;
-                let _combo_response = egui::ComboBox::from_label("Bias Init")
-                    .selected_text(self.window_data.ai_bias_init.to_string())
-                    .show_ui(ui, |ui| {
-                        for variant in BiasInit::all() {
-                            ui.selectable_value(
-                                &mut self.window_data.ai_bias_init,
-                                *variant,
-                                variant.to_string(),
-                            );
-                        }
-                    });
-                let changed = bias_init_before != self.window_data.ai_bias_init;
-                change_state_to_setupai |= changed;
-
-                if change_state_to_setupai {
+                if change_state {
                     self.state = AppState::SetupAi;
                 }
             })
         });
+
         min_rect = min_rect.union(response.inner.response.rect);
 
-        // Windows
-        if self.window_data.show_traning_dataset {
-            self.window_training_set.with_ctx(
-                ctx,
-                &mut WindowTrainingSetCtx {
-                    training_data: &mut self.training_data,
-                },
-                |this, state_ctx| {
-                    let response = this.draw_ui(ctx, state_ctx);
-                    if let Some(r) = response {
-                        min_rect = min_rect.union(r.response.rect);
-                    }
-                },
-            );
+        macro_rules! draw_win {
+            ($show:expr, $window:expr, $ctx_struct:expr) => {
+                if $show {
+                    $window.with_ctx(ctx, $ctx_struct, |this, state_ctx| {
+                        if let Some(r) = this.draw_ui(ctx, state_ctx) {
+                            min_rect = min_rect.union(r.response.rect);
+                        }
+                    });
+                }
+            };
         }
 
-        if self.window_data.show_training_session {
-            self.window_training_session.with_ctx(
-                ctx,
-                &mut WindowTrainingSessionCtx {
-                    training_session: &mut self.training_session,
-                    app_state: &mut self.state,
-                    training_thread: &mut self.training_thread,
-                },
-                |this, state_ctx| {
-                    let response = this.draw_ui(ctx, state_ctx);
-                    if let Some(r) = response {
-                        min_rect = min_rect.union(r.response.rect);
-                    }
-                },
-            );
-        }
+        draw_win!(
+            self.window_data.show_traning_dataset,
+            self.window_training_set,
+            &mut WindowTrainingSetCtx {
+                training_data: &mut self.training_data
+            }
+        );
+
+        draw_win!(
+            self.window_data.show_training_session,
+            self.window_training_session,
+            &mut WindowTrainingSessionCtx {
+                training_session: &mut self.training_session,
+                app_state: &mut self.state,
+                training_thread: &mut self.training_thread,
+            }
+        );
+
+        draw_win!(
+            self.window_data.show_ai,
+            self.window_ai,
+            &mut WindowAiCtx {
+                ai: &mut self.ai,
+                test_button_training_data: &Some(&self.training_data),
+                ai_is_corret_fn: &self.window_data.ai_is_correct_fn,
+                payload_test_buffer: &mut self.payload_test_buffer,
+            }
+        );
 
         if self.window_data.show_ai {
-            self.window_ai.with_ctx(
-                ctx,
-                &mut WindowAiCtx {
-                    ai: &mut self.ai,
-                    test_button_training_data: &Some(&self.training_data),
-                    ai_is_corret_fn: &self.window_data.ai_is_correct_fn,
-                    payload_test_buffer: &mut self.payload_test_buffer,
-                },
-                |this, state_ctx| {
-                    let response = this.draw_ui(ctx, state_ctx);
-                    if let Some(r) = response {
-                        min_rect = min_rect.union(r.response.rect);
-                    }
-                },
-            );
-
             if let Some(rx) = &self.window_ai.test_nn_rx {
-                const MAX_TO_PROCESS: usize = 1000;
-                for _ in 0..MAX_TO_PROCESS {
-                    match rx.try_recv() {
-                        Ok(result_metadata) => {
-                            log::trace!("Test data received!");
-                            self.payload_test_buffer.push(result_metadata);
-                        }
-                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
-                    }
-                }
+                self.payload_test_buffer.extend(
+                    rx.try_iter()
+                        .take(1000)
+                        .inspect(|_| log::trace!("Test data received!")),
+                );
             }
         }
-        // TODO: Move this
-        // Handle test_nn thread done
+
         if self.window_ai.test_nn_handle.is_some() {
             if let Ok(mut nn_done) = self.window_ai.test_nn_done.try_lock() {
-                if let Some(r) = &*nn_done {
-                    log::info!("test_nn results recieved!");
-                    log::info!("{r}");
+                if let Some(r) = nn_done.take() {
+                    log::info!("test_nn results recieved!\n{r}");
                     if let Some(ai) = &mut self.ai {
-                        ai.last_test_results = Some(r.to_owned());
+                        ai.last_test_results = Some(r);
                     }
                     self.window_ai.test_nn_handle = None;
-                    *nn_done = None;
                 }
             }
         }
 
-        if self.window_data.show_training_graph {
-            self.window_training_graph.with_ctx(
-                ctx,
-                &mut WindowTrainingGraphCtx {
-                    payload_training_buffer: &mut self.training_thread.payload_training_buffer,
-                    payload_validation_buffer: &mut self.training_thread.payload_validation_buffer,
-                    payload_test_buffer: &mut self.payload_test_buffer,
-                },
-                |this, state_ctx| {
-                    let response = this.draw_ui(ctx, state_ctx);
-                    if let Some(r) = response {
-                        min_rect = min_rect.union(r.response.rect);
-                    }
-                },
-            );
-        }
-        if self.window_data.show_setup_presets {
-            self.window_setup_presets.with_ctx(
-                ctx,
-                &mut WindowAiSetupPresetsCtx {
-                    window_data: &mut self.window_data,
-                    state: &mut self.state,
-                },
-                |this, state_ctx| {
-                    let response = this.draw_ui(ctx, state_ctx);
-                    if let Some(r) = response {
-                        min_rect = min_rect.union(r.response.rect);
-                    }
-                },
-            );
-        }
+        draw_win!(
+            self.window_data.show_training_graph,
+            self.window_training_graph,
+            &mut WindowTrainingGraphCtx {
+                payload_training_buffer: &mut self.training_thread.payload_training_buffer,
+                payload_validation_buffer: &mut self.training_thread.payload_validation_buffer,
+                payload_test_buffer: &mut self.payload_test_buffer,
+            }
+        );
+
+        draw_win!(
+            self.window_data.show_setup_presets,
+            self.window_setup_presets,
+            &mut WindowAiSetupPresetsCtx {
+                window_data: &mut self.window_data,
+                state: &mut self.state,
+            }
+        );
+
         (response, min_rect)
     }
 }
