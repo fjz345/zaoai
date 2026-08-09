@@ -42,14 +42,21 @@ fn collect_flat_files(
     list: &[EntryKind],
     cull_empty_folders: bool,
     flat_files: &mut Vec<EntryKind>,
+    limit: Option<usize>,
 ) -> Result<()> {
     for item in list {
+        if let Some(max) = limit {
+            if flat_files.len() >= max {
+                return Ok(());
+            }
+        }
+
         match item {
             EntryKind::File(_) => flat_files.push(item.clone()),
             EntryKind::Directory(path_buf) => {
                 let entries = list_dir(path_buf, cull_empty_folders)
                     .with_context(|| format!("Failed to read directory: {}", path_buf.display()))?;
-                collect_flat_files(&entries, cull_empty_folders, flat_files)?;
+                collect_flat_files(&entries, cull_empty_folders, flat_files, limit)?;
             }
             EntryKind::Other(_) => {}
         }
@@ -60,9 +67,10 @@ fn collect_flat_files(
 pub fn list_dir_with_kind_has_chapters_split(
     list: &[EntryKind],
     cull_empty_folders: bool,
+    limit: Option<usize>,
 ) -> Result<ListDirSplit> {
     let mut flat_files = Vec::new();
-    collect_flat_files(list, cull_empty_folders, &mut flat_files)?;
+    collect_flat_files(list, cull_empty_folders, &mut flat_files, limit)?;
 
     let split = flat_files
         .into_par_iter()

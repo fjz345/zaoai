@@ -23,7 +23,6 @@ impl AsRef<PathBuf> for EntryKind {
         }
     }
 }
-
 pub fn list_dir<P: AsRef<Path>>(path: P, cull_empty_folders: bool) -> Result<Vec<EntryKind>> {
     let path = path.as_ref();
     let entries = fs::read_dir(path)
@@ -56,15 +55,26 @@ pub fn list_dir<P: AsRef<Path>>(path: P, cull_empty_folders: bool) -> Result<Vec
     Ok(results)
 }
 
-pub fn list_dir_all<P: AsRef<Path>>(path: P, cull_empty_folders: bool) -> Result<Vec<PathBuf>> {
+pub fn list_dir_all<P: AsRef<Path>>(
+    path: P,
+    cull_empty_folders: bool,
+    limit: Option<usize>,
+) -> Result<Vec<PathBuf>> {
     let list = list_dir(path, cull_empty_folders)?;
 
     let mut all_file_paths = Vec::new();
     for kind in list {
+        if let Some(max) = limit {
+            if all_file_paths.len() >= max {
+                break;
+            }
+        }
+
         match kind {
             EntryKind::File(path_buf) => all_file_paths.push(path_buf),
             EntryKind::Directory(path_buf) => {
-                let res = list_dir_all(path_buf, cull_empty_folders)?;
+                let sub_limit = limit.map(|max| max.saturating_sub(all_file_paths.len()));
+                let res = list_dir_all(path_buf, cull_empty_folders, sub_limit)?;
                 let collect_files: Vec<PathBuf> = res.iter().map(|f| f.clone()).collect();
                 all_file_paths.extend(collect_files);
             }

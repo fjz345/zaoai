@@ -126,7 +126,6 @@ fn ends_with_numbered_json(path: impl AsRef<Path>) -> bool {
 }
 
 fn find_next_available_file(mut out_path: PathBuf) -> Result<PathBuf> {
-    // Ensure filename ends in "_XXX.json"
     if !ends_with_numbered_json(&out_path) {
         let file_stem = out_path
             .file_stem()
@@ -138,22 +137,23 @@ fn find_next_available_file(mut out_path: PathBuf) -> Result<PathBuf> {
         out_path = dir.join(new_name);
     }
 
-    // Extract base name (before _XXX), directory, and extension
     let dir = out_path
         .parent()
         .unwrap_or_else(|| Path::new(""))
         .to_owned();
-    let file_name = out_path
-        .file_name()
+
+    let file_stem = out_path
+        .file_stem()
         .and_then(|s| s.to_str())
         .ok_or_else(|| anyhow::anyhow!("Invalid file name"))?;
 
-    let re = regex::Regex::new(r"^(.*)_\d+\.json$")?;
-    let caps = re
-        .captures(file_name)
+    let (base_name, suffix) = file_stem
+        .rsplit_once('_')
         .ok_or_else(|| anyhow::anyhow!("Filename not in expected format"))?;
 
-    let base_name = &caps[1];
+    if !suffix.chars().all(|c| c.is_ascii_digit()) {
+        anyhow::bail!("Filename not in expected format");
+    }
 
     // Try _001, _002, ..., until file doesn't exist
     for i in 1..999 {
@@ -171,8 +171,12 @@ pub fn collect_list_dir_split(path: impl AsRef<Path>, out_path: impl AsRef<Path>
     let path = path.as_ref();
     let out_path = out_path.as_ref();
 
+    let limit = std::env::var("MAX_FILE_CHECK_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok());
+
     let list_of_entries = list_dir(path, true)?;
-    let mut list_dir_split = list_dir_with_kind_has_chapters_split(&list_of_entries, true)?;
+    let mut list_dir_split = list_dir_with_kind_has_chapters_split(&list_of_entries, true, limit)?;
 
     list_dir_split.path_source = path.to_path_buf();
     list_dir_split.num_with_chapters = list_dir_split.with_chapters.len() as u32;

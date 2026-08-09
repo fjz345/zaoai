@@ -68,6 +68,10 @@ fn main() -> Result<()> {
 
     let media_path = resolve_str("ZAOAI_MEDIA_PATH", args.media, "test/test_Source");
     let output_path = resolve_str("OUTPUT_PATH", args.output, "output");
+
+    if resolve_parsed("OUTPUT_PATH_CLEAR", false) {
+        std::fs::remove_dir_all(&output_path)?;
+    }
     std::fs::create_dir_all(&output_path)?;
 
     let zaoai_labels_out_path = format!("{output_path}/zaoai_labels");
@@ -97,7 +101,7 @@ fn main() -> Result<()> {
         let read_list_dir_split =
             ListDirSplit::from_file_json("output/list_dir_split_001.json").unwrap();
 
-        let threads = resolve_parsed("ZAOAI_LABELS_NUM_THREADS", 0);
+        let threads = resolve_parsed("ZLBL_NUM_THREADS", 0);
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()

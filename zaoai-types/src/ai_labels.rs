@@ -227,7 +227,7 @@ impl ZaoaiLabelsLoader {
     }
 
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
-        let mut list_of_entries = list_dir_all(&path, true)?;
+        let mut list_of_entries = list_dir_all(&path, true, None)?;
 
         // filter zlbl
         list_of_entries = list_of_entries
