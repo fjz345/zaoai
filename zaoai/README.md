@@ -21,6 +21,9 @@
 - Multiple is correct functions to choose between
 - Multiple cost functions to choose between
 
+## Examples
+### Zaoai-Helper
+*cargo run --release -- --listdirsplit --zlbl --spectrogram*
 
 ## TODO:
 ### Fix bugs
