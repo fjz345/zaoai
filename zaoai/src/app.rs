@@ -183,9 +183,8 @@ impl eframe::App for ZaoaiApp {
                 self.state = AppState::Idle;
             }
             AppState::Idle => {
-                let (_response, rect) = self.draw_ui(ctx, frame);
-
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
+                let (_response, _rect) = self.draw_ui(ctx, frame);
+                // ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
             }
             AppState::Training => {
                 match self.training_session.get_state() {
@@ -288,9 +287,9 @@ impl eframe::App for ZaoaiApp {
                     }
                 }
 
-                let (_response, rect) = self.draw_ui(ctx, frame);
+                let (_response, _rect) = self.draw_ui(ctx, frame);
                 ctx.request_repaint();
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
+                // ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(rect.size()));
             }
             AppState::Exit => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
