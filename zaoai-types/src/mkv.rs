@@ -162,47 +162,62 @@ fn find_next_available_file(mut out_path: PathBuf) -> Result<PathBuf> {
 }
 
 pub fn collect_list_dir_split(path: impl AsRef<Path>, out_path: impl AsRef<Path>) -> Result<()> {
+    let path = path.as_ref();
     let out_path = out_path.as_ref();
-    let list_of_entries = list_dir(&path, true).expect("");
-    let mut list_dir_split =
-        list_dir_with_kind_has_chapters_split(&list_of_entries, true).expect("");
-    list_dir_split.path_source = path.as_ref().to_path_buf();
+
+    let list_of_entries = list_dir(path, true)?;
+    let mut list_dir_split = list_dir_with_kind_has_chapters_split(&list_of_entries, true)?;
+
+    list_dir_split.path_source = path.to_path_buf();
     list_dir_split.num_with_chapters = list_dir_split.with_chapters.len() as u32;
     list_dir_split.num_without_chapters = list_dir_split.without_chapters.len() as u32;
     list_dir_split.num_skipped = list_dir_split.skipped.len() as u32;
 
-    let entry_kind_vec_string = |vec: &Vec<EntryKind>| -> Vec<String> {
+    let entry_kind_vec_string = |vec: &[EntryKind]| -> Vec<String> {
         vec.iter()
             .map(|f| match f {
                 EntryKind::File(path_buf)
                 | EntryKind::Directory(path_buf)
-                | EntryKind::Other(path_buf) => {
-                    path_buf.file_stem().unwrap().to_string_lossy().to_string()
-                }
+                | EntryKind::Other(path_buf) => path_buf
+                    .file_stem()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
             })
-            .collect::<Vec<_>>()
+            .collect()
     };
-    println!(
+
+    log::trace!(
         "With chapters[{}]: {:?}",
-        &list_dir_split.num_with_chapters,
+        list_dir_split.num_with_chapters,
         entry_kind_vec_string(&list_dir_split.with_chapters)
     );
-    println!(
+    log::trace!(
         "Without chapters[{}]: {:?}",
-        &list_dir_split.num_without_chapters,
+        list_dir_split.num_without_chapters,
         entry_kind_vec_string(&list_dir_split.without_chapters)
     );
 
-    // Find a filename that does not exist (increase _00X+1)
     let next_file_name = find_next_available_file(out_path.to_path_buf())?;
+    assert!(ends_with_numbered_json(&next_file_name));
 
-    assert_eq!(ends_with_numbered_json(&next_file_name), true);
     let mut out_file = std::fs::File::create(&next_file_name)?;
 
     if !path_exists(&next_file_name) || !next_file_name.is_file() {
         anyhow::bail!("Not valid output file path");
     }
+
     out_file.write_all(&serde_json::to_vec_pretty(&list_dir_split)?)?;
+
+    log::info!(
+        "ListDirSplit:\n\
+     ├─ with chapters:    {}\n\
+     ├─ without chapters: {}\n\
+     └─ skipped:          {}",
+        list_dir_split.num_with_chapters,
+        list_dir_split.num_without_chapters,
+        list_dir_split.num_skipped,
+    );
 
     Ok(())
 }
@@ -210,9 +225,9 @@ pub fn collect_list_dir_split(path: impl AsRef<Path>, out_path: impl AsRef<Path>
 pub fn path_exists(path: impl AsRef<Path>) -> bool {
     let exists = std::path::Path::new(path.as_ref()).exists();
     if exists {
-        println!("✅ Path exists: {}", path.as_ref().display());
+        log::info!("✅ Path exists: {}", path.as_ref().display());
     } else {
-        println!("❌ Path does NOT exist: {}", path.as_ref().display());
+        log::info!("❌ Path does NOT exist: {}", path.as_ref().display());
     }
 
     exists

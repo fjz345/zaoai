@@ -41,7 +41,7 @@ pub fn save_spectrogram(
     let bytes = bincode::encode_to_vec(data, BINCODE_CONFIG)?;
 
     if path.as_ref().exists() {
-        println!("{}, already exists", path.as_ref().to_string_lossy());
+        log::info!("{}, already exists", path.as_ref().to_string_lossy());
     }
     let mut file = File::create(path.as_ref())
         .with_context(|| format!("Failed to create file at {}", path.as_ref().display()))?;

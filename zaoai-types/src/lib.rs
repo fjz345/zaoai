@@ -23,6 +23,7 @@ pub mod mkv;
 pub mod sound;
 pub mod spectrogram;
 pub mod temp;
+pub mod time;
 pub mod utils;
 
 pub use sonogram::FrequencyScale;

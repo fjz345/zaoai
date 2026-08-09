@@ -197,7 +197,7 @@ pub fn decode_samples_audio_only_from_file(path: &Path) -> Result<(Vec<f32>, u32
 
     for t in format.tracks() {
         let codec = t.codec_params.codec;
-        eprintln!("Track index = {}, codec = {:?}", t.id, codec);
+        log::error!("Track index = {}, codec = {:?}", t.id, codec);
     }
 
     log::info!("[3/6] Finding Track");

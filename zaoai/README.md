@@ -23,6 +23,8 @@
 
 
 ## TODO:
+### Fix bugs
+- TrainingState::Training but could not get Training Payload Reciever on training finish
 ### Support Audio Formats
 - mkv
 - mp4?

@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
+use rayon::prelude::*;
 use sonogram::Spectrogram;
+use std::fs;
 use std::io::{Read, Write};
-use std::sync::Arc;
-use std::{fs, thread};
 
 use std::{
     fs::File,
@@ -58,182 +58,95 @@ impl ZaoaiLabel {
     }
 }
 
-pub fn collect_zaoai_labels(
-    list_dir_split: &ListDirSplit,
-    out_path: impl AsRef<Path>,
-) -> Result<()> {
-    return collect_zaoai_labels_multithread(list_dir_split, out_path);
-
-    #[allow(unreachable_code)]
-    let path_source = &list_dir_split.path_source.clone();
-    for entry_with_chapters in &list_dir_split.with_chapters {
-        let path_buf = entry_with_chapters.as_ref();
-        let zaoai_label = if path_buf.is_file() {
-            if path_buf.is_file() {
-                let b = process_mkv_file(&entry_with_chapters);
-                match b {
-                    Ok(mkv_metadata) => {
-                        let (Some(op_start), Some(op_end)) = mkv_metadata.extract_opening_times()
-                        else {
-                            // Same effect as if zaoai_label was None
-                            return Ok(());
-                        };
-
-                        let opening_start_time = op_start;
-                        let opening_end_time = op_end;
-
-                        let video_metadata: VideoMetadata = mkv_metadata.into();
-                        let total_secs = video_metadata.duration.as_secs_f64();
-
-                        let ai_label = ZaoaiLabel {
-                            path: path_buf.clone(),
-                            path_source: path_source.clone(),
-                            metadata: video_metadata,
-                            version: ZAOAI_LABEL_VERSION,
-                            opening_start_time: Some(opening_start_time),
-                            opening_end_time: Some(opening_end_time),
-                            opening_start_frame: None,
-                            opening_end_frame: None,
-                            // Not sure if it should be div_eclid or div_ceil
-                            opening_start_normalized: Some(
-                                opening_start_time.as_secs_f64() / total_secs,
-                            ),
-                            opening_end_normalized: Some(
-                                opening_end_time.as_secs_f64() / total_secs,
-                            ),
-                            ..Default::default()
-                        };
-                        Some(ai_label)
-                    }
-                    Err(e) => {
-                        println!("{e}");
-                        None
-                    }
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        if let Some(label) = zaoai_label {
-            // println!("path_soruce: {}", label.path_source.display());
-            // println!("path_buf: {}", path_buf.display());
-
-            let relative_path = relative_path_from_base(path_buf, &label.path_source)?;
-            // println!("relative: {}", Path::new(relative_path).display());
-
-            let output_path = out_path.as_ref().join(relative_path).with_extension("zlbl");
-
-            if let Some(parent) = output_path.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-
-            println!("{}", output_path.display());
-            if output_path.exists() {
-                eprintln!(
-                    "Warning: Output file already exists and will be overwritten: {}",
-                    output_path.display()
-                );
-            }
-
-            let mut file = File::create(&output_path)?;
-            let json = serde_json::to_string_pretty(&label)?;
-
-            writeln!(file, "{}", json)?;
-            println!("Wrote: {}", output_path.display());
-        }
-    }
-
-    Ok(())
-}
-
 pub fn collect_zaoai_labels_multithread(
     list_dir_split: &ListDirSplit,
-    out_path: impl AsRef<Path>,
+    out_path: impl AsRef<Path> + Sync,
 ) -> Result<()> {
-    let out_path = out_path.as_ref().to_path_buf(); // clone for thread move
-    let path_source = list_dir_split.path_source.clone();
+    let out_path_ref = out_path.as_ref();
+    let path_source = &list_dir_split.path_source;
 
-    std::thread::scope(|scope| {
-        let mut handles = vec![];
+    list_dir_split.with_chapters.par_iter().for_each(|entry| {
+        let path_buf = entry.as_ref();
 
-        for entry in list_dir_split.with_chapters.iter().cloned() {
-            let path_source = path_source.clone();
-            let out_path = out_path.clone();
+        if !path_buf.is_file() {
+            return;
+        }
 
-            let handle = scope.spawn(move || -> Result<(), anyhow::Error> {
-                let path_buf = entry.as_ref();
+        let mkv_metadata = match process_mkv_file(entry) {
+            Ok(m) => m,
+            Err(e) => {
+                log::error!("process_mkv_file error on {}: {e}", path_buf.display());
+                return;
+            }
+        };
 
-                if !path_buf.is_file() {
-                    return Ok(()); // skip non-files
-                }
+        let (Some(op_start), Some(op_end)) = mkv_metadata.extract_opening_times() else {
+            return;
+        };
 
-                let mkv_metadata = match process_mkv_file(&entry) {
-                    Ok(m) => m,
-                    Err(e) => {
-                        eprintln!("process_mkv_file error: {e}");
-                        return Ok(());
+        let video_metadata: VideoMetadata = mkv_metadata.into();
+        let total_secs = video_metadata.duration.as_secs_f64();
+
+        let label = ZaoaiLabel {
+            path: path_buf.to_path_buf(),
+            path_source: path_source.clone(),
+            metadata: video_metadata,
+            version: ZAOAI_LABEL_VERSION,
+            opening_start_time: Some(op_start),
+            opening_end_time: Some(op_end),
+            opening_start_normalized: Some(op_start.as_secs_f64() / total_secs),
+            opening_end_normalized: Some(op_end.as_secs_f64() / total_secs),
+            ..Default::default()
+        };
+
+        let relative_path = match relative_path_from_base(path_buf, path_source) {
+            Ok(p) => p,
+            Err(e) => {
+                log::error!(
+                    "Failed to compute relative path for {}: {e}",
+                    path_buf.display()
+                );
+                return;
+            }
+        };
+
+        let output_path = out_path_ref.join(relative_path).with_extension("zlbl");
+
+        if let Some(parent) = output_path.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                log::error!("Failed to create directory {}: {e}", parent.display());
+                return;
+            }
+        }
+
+        if output_path.exists() {
+            log::warn!(
+                "Output file already exists and will be overwritten: {}",
+                output_path.display()
+            );
+        }
+
+        match File::create(&output_path) {
+            Ok(mut file) => match serde_json::to_string_pretty(&label) {
+                Ok(json) => {
+                    if let Err(e) = writeln!(file, "{}", json) {
+                        log::error!("Failed to write to {}: {e}", output_path.display());
+                    } else {
+                        log::info!("Wrote: {}", output_path.display());
                     }
-                };
-
-                let (Some(op_start), Some(op_end)) = mkv_metadata.extract_opening_times() else {
-                    // Same effect as if zaoai_label was None
-                    return Ok(());
-                };
-
-                let video_metadata: VideoMetadata = mkv_metadata.into();
-                let total_secs = video_metadata.duration.as_secs_f64();
-
-                let label = ZaoaiLabel {
-                    path: path_buf.to_path_buf(),
-                    path_source: path_source.clone(),
-                    metadata: video_metadata,
-                    version: ZAOAI_LABEL_VERSION,
-                    opening_start_time: Some(op_start),
-                    opening_end_time: Some(op_end),
-                    opening_start_frame: None,
-                    opening_end_frame: None,
-                    opening_start_normalized: Some(op_start.as_secs_f64() / total_secs),
-                    opening_end_normalized: Some(op_end.as_secs_f64() / total_secs),
-                    ..Default::default()
-                };
-
-                let relative_path = relative_path_from_base(path_buf, &label.path_source)
-                    .with_context(|| format!("Failed to compute relative path"))?;
-                let output_path = out_path.join(relative_path).with_extension("zlbl");
-
-                if let Some(parent) = output_path.parent() {
-                    fs::create_dir_all(parent)?;
                 }
-
-                if output_path.exists() {
-                    eprintln!(
-                        "Warning: Output file already exists: {}",
+                Err(e) => {
+                    log::error!(
+                        "Failed to serialize JSON for {}: {e}",
                         output_path.display()
                     );
                 }
-
-                let mut file = File::create(&output_path)?;
-                let json = serde_json::to_string_pretty(&label)?;
-                writeln!(file, "{}", json)?;
-
-                println!("Wrote: {}", output_path.display());
-                Ok(())
-            });
-
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            if let Err(e) = handle.join().expect("thread panicked") {
-                eprintln!("Worker failed: {e}");
+            },
+            Err(e) => {
+                log::error!("Failed to create file {}: {e}", output_path.display());
             }
         }
-
-        Ok::<(), anyhow::Error>(())
-    })?;
+    });
 
     Ok(())
 }
@@ -352,7 +265,7 @@ pub fn generate_zaoai_label_spectrograms(
                 )?;
             }
             EntryKind::Other(_path_buf) => {
-                println!("EntryKind::Other not supported")
+                log::info!("EntryKind::Other not supported")
             }
         }
     }
@@ -362,98 +275,54 @@ pub fn generate_zaoai_label_spectrograms(
 
 pub fn generate_zaoai_label_spectrograms_multithread(
     list: &[EntryKind],
-    spectrogram_file_extension: &String,
+    spectrogram_file_extension: &str,
     spectrogram_dim: [usize; 2],
 ) -> Result<()> {
-    let extension_arc = Arc::new(spectrogram_file_extension.clone());
+    let mut files = Vec::new();
+    collect_target_files(list, &mut files)?;
 
-    let mut count = 0;
+    files.into_par_iter().for_each(|path| {
+        if let Err(e) = process_single_file(&path, spectrogram_file_extension, spectrogram_dim) {
+            log::error!("Failed processing {}:\n{:?}", path.display(), e);
+        }
+    });
 
-    thread::scope(|scope| {
-        let mut handles = vec![];
+    Ok(())
+}
 
-        for entry in list {
-            count += 1;
-
-            if count >= 10 {
-                break;
-            }
-            let spectrogram_file_extension = Arc::clone(&extension_arc);
-            match entry {
-                EntryKind::File(path_buf) => {
-                    let path_buf = path_buf.clone();
-                    let dim = spectrogram_dim;
-
-                    let handle = scope.spawn(move || {
-                        if path_buf.extension().unwrap_or_default() == "zlbl" && path_buf.is_file()
-                        {
-                            match ZaoaiLabelsLoader::load_single(&path_buf) {
-                                Ok(zaoai_label) => {
-                                    match generate_spectrogram(
-                                        &zaoai_label.path,
-                                        S_SPECTROGRAM_NUM_BINS,
-                                    ) {
-                                        Ok(specto) => {
-                                            let mut save_path = path_buf.clone();
-                                            let success = save_path
-                                                .set_extension(&*spectrogram_file_extension);
-                                            assert!(success);
-                                            save_spectrogram(&specto, dim[0], dim[1], &save_path)?;
-                                            log::info!(
-                                                "Saved spectrogram: {}",
-                                                save_path.display()
-                                            );
-                                        }
-                                        Err(e) => {
-                                            log::error!(
-                                                "Spectrogram error on file:\n{}\nError: {:?}",
-                                                zaoai_label.path.display(),
-                                                e
-                                            );
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    log::error!(
-                                        "Label load error on file:\n{}\nError: {:?}",
-                                        path_buf.display(),
-                                        e
-                                    );
-                                }
-                            }
-                        }
-                        Ok::<(), anyhow::Error>(())
-                    });
-                    handles.push(handle);
-                }
-
-                EntryKind::Directory(path_buf) => {
-                    let path_buf = path_buf.clone();
-                    let dim = spectrogram_dim;
-
-                    let handle = scope.spawn(move || {
-                        let dir_list = list_dir(&path_buf, true)?;
-                        generate_zaoai_label_spectrograms_multithread(
-                            &dir_list,
-                            &spectrogram_file_extension,
-                            dim,
-                        )
-                    });
-                    handles.push(handle);
-                }
-
-                EntryKind::Other(_) => {
-                    eprintln!("EntryKind::Other not supported");
+fn collect_target_files(list: &[EntryKind], files: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in list {
+        match entry {
+            EntryKind::File(path) => {
+                if path.extension().unwrap_or_default() == "zlbl" && path.is_file() {
+                    files.push(path.clone());
                 }
             }
+            EntryKind::Directory(path) => {
+                let dir_list = list_dir(path, true)?;
+                collect_target_files(&dir_list, files)?;
+            }
+            EntryKind::Other(other) => {
+                log::error!("EntryKind::Other not supported: {}", other.display());
+            }
         }
+    }
+    Ok(())
+}
 
-        for handle in handles {
-            handle.join().unwrap()?;
-        }
+fn process_single_file(path: &Path, ext: &str, dim: [usize; 2]) -> Result<()> {
+    let zaoai_label = ZaoaiLabelsLoader::load_single(path)?;
 
-        Ok(())
-    })
+    let specto = generate_spectrogram(&zaoai_label.path, S_SPECTROGRAM_NUM_BINS)?;
+
+    let mut save_path = path.to_path_buf();
+    let success = save_path.set_extension(ext);
+    assert!(success);
+
+    save_spectrogram(&specto, dim[0], dim[1], &save_path)?;
+    log::info!("Saved spectrogram: {}", save_path.display());
+
+    Ok(())
 }
 
 pub struct AnimeDataPoint {

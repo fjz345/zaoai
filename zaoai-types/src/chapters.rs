@@ -14,7 +14,7 @@ use crate::utils::get_third_party_binary;
 pub fn extract_chapters(mkv_file_path: impl AsRef<Path>) -> anyhow::Result<Option<Chapters>> {
     let (_temp_dir, temp_file) = create_temp_file("chapters.xml")?;
 
-    println!(
+    log::info!(
         "Extracting chapters \"{}\" to \"{}\"",
         mkv_file_path.as_ref().display(),
         temp_file.display()
@@ -23,18 +23,18 @@ pub fn extract_chapters(mkv_file_path: impl AsRef<Path>) -> anyhow::Result<Optio
     let tool_path = get_third_party_binary("mkvextract.exe");
     let mut command = Command::new(tool_path);
     let command = command
-        .arg(mkv_file_path.as_ref())
+        .arg(mkv_file_path.as_ref().as_os_str())
         .arg("chapters")
         .arg(&temp_file);
 
     let output = command.output()?;
     let status = output.status;
     if !status.success() {
-        println!("Input MKV path: {:?}", mkv_file_path.as_ref());
-        println!("Output XML path: {:?}", temp_file);
+        log::trace!("Input MKV path: {:?}", mkv_file_path.as_ref().display());
+        log::trace!("Output XML path: {:?}", temp_file);
 
-        println!("stdout\n{:?}", String::from_utf8_lossy(&output.stdout));
-        println!("stderr\n{:?}", String::from_utf8_lossy(&output.stderr));
+        log::trace!("stdout\n{:?}", String::from_utf8_lossy(&output.stdout));
+        log::error!("stderr\n{:?}", String::from_utf8_lossy(&output.stderr));
         anyhow::bail!(
             "mkvextract failed on {} with status: {}",
             mkv_file_path.as_ref().display(),
@@ -186,7 +186,7 @@ fn chapters_to_xml(chapters: &Chapters) -> anyhow::Result<String> {
 pub fn add_chapter_to_mkv(mkv_file: &str, timestamp: &str, title: &str) -> anyhow::Result<()> {
     let chapters = extract_chapters(mkv_file)?;
     if chapters.is_none() {
-        println!("No chapters to add to mkv");
+        log::info!("No chapters to add to mkv");
         return Ok(());
     }
     let mut chapters = chapters.unwrap();

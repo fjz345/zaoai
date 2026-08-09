@@ -7,6 +7,7 @@ chapters.xml
 test/
 third_party/mkvtoolnix/
 output/
+output_save/
 
 Cargo.lock
 .env
