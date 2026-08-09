@@ -228,34 +228,37 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
                     TrainingState::Training => {
-                        let rx_training = self
-                            .training_thread
-                            .rx_training_payload
-                            .as_mut()
-                            .expect("ERROR");
-                        let rx_validation = self
-                            .training_thread
-                            .rx_validation_payload
-                            .as_mut()
-                            .expect("ERROR");
-
-                        let (received_any_training, train_disconnected) = process_payload_channel(
-                            rx_training,
-                            &mut self.training_thread.payload_training_buffer,
-                            "Training channel disconnected",
-                        );
-                        if train_disconnected {
-                            self.training_thread.rx_training_payload = None;
-                        }
-
-                        let (received_any_validation, validation_disconnected) =
-                            process_payload_channel(
-                                rx_validation,
-                                &mut self.training_thread.payload_validation_buffer,
-                                "Validation channel disconnected",
+                        let mut received_any_training = false;
+                        let mut train_disconnected = true;
+                        let mut received_any_validation = false;
+                        let mut train_disconnected = true;
+                        if let Some(rx_training) = self.training_thread.rx_training_payload.as_mut()
+                        {
+                            (received_any_training, train_disconnected) = process_payload_channel(
+                                rx_training,
+                                &mut self.training_thread.payload_training_buffer,
+                                "Training channel disconnected",
                             );
-                        if validation_disconnected {
-                            self.training_thread.rx_validation_payload = None;
+                            if train_disconnected {
+                                self.training_thread.rx_training_payload = None;
+                            }
+                        } else {
+                            log::error!("TrainingState::Training but could not get Training Payload Reciever");
+                        }
+                        if let Some(rx_validation) =
+                            self.training_thread.rx_validation_payload.as_mut()
+                        {
+                            let (received_any_validation, validation_disconnected) =
+                                process_payload_channel(
+                                    rx_validation,
+                                    &mut self.training_thread.payload_validation_buffer,
+                                    "Validation channel disconnected",
+                                );
+                            if validation_disconnected {
+                                self.training_thread.rx_validation_payload = None;
+                            }
+                        } else {
+                            log::error!("TrainingState::Training but could not get Validation Payload Reciever");
                         }
 
                         // if received_any_training || received_any_validation {
