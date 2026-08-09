@@ -16,7 +16,7 @@ pub fn extract_chapters(mkv_file_path: impl AsRef<Path>) -> anyhow::Result<Optio
 
     log::info!(
         "Extracting chapters \"{}\" to \"{}\"",
-        mkv_file_path.as_ref().display(),
+        mkv_file_path.as_ref().as_os_str().display(),
         temp_file.display()
     );
 

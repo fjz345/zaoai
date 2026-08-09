@@ -7,7 +7,9 @@ use anyhow::Result;
 
 use zaoai_types::spectrogram::{SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH};
 
-use zaoai_types::ai_labels::{collect_zaoai_labels_multithread, generate_zaoai_label_spectrograms};
+use zaoai_types::ai_labels::{
+    collect_zaoai_labels_multithread, generate_zaoai_label_spectrograms_multithread,
+};
 use zaoai_types::file::list_dir;
 use zaoai_types::time::*;
 use zaoai_types::utils::ListDirSplit;
@@ -66,6 +68,7 @@ fn main() -> Result<()> {
 
     let media_path = resolve_str("ZAOAI_MEDIA_PATH", args.media, "test/test_Source");
     let output_path = resolve_str("OUTPUT_PATH", args.output, "output");
+    std::fs::create_dir_all(&output_path)?;
 
     let zaoai_labels_out_path = format!("{output_path}/zaoai_labels");
 
@@ -81,8 +84,11 @@ fn main() -> Result<()> {
             .build()
             .unwrap();
 
+        log::info!("listdirsplit threads: {}", pool.current_num_threads());
         pool.install(|| {
-            collect_list_dir_split(media_path, list_dir_split_out_path).unwrap();
+            if let Err(e) = collect_list_dir_split(media_path, list_dir_split_out_path) {
+                log::error!("{}", e);
+            }
         });
     }
 
@@ -97,8 +103,13 @@ fn main() -> Result<()> {
             .build()
             .unwrap();
 
+        log::info!("zlbl threads: {}", pool.current_num_threads());
         pool.install(|| {
-            collect_zaoai_labels_multithread(&read_list_dir_split, &zaoai_labels_out_path).unwrap();
+            if let Err(e) =
+                collect_zaoai_labels_multithread(&read_list_dir_split, &zaoai_labels_out_path)
+            {
+                log::error!("{}", e);
+            }
         });
     }
 
@@ -118,13 +129,16 @@ fn main() -> Result<()> {
             .build()
             .unwrap();
 
+        log::info!("spectrogram threads: {}", pool.current_num_threads());
         pool.install(|| {
-            generate_zaoai_label_spectrograms(
+            if let Err(e) = generate_zaoai_label_spectrograms_multithread(
                 &list_dir,
                 &spectrogram_file_extension,
                 [spectogram_width, spectogram_height],
-            )
-        })?;
+            ) {
+                log::error!("{}", e);
+            };
+        });
     }
 
     Ok(())

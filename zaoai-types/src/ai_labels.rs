@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use rayon::prelude::*;
 use sonogram::Spectrogram;
-use std::fs;
 use std::io::{Read, Write};
+use std::{fs, path};
 
 use std::{
     fs::File,
@@ -26,6 +26,7 @@ pub struct ZaoaiLabel {
     pub metadata: VideoMetadata,
     pub version: u8,
 
+    //OP
     #[serde(with = "humantime_serde")]
     pub opening_start_time: Option<Duration>,
     #[serde(with = "humantime_serde")]
@@ -34,6 +35,16 @@ pub struct ZaoaiLabel {
     pub opening_end_frame: Option<u32>,
     pub opening_start_normalized: Option<f64>,
     pub opening_end_normalized: Option<f64>,
+
+    //ED
+    #[serde(with = "humantime_serde")]
+    pub ending_start_time: Option<Duration>,
+    #[serde(with = "humantime_serde")]
+    pub ending_end_time: Option<Duration>,
+    pub ending_start_frame: Option<u32>,
+    pub ending_end_frame: Option<u32>,
+    pub ending_start_normalized: Option<f64>,
+    pub ending_end_normalized: Option<f64>,
 }
 
 impl ZaoaiLabel {
@@ -65,10 +76,21 @@ pub fn collect_zaoai_labels_multithread(
     let out_path_ref = out_path.as_ref();
     let path_source = &list_dir_split.path_source;
 
+    log::info!(
+        "ListDirSplit:\n\
+     ├─ with chapters:    {}\n\
+     ├─ without chapters: {}\n\
+     └─ skipped:          {}",
+        list_dir_split.num_with_chapters,
+        list_dir_split.num_without_chapters,
+        list_dir_split.num_skipped,
+    );
+
     list_dir_split.with_chapters.par_iter().for_each(|entry| {
         let path_buf = entry.as_ref();
 
         if !path_buf.is_file() {
+            log::error!("Entry not a file, skipping");
             return;
         }
 
@@ -80,9 +102,41 @@ pub fn collect_zaoai_labels_multithread(
             }
         };
 
-        let (Some(op_start), Some(op_end)) = mkv_metadata.extract_opening_times() else {
-            return;
-        };
+        let ((op_start, op_end), (ed_start, ed_end)) =
+            mkv_metadata.extract_opening_and_ending_times();
+
+        match (op_start.zip(op_end), ed_start.zip(ed_end)) {
+            (Some((ops, ope)), Some((eds, ede))) => log::debug!(
+                "Extract OP&ED: {}\n\
+        ├─ OP:    {}s-{}s\n\
+        └─ ED:    {}s-{}s",
+                path_buf.as_os_str().display(),
+                ops.as_secs(),
+                ope.as_secs(),
+                eds.as_secs(),
+                ede.as_secs()
+            ),
+            (Some((ops, ope)), None) => log::debug!(
+                "Extract OP&ED: {}\n\
+            ├─ OP:    {}s-{}s\n\
+            └─ ED:    None",
+                path_buf.as_os_str().display(),
+                ops.as_secs(),
+                ope.as_secs()
+            ),
+            (None, Some((eds, ede))) => log::debug!(
+                "Extract OP&ED: {}\n\
+        ├─ OP:    None\n\
+        └─ ED:    {}s-{}s",
+                path_buf.as_os_str().display(),
+                eds.as_secs(),
+                ede.as_secs()
+            ),
+            (None, None) => {
+                log::debug!("No OP or ED found: {}", path_buf.as_os_str().display());
+                return;
+            }
+        }
 
         let video_metadata: VideoMetadata = mkv_metadata.into();
         let total_secs = video_metadata.duration.as_secs_f64();
@@ -92,10 +146,14 @@ pub fn collect_zaoai_labels_multithread(
             path_source: path_source.clone(),
             metadata: video_metadata,
             version: ZAOAI_LABEL_VERSION,
-            opening_start_time: Some(op_start),
-            opening_end_time: Some(op_end),
-            opening_start_normalized: Some(op_start.as_secs_f64() / total_secs),
-            opening_end_normalized: Some(op_end.as_secs_f64() / total_secs),
+            opening_start_time: op_start,
+            opening_end_time: op_end,
+            opening_start_normalized: op_start.map(|f| f.as_secs_f64() / total_secs),
+            opening_end_normalized: op_end.map(|f| f.as_secs_f64() / total_secs),
+            ending_start_time: ed_start,
+            ending_end_time: ed_end,
+            ending_start_normalized: ed_start.map(|f| f.as_secs_f64() / total_secs),
+            ending_end_normalized: ed_end.map(|f| f.as_secs_f64() / total_secs),
             ..Default::default()
         };
 
@@ -207,72 +265,6 @@ impl ZaoaiLabelsLoader {
     }
 }
 
-pub fn generate_zaoai_label_spectrograms(
-    list: &Vec<EntryKind>,
-    spectrogram_file_extension: &String,
-    spectrogram_dim: [usize; 2],
-) -> Result<()> {
-    return generate_zaoai_label_spectrograms_multithread(
-        list,
-        spectrogram_file_extension,
-        spectrogram_dim,
-    );
-
-    #[allow(unreachable_code)]
-    for entry in list {
-        match entry {
-            EntryKind::File(path_buf) => {
-                if path_buf.extension().unwrap() == "zlbl" {
-                    assert_eq!(path_buf.is_file(), true);
-
-                    // Load zaoai_label
-                    let zaoai_label = ZaoaiLabelsLoader::load_single(path_buf)?;
-
-                    let spectrogram =
-                        generate_spectrogram(&zaoai_label.path, S_SPECTROGRAM_NUM_BINS);
-                    match spectrogram {
-                        Ok(specto) => {
-                            let mut spectrogram_save_path = path_buf.clone();
-                            let success =
-                                spectrogram_save_path.set_extension(spectrogram_file_extension);
-                            assert!(success);
-
-                            save_spectrogram(
-                                &specto,
-                                spectrogram_dim[0],
-                                spectrogram_dim[1],
-                                &spectrogram_save_path,
-                            )?;
-
-                            log::info!("Saved spectrogram: {}", spectrogram_save_path.display());
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "Failed to generate spectrogram on file:\n{}\nError: {:?}",
-                                zaoai_label.path.display(),
-                                e
-                            );
-                        }
-                    }
-                }
-            }
-            EntryKind::Directory(path_buf) => {
-                let dir_list_dir = list_dir(path_buf, true)?;
-                generate_zaoai_label_spectrograms(
-                    &dir_list_dir,
-                    &spectrogram_file_extension,
-                    spectrogram_dim,
-                )?;
-            }
-            EntryKind::Other(_path_buf) => {
-                log::info!("EntryKind::Other not supported")
-            }
-        }
-    }
-
-    Ok(())
-}
-
 pub fn generate_zaoai_label_spectrograms_multithread(
     list: &[EntryKind],
     spectrogram_file_extension: &str,
@@ -280,6 +272,15 @@ pub fn generate_zaoai_label_spectrograms_multithread(
 ) -> Result<()> {
     let mut files = Vec::new();
     collect_target_files(list, &mut files)?;
+    log::info!("Files found for spectrogram generation ({}):", files.len());
+    for (i, file) in files.iter().enumerate() {
+        log::info!("{}", file.display());
+        const MAX_DISPLAY: usize = 10;
+        if i >= MAX_DISPLAY {
+            log::info!("...");
+            break;
+        }
+    }
 
     files.into_par_iter().for_each(|path| {
         if let Err(e) = process_single_file(&path, spectrogram_file_extension, spectrogram_dim) {

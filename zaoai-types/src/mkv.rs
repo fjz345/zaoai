@@ -35,37 +35,43 @@ impl Into<VideoMetadata> for MkvMetadata {
 }
 
 impl MkvMetadata {
-    pub fn extract_opening_times(&self) -> (Option<Duration>, Option<Duration>) {
-        let mut op_chapter = None;
-        let mut op_chapter_next = None;
-        let mut op_start = None;
-        let mut op_end = None;
+    pub fn extract_opening_and_ending_times(
+        &self,
+    ) -> (
+        (Option<Duration>, Option<Duration>),
+        (Option<Duration>, Option<Duration>),
+    ) {
+        (
+            self.find_chapter_times(&["op", "opening", "ncop"]),
+            self.find_chapter_times(&["ed", "ending", "nced"]),
+        )
+    }
 
-        // Not 100% optimal code, dont care
+    fn find_chapter_times(&self, keywords: &[&str]) -> (Option<Duration>, Option<Duration>) {
         for (i, chapter) in self.chapters.iter().enumerate() {
             let title = chapter.display.title.to_lowercase();
-            // Todo: read chapter_opening.txt
-            if title.to_lowercase().contains("op") || title.to_lowercase().contains("opening") {
-                op_chapter = Some(chapter);
-                op_chapter_next = self.chapters.get(i + 1);
-                op_start = parse_time(&chapter.start_time);
-                op_end = chapter.end_time.as_ref().and_then(|s| parse_time(s));
 
-                // Can finish early
-                if op_start.is_some() && op_end.is_some() {
-                    return (op_start, op_end);
-                }
+            let is_match = title
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|word| keywords.contains(&word));
+
+            if is_match {
+                let start = parse_time(&chapter.start_time);
+                let end = chapter
+                    .end_time
+                    .as_ref()
+                    .and_then(|s| parse_time(s))
+                    .or_else(|| {
+                        self.chapters
+                            .get(i + 1)
+                            .and_then(|next| parse_time(&next.start_time))
+                    });
+
+                return (start, end);
             }
         }
 
-        if op_start.is_some() && op_chapter.is_some() {
-            // If op_end not set, it means that we should use the next chapter start if it exists
-            if let Some(next_chapter) = op_chapter_next {
-                op_end = parse_time(&next_chapter.start_time);
-            }
-        }
-
-        (op_start, op_end)
+        (None, None)
     }
 }
 
