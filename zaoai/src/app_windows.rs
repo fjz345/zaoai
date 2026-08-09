@@ -153,9 +153,9 @@ impl WindowTrainingGraph
         common_lines: Vec<Line<'_>>,
         extra_lines: impl IntoIterator<Item = Line<'static>>,
     ) -> PlotResponse<()> {
-        let toggle_id = "training_plot_full_view_toggle";
+        let toggle_id = egui::Id::new(format!("{}_full_view_toggle", title));
         let mut full_view_toggle_value = ui.memory_mut(|m| {
-            m.data.get_persisted(toggle_id.into()).unwrap_or(false)
+            m.data.get_persisted(toggle_id).unwrap_or(false)
         });
 
         ui.horizontal(|ui| {
@@ -166,7 +166,7 @@ impl WindowTrainingGraph
                 }
                 if ui.toggle_value(&mut full_view_toggle_value, "Full View").clicked() {
                     ui.memory_mut(|m| {
-                        m.data.insert_persisted(toggle_id.into(), full_view_toggle_value)
+                        m.data.insert_persisted(toggle_id, full_view_toggle_value)
                     });
                 }
             });
@@ -225,68 +225,28 @@ impl WindowTrainingGraph
         Self::render_plot(ui, "Training", "Epoch", buffer, common_lines, vec![learn_rate_line])
     }
 
-    fn show_validation_plot(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context,
-        state_ctx: &mut WindowTrainingGraphCtx,) -> PlotResponse<()>
-    {
-        // TODO: optimize this when it starts stuttering
-        let payload_buffer = &mut *state_ctx.payload_validation_buffer;
+    fn show_validation_plot(
+        &mut self,
+        ui: &mut egui::Ui,
+        _ctx: &egui::Context,
+        state_ctx: &mut WindowTrainingGraphCtx,
+    ) -> PlotResponse<()> {
+        let buffer = &mut *state_ctx.payload_validation_buffer;
+        let common_lines = self.generate_common_lines(buffer);
 
-        ui.horizontal(|ui| {
-            ui.label("Validation");
-            
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("Clear").clicked()
-                {
-                    payload_buffer.clear();
-                }
-            });
-        });
-
-        let common_lines = self.generate_common_lines(&payload_buffer); 
-
-        Self::create_plot_training("Validation")
-            .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
-            .x_axis_label("Epoch")
-            .include_x(0.0)
-            .show(ui, |plot_ui| {
-                for line in common_lines
-                {
-                    plot_ui.line(line);
-                }
-            })
+        Self::render_plot(ui, "Validation", "Epoch", buffer, common_lines, vec![])
     }
 
-    fn show_test_plot(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context,
-        state_ctx: &mut WindowTrainingGraphCtx,) -> PlotResponse<()>
-    {
-        // TODO: optimize this when it starts stuttering
-        // Update
-        let payload_buffer = &mut *state_ctx.payload_test_buffer;
-        
-        ui.horizontal(|ui| {
-            ui.label("Testing");
-            
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("Clear").clicked()
-                {
-                    payload_buffer.clear();
-                }
-            });
-        });
+    fn show_test_plot(
+        &mut self,
+        ui: &mut egui::Ui,
+        _ctx: &egui::Context,
+        state_ctx: &mut WindowTrainingGraphCtx,
+    ) -> PlotResponse<()> {
+        let buffer = &mut *state_ctx.payload_test_buffer;
+        let common_lines = self.generate_common_lines(buffer);
 
-        let common_lines = self.generate_common_lines(&payload_buffer);
-
-        // Create the plot once and add multiple lines inside it
-        Self::create_plot_training("Testing")
-            .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
-            .x_axis_label("Datapoint")
-            .include_x(0.0)
-            .show(ui, |plot_ui| {
-                for line in common_lines
-                {
-                    plot_ui.line(line);
-                }
-            })
+        Self::render_plot(ui, "Testing", "Datapoint", buffer, common_lines, vec![])
     }
 }
 
