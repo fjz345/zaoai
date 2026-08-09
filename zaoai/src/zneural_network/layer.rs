@@ -234,15 +234,17 @@ impl Layer {
         assert_eq!(inputs.len(), self.num_in_nodes);
         assert_eq!(output_buf.len(), self.num_out_nodes);
 
-        for (out_i, output) in output_buf.iter_mut().enumerate() {
-            let weights_row = &self.weights[out_i];
-            let sum = self.biases[out_i]
+        for ((output, weights_row), &bias) in output_buf
+            .iter_mut()
+            .zip(self.weights.iter())
+            .zip(self.biases.iter())
+        {
+            *output = bias
                 + inputs
                     .iter()
                     .zip(weights_row.iter())
                     .map(|(input, weight)| input * weight)
                     .sum::<f32>();
-            *output = sum;
         }
     }
 
@@ -251,30 +253,26 @@ impl Layer {
         assert_eq!(inputs.len(), self.num_in_nodes);
         assert_eq!(output_buf.len(), self.num_out_nodes);
 
-        const CHUNK_SIZE: usize = 8;
-        let chunks = self.num_in_nodes / CHUNK_SIZE;
-        let remainder = self.num_in_nodes % CHUNK_SIZE;
-
-        for out_i in 0..self.num_out_nodes {
-            let weights_row = &self.weights[out_i];
+        for ((output, weights_row), &bias) in output_buf
+            .iter_mut()
+            .zip(self.weights.iter())
+            .zip(self.biases.iter())
+        {
             let mut sum = f32x8::splat(0.0);
+            let mut input_chunks = inputs.as_chunks::<8>();
+            let mut weight_chunks = weights_row.as_chunks::<8>();
 
-            for i in 0..chunks {
-                let offset = i * CHUNK_SIZE;
-                let a = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
-                let b = f32x8::from(&weights_row[offset..offset + CHUNK_SIZE]);
-                sum += a * b;
+            for (i_chunk, w_chunk) in input_chunks.0.iter().zip(weight_chunks.0.iter()) {
+                sum += f32x8::from(*i_chunk) * f32x8::from(*w_chunk);
             }
 
             let mut weighted_sum = sum.reduce_add();
 
-            if remainder != 0 {
-                for i in (self.num_in_nodes - remainder)..self.num_in_nodes {
-                    weighted_sum += inputs[i] * weights_row[i];
-                }
+            for (i, w) in input_chunks.1.iter().zip(weight_chunks.1.iter()) {
+                weighted_sum += i * w;
             }
 
-            output_buf[out_i] = weighted_sum + self.biases[out_i];
+            *output = weighted_sum + bias;
         }
     }
 
@@ -286,34 +284,30 @@ impl Layer {
         assert_eq!(inputs.len(), self.num_in_nodes);
         assert_eq!(output_buf.len(), self.num_out_nodes);
 
-        const CHUNK_SIZE: usize = 8;
-        let chunks = self.num_in_nodes / CHUNK_SIZE;
-        let remainder = self.num_in_nodes % CHUNK_SIZE;
-
-        let weights = &self.weights;
-        let biases = &self.biases;
-
         output_buf
             .par_iter_mut()
-            .enumerate()
-            .for_each(|(out_i, out_val)| {
-                let weight_row = &weights[out_i];
+            .zip(self.weights.par_iter())
+            .zip(self.biases.par_iter())
+            .for_each(|((out_val, weight_row), &bias)| {
                 let mut sum = f32x8::splat(0.0);
+                let mut input_chunks = inputs.chunks_exact(8);
+                let mut weight_chunks = weight_row.chunks_exact(8);
 
-                for i in 0..chunks {
-                    let offset = i * CHUNK_SIZE;
-                    let a = f32x8::from(&inputs[offset..offset + CHUNK_SIZE]);
-                    let b = f32x8::from(&weight_row[offset..offset + CHUNK_SIZE]);
-                    sum += a * b;
+                for (i_chunk, w_chunk) in input_chunks.by_ref().zip(weight_chunks.by_ref()) {
+                    sum += f32x8::from(i_chunk) * f32x8::from(w_chunk);
                 }
 
                 let mut weighted_sum = sum.reduce_add();
 
-                for i in (inputs.len() - remainder)..inputs.len() {
-                    weighted_sum += inputs[i] * weight_row[i];
+                for (i, w) in input_chunks
+                    .remainder()
+                    .iter()
+                    .zip(weight_chunks.remainder().iter())
+                {
+                    weighted_sum += i * w;
                 }
 
-                *out_val = weighted_sum + biases[out_i];
+                *out_val = weighted_sum + bias;
             });
     }
 
@@ -510,74 +504,75 @@ impl Layer {
     }
 
     pub fn update_cost_gradients(&mut self, learn_data: &LayerLearnData) {
-        let num_in_nodes = self.num_in_nodes;
         let inputs = &learn_data.inputs;
+        let num_in_nodes = self.num_in_nodes;
 
-        for node_out in 0..self.num_out_nodes {
-            if let Some(mask) = learn_data.dropout_mask.as_ref() {
-                if mask[node_out] == 0.0 {
-                    continue; // neuron was dropped, skip gradient update
+        if let Some(mask) = learn_data.dropout_mask.as_ref() {
+            for (((weight_grad_row, bias_grad), &node_value), &m) in self
+                .weights_cost_grads
+                .iter_mut()
+                .zip(self.biases_cost_grads.iter_mut())
+                .zip(learn_data.node_values.iter())
+                .zip(mask.iter())
+            {
+                if m != 0.0 {
+                    Self::update_cost_gradient_for_node(
+                        weight_grad_row,
+                        bias_grad,
+                        node_value,
+                        inputs,
+                        num_in_nodes,
+                    );
                 }
             }
-
-            let node_value = learn_data.node_values[node_out];
-            let weight_grad_row = &mut self.weights_cost_grads[node_out];
-            let bias_grad = &mut self.biases_cost_grads[node_out];
-
-            Self::update_cost_gradient_for_node(
-                weight_grad_row,
-                bias_grad,
-                node_value,
-                inputs,
-                num_in_nodes,
-            );
+        } else {
+            for ((weight_grad_row, bias_grad), &node_value) in self
+                .weights_cost_grads
+                .iter_mut()
+                .zip(self.biases_cost_grads.iter_mut())
+                .zip(learn_data.node_values.iter())
+            {
+                Self::update_cost_gradient_for_node(
+                    weight_grad_row,
+                    bias_grad,
+                    node_value,
+                    inputs,
+                    num_in_nodes,
+                );
+            }
         }
     }
 
     #[cfg(feature = "simd")]
     pub fn update_cost_gradients_simd(&mut self, learn_data: &LayerLearnData) {
-        let num_in_nodes = self.num_in_nodes;
         let inputs = &learn_data.inputs;
+        let num_in_nodes = self.num_in_nodes;
 
-        for node_out in 0..self.num_out_nodes {
-            if let Some(mask) = learn_data.dropout_mask.as_ref() {
-                if mask[node_out] == 0.0 {
-                    continue; // neuron was dropped, skip gradient update
+        if let Some(mask) = learn_data.dropout_mask.as_ref() {
+            for (((weight_grad_row, bias_grad), &node_value), &m) in self
+                .weights_cost_grads
+                .iter_mut()
+                .zip(self.biases_cost_grads.iter_mut())
+                .zip(learn_data.node_values.iter())
+                .zip(mask.iter())
+            {
+                if m != 0.0 {
+                    Self::update_cost_gradient_for_node_simd(
+                        weight_grad_row,
+                        bias_grad,
+                        node_value,
+                        inputs,
+                        num_in_nodes,
+                    );
                 }
             }
-
-            let node_value = learn_data.node_values[node_out];
-            let weight_grad_row = &mut self.weights_cost_grads[node_out];
-            let bias_grad = &mut self.biases_cost_grads[node_out];
-
-            Self::update_cost_gradient_for_node_simd(
-                weight_grad_row,
-                bias_grad,
-                node_value,
-                inputs,
-                num_in_nodes,
-            );
-        }
-    }
-    #[allow(dead_code)]
-    #[cfg(feature = "simd")]
-    pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
-        let num_in_nodes = self.num_in_nodes;
-        let inputs = &learn_data.inputs;
-        let maybe_mask = learn_data.dropout_mask.as_ref();
-
-        self.weights_cost_grads
-            .par_iter_mut()
-            .zip(self.biases_cost_grads.par_iter_mut())
-            .zip(learn_data.node_values.par_iter().copied())
-            .enumerate() // <- Add this to get index
-            .for_each(|(node_out, ((weight_grad_row, bias_grad), node_value))| {
-                if let Some(mask) = maybe_mask {
-                    if mask[node_out] == 0.0 {
-                        return; // neuron was dropped, skip gradient update
-                    }
-                }
-
+        } else {
+            for ((weight_grad_row, bias_grad), &node_value) in self
+                .weights_cost_grads
+                .iter_mut()
+                .zip(self.biases_cost_grads.iter_mut())
+                .zip(learn_data.node_values.iter())
+            {
                 Self::update_cost_gradient_for_node_simd(
                     weight_grad_row,
                     bias_grad,
@@ -585,7 +580,50 @@ impl Layer {
                     inputs,
                     num_in_nodes,
                 );
-            });
+            }
+        }
+    }
+
+    #[allow(dead_code)]
+    #[cfg(feature = "simd")]
+    pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
+        use rayon::prelude::*;
+
+        let inputs = &learn_data.inputs;
+        let num_in_nodes = self.num_in_nodes;
+
+        if let Some(mask) = learn_data.dropout_mask.as_ref() {
+            self.weights_cost_grads
+                .par_iter_mut()
+                .zip(self.biases_cost_grads.par_iter_mut())
+                .zip(learn_data.node_values.par_iter().copied())
+                .zip(mask.par_iter().copied())
+                .for_each(|(((weight_grad_row, bias_grad), node_value), m)| {
+                    if m != 0.0 {
+                        Self::update_cost_gradient_for_node_simd(
+                            weight_grad_row,
+                            bias_grad,
+                            node_value,
+                            inputs,
+                            num_in_nodes,
+                        );
+                    }
+                });
+        } else {
+            self.weights_cost_grads
+                .par_iter_mut()
+                .zip(self.biases_cost_grads.par_iter_mut())
+                .zip(learn_data.node_values.par_iter().copied())
+                .for_each(|((weight_grad_row, bias_grad), node_value)| {
+                    Self::update_cost_gradient_for_node_simd(
+                        weight_grad_row,
+                        bias_grad,
+                        node_value,
+                        inputs,
+                        num_in_nodes,
+                    );
+                });
+        }
     }
 
     pub fn clear_cost_gradient(&mut self) {
@@ -675,17 +713,20 @@ impl Layer {
         prev_layer: &Layer,
         prev_node_cost_values: &[f32],
     ) {
-        for new_node_index in 0..self.num_out_nodes {
-            let mut new_node_value: f32 = 0.0;
-            for prev_node_index in 0..prev_node_cost_values.len() {
-                let weighted_input_d = prev_layer.weights[prev_node_index][new_node_index];
-                new_node_value += weighted_input_d * prev_node_cost_values[prev_node_index];
-            }
+        learn_data.node_values.fill(0.0);
 
-            new_node_value *= self
-                .activation_type
-                .activate_derivative(learn_data.weighted_inputs[new_node_index]);
-            learn_data.node_values[new_node_index] = new_node_value;
+        for (prev_cost, weights_row) in prev_node_cost_values.iter().zip(prev_layer.weights.iter())
+        {
+            for (new_val, &weight) in learn_data.node_values.iter_mut().zip(weights_row.iter()) {
+                *new_val += weight * prev_cost;
+            }
+        }
+        for (new_val, &weighted_input) in learn_data
+            .node_values
+            .iter_mut()
+            .zip(learn_data.weighted_inputs.iter())
+        {
+            *new_val *= self.activation_type.activate_derivative(weighted_input);
         }
     }
 }

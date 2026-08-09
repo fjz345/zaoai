@@ -535,7 +535,6 @@ impl NeuralNetwork {
     fn update_gradients(layer: &mut Layer, learn_data: &mut LayerLearnData) {
         #[cfg(feature = "simd")]
         layer.update_cost_gradients_simd(learn_data);
-
         #[cfg(not(feature = "simd"))]
         layer.update_cost_gradients(learn_data);
     }
