@@ -158,10 +158,37 @@ impl AIResultMetadata {
         2.0 * (precision * recall) / (precision + recall)
     }
 
-    pub fn metric_max(&self) -> f64 {
+    pub fn get_metrics(&self) -> AIPerformanceMetrics {
+        self.clone().into()
+    }
+}
+
+#[derive(Clone)]
+pub struct AIPerformanceMetrics {
+    pub cost: f64,
+    pub last_loss: f64,
+    pub learn_rate: f32,
+    pub accuracy: f64,
+    pub f1_score: f64,
+}
+
+impl From<AIResultMetadata> for AIPerformanceMetrics {
+    fn from(value: AIResultMetadata) -> Self {
+        Self {
+            cost: value.cost,
+            last_loss: value.last_loss,
+            learn_rate: value.learn_rate,
+            accuracy: value.calc_accuracy(),
+            f1_score: value.calc_f1_score(),
+        }
+    }
+}
+
+impl AIPerformanceMetrics {
+    pub fn max_value(&self) -> f64 {
         self.cost.max(
             self.last_loss
-                .max((self.learn_rate as f64).max(self.calc_accuracy().max(self.calc_f1_score()))),
+                .max((self.learn_rate as f64).max(self.accuracy.max(self.f1_score))),
         )
     }
 }

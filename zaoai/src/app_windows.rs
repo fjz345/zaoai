@@ -172,56 +172,38 @@ impl WindowTrainingGraph
             });
         });
 
-        Self::create_plot_training(title).legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
+        Self::create_plot_training(title)
+            .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
             .x_axis_label(x_label)
             .include_x(0.0)
             .show(ui, |plot_ui| {
-                if !full_view_toggle_value {
-                    let payload_max = payload_buffer
-                        .iter()
-                        .map(|f| f.payload_index as f64)
-                        .max_by(|a, b| a.total_cmp(b))
-                        .unwrap_or(0.0);
+            if !full_view_toggle_value {
+                // Egui for some reason does not support reading legend toggle state
+                // Would like to cull the metrics that are hidden
+                let payload_max = payload_buffer
+                    .last()
+                    .map(|p| p.payload_index as f64)
+                    .unwrap_or(0.0);
 
-                    const COUNT: f64 = 10.0;
-                    let min_x = (payload_max - COUNT).max(0.0);
+                const COUNT: f64 = 10.0;
+                let min_x = (payload_max - COUNT).max(0.0);
 
-                    let mut y_min = f64::MAX;
-                    let mut y_max = f64::MIN;
+                plot_ui.set_plot_bounds(egui_plot::PlotBounds::from_min_max(
+                    [min_x, f64::NEG_INFINITY],
+                    [payload_max, f64::INFINITY],
+                ));
+                plot_ui.set_auto_bounds([false, true]); 
+            } else {
+                plot_ui.set_auto_bounds([true, true]);
+            }
 
-                    for p in payload_buffer.iter() {
-                        let x = p.payload_index as f64;
-                        if x >= min_x && x <= payload_max {
-                            let data = &p.training_metadata;
-                            let y_val = data.metric_max(); // Replace with your actual Y-axis struct field
-                            
-                            // y_min = y_min.min(y_val);
-                            y_max = y_max.max(y_val);
-                        }
-                    }
-
-                    // if y_min == f64::MAX {
-                    //     y_min = 0.0;
-                    //     y_max = 1.0;
-                    // }
-
-                    const Y_PADDING: f64 = 0.06;
-                    plot_ui.set_plot_bounds(egui_plot::PlotBounds::from_min_max(
-                        [min_x, 0.0 - Y_PADDING],
-                        [payload_max, y_max + Y_PADDING],
-                    ));
-                    plot_ui.set_auto_bounds([false, false]); 
-                } else {
-                    plot_ui.set_auto_bounds([true, true]);
-                }
-
-                for line in common_lines {
-                    plot_ui.line(line);
-                }
-                for line in extra_lines {
-                    plot_ui.line(line);
-                }
-            })
+            for line in common_lines {
+                plot_ui.line(line);
+            }
+            for line in extra_lines {
+                plot_ui.line(line);
+            }
+        })
     }
 
     fn show_training_plot(
