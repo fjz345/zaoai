@@ -157,6 +157,13 @@ impl AIResultMetadata {
             self.true_positives as f64 / (self.true_positives + self.false_negatives) as f64;
         2.0 * (precision * recall) / (precision + recall)
     }
+
+    pub fn metric_max(&self) -> f64 {
+        self.cost.max(
+            self.last_loss
+                .max((self.learn_rate as f64).max(self.calc_accuracy().max(self.calc_f1_score()))),
+        )
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

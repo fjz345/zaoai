@@ -153,20 +153,68 @@ impl WindowTrainingGraph
         common_lines: Vec<Line<'_>>,
         extra_lines: impl IntoIterator<Item = Line<'static>>,
     ) -> PlotResponse<()> {
+        let toggle_id = "training_plot_full_view_toggle";
+        let mut full_view_toggle_value = ui.memory_mut(|m| {
+            m.data.get_persisted(toggle_id.into()).unwrap_or(false)
+        });
+
         ui.horizontal(|ui| {
             ui.label(title);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if ui.button("Clear").clicked() {
                     payload_buffer.clear();
                 }
+                if ui.toggle_value(&mut full_view_toggle_value, "Full View").clicked() {
+                    ui.memory_mut(|m| {
+                        m.data.insert_persisted(toggle_id.into(), full_view_toggle_value)
+                    });
+                }
             });
         });
 
-        Self::create_plot_training(title)
-            .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
+        Self::create_plot_training(title).legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
             .x_axis_label(x_label)
             .include_x(0.0)
             .show(ui, |plot_ui| {
+                if !full_view_toggle_value {
+                    let payload_max = payload_buffer
+                        .iter()
+                        .map(|f| f.payload_index as f64)
+                        .max_by(|a, b| a.total_cmp(b))
+                        .unwrap_or(0.0);
+
+                    const COUNT: f64 = 10.0;
+                    let min_x = (payload_max - COUNT).max(0.0);
+
+                    let mut y_min = f64::MAX;
+                    let mut y_max = f64::MIN;
+
+                    for p in payload_buffer.iter() {
+                        let x = p.payload_index as f64;
+                        if x >= min_x && x <= payload_max {
+                            let data = &p.training_metadata;
+                            let y_val = data.metric_max(); // Replace with your actual Y-axis struct field
+                            
+                            // y_min = y_min.min(y_val);
+                            y_max = y_max.max(y_val);
+                        }
+                    }
+
+                    // if y_min == f64::MAX {
+                    //     y_min = 0.0;
+                    //     y_max = 1.0;
+                    // }
+
+                    const Y_PADDING: f64 = 0.06;
+                    plot_ui.set_plot_bounds(egui_plot::PlotBounds::from_min_max(
+                        [min_x, 0.0 - Y_PADDING],
+                        [payload_max, y_max + Y_PADDING],
+                    ));
+                    plot_ui.set_auto_bounds([false, false]); 
+                } else {
+                    plot_ui.set_auto_bounds([true, true]);
+                }
+
                 for line in common_lines {
                     plot_ui.line(line);
                 }
@@ -300,31 +348,56 @@ impl WindowTrainingGraph {
             .height(300.0)
     }
 
-    fn create_plot_training_y_spacer_func(_grid: GridInput) -> Vec<GridMark> {
+    fn create_plot_training_y_spacer_func(grid: GridInput) -> Vec<GridMark> {
+        let (min, max) = grid.bounds;
+        let span = max - min;
+
+        if span <= 0.0 || !span.is_finite() {
+            return Vec::new();
+        }
+
+        let raw_step = span / 8.0;
+        let exponent = raw_step.log10().floor();
+        let scale = 10.0_f64.powf(exponent);
+
+        let normalized = raw_step / scale;
+        let major_step = if normalized < 1.5 {
+            scale
+        } else if normalized < 3.5 {
+            2.0 * scale
+        } else if normalized < 7.5 {
+            5.0 * scale
+        } else {
+            10.0 * scale
+        };
+
+        let minor_step = major_step / 5.0;
         let mut marks = Vec::new();
 
-        for &value in &[
-            0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9,
-            0.95,
-        ] {
-            marks.push(GridMark {
-                value,
-                step_size: 0.05,
-            });
+        let start_minor = (min / minor_step).floor() as i64;
+        let end_minor = (max / minor_step).ceil() as i64;
+
+        for i in start_minor..=end_minor {
+            let val = i as f64 * minor_step;
+            if val >= min && val <= max {
+                marks.push(GridMark {
+                    value: val,
+                    step_size: minor_step,
+                });
+            }
         }
 
-        for &value in &[0.0, 0.25, 0.5, 0.75] {
-            marks.push(GridMark {
-                value,
-                step_size: 0.25,
-            });
-        }
+        let start_major = (min / major_step).floor() as i64;
+        let end_major = (max / major_step).ceil() as i64;
 
-        for &value in &[0.0, 1.0] {
-            marks.push(GridMark {
-                value,
-                step_size: 1.0,
-            });
+        for i in start_major..=end_major {
+            let val = i as f64 * major_step;
+            if val >= min && val <= max {
+                marks.push(GridMark {
+                    value: val,
+                    step_size: major_step,
+                });
+            }
         }
 
         marks
