@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use sonogram::Spectrogram;
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{fs, path};
 
 use std::{
@@ -367,57 +368,42 @@ Find files
           ▼
     temp file automatically deleted
 */
-use crossbeam_channel::{RecvTimeoutError, SendTimeoutError};
+use crossbeam_channel::{RecvTimeoutError, SendTimeoutError, bounded};
 const NETWORK_WORKERS: usize = 2;
 const FFMPEG_WORKERS: usize = 8;
 const QUEUE_SIZE: usize = 4;
-const STALL_TIMEOUT: Duration = Duration::from_secs(2);
+const STALL_TIMEOUT: Duration = Duration::from_secs(15);
 
 struct LocalAudioFile {
     original_path: PathBuf,
     temp_file: tempfile::NamedTempFile,
 }
-
 fn copy_worker(
     receiver: crossbeam_channel::Receiver<PathBuf>,
     sender: crossbeam_channel::Sender<LocalAudioFile>,
     temp_dir: Option<PathBuf>,
+    active_counter: &AtomicUsize,
 ) {
-    loop {
-        let zlbl_path = match receiver.recv_timeout(STALL_TIMEOUT) {
-            Ok(p) => p,
-            Err(RecvTimeoutError::Timeout) => {
-                log::warn!("Stall: Network worker starved. Waiting for paths.");
-                continue;
-            }
-            Err(RecvTimeoutError::Disconnected) => break,
-        };
+    for zlbl_path in receiver {
+        active_counter.fetch_add(1, Ordering::Relaxed);
 
         let zaoai_label = match ZaoaiLabelsLoader::load_single(&zlbl_path) {
             Ok(label) => label,
             Err(e) => {
                 log::error!("Failed to load label {}:\n{:?}", zlbl_path.display(), e);
+                active_counter.fetch_sub(1, Ordering::Relaxed);
                 continue;
             }
         };
 
         match copy_to_local_temp(&zaoai_label.path, temp_dir.as_deref()) {
             Ok(temp_file) => {
-                let mut item = LocalAudioFile {
+                let item = LocalAudioFile {
                     original_path: zlbl_path,
                     temp_file,
                 };
-
-                loop {
-                    match sender.send_timeout(item, STALL_TIMEOUT) {
-                        Ok(_) => break,
-                        Err(SendTimeoutError::Timeout(returned_item)) => {
-                            log::warn!("Stall: FFmpeg queue full. Network worker blocked.");
-                            item = returned_item;
-                        }
-                        Err(SendTimeoutError::Disconnected(_)) => return,
-                    }
-                }
+                active_counter.fetch_sub(1, Ordering::Relaxed);
+                let _ = sender.send(item);
             }
             Err(e) => {
                 log::error!(
@@ -425,6 +411,7 @@ fn copy_worker(
                     zlbl_path.display(),
                     e
                 );
+                active_counter.fetch_sub(1, Ordering::Relaxed);
             }
         }
     }
@@ -462,33 +449,8 @@ fn copy_to_local_temp(path: &Path, temp_dir: Option<&Path>) -> Result<tempfile::
 fn process_local_file(local_audio_path: &Path, save_path: &Path, dim: [usize; 2]) -> Result<()> {
     let spectro_buffer = generate_spectrogram_ffmpeg(local_audio_path, dim[0], dim[1])?;
     save_spectrogram(spectro_buffer, dim[0], dim[1], save_path)?;
-    log::info!("Saved spectrogram: {}", save_path.display());
-
     Ok(())
 }
-
-struct StallWarningIter<T> {
-    receiver: crossbeam_channel::Receiver<T>,
-    timeout: Duration,
-    warn_msg: &'static str,
-}
-
-impl<T> Iterator for StallWarningIter<T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match self.receiver.recv_timeout(self.timeout) {
-                Ok(item) => return Some(item),
-                Err(RecvTimeoutError::Timeout) => {
-                    log::warn!("{}", self.warn_msg);
-                }
-                Err(RecvTimeoutError::Disconnected) => return None,
-            }
-        }
-    }
-}
-
 pub fn generate_zaoai_label_spectrograms_queued_multithread(
     list: &[EntryKind],
     spectrogram_file_extension: &str,
@@ -503,28 +465,70 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
         .filter(|path| !path.with_extension(spectrogram_file_extension).exists())
         .collect();
 
-    log::info!(
-        "Files found for spectrogram generation ({}):",
-        pending_files.len()
-    );
+    let total_files = pending_files.len();
+    log::info!("Files found for spectrogram generation ({}):", total_files);
 
-    let (file_tx, file_rx) = crossbeam_channel::bounded::<PathBuf>(QUEUE_SIZE);
-    let (local_tx, local_rx) = crossbeam_channel::bounded::<LocalAudioFile>(QUEUE_SIZE);
+    let (file_tx, file_rx) = bounded::<PathBuf>(QUEUE_SIZE);
+    let (local_tx, local_rx) = bounded::<LocalAudioFile>(QUEUE_SIZE);
+
+    let active_network = AtomicUsize::new(0);
+    let active_ffmpeg = AtomicUsize::new(0);
+    let processed_count = AtomicUsize::new(0);
+    let is_done = AtomicBool::new(false);
 
     std::thread::scope(|scope| -> Result<()> {
-        scope.spawn(|| {
-            for path in pending_files {
-                let mut current_path = path;
-                loop {
-                    match file_tx.send_timeout(current_path, STALL_TIMEOUT) {
-                        Ok(_) => break,
-                        Err(SendTimeoutError::Timeout(returned_path)) => {
-                            log::warn!("Stall: Network queue full. Producer blocked.");
-                            current_path = returned_path;
-                        }
-                        Err(SendTimeoutError::Disconnected(_)) => return,
+        let mon_file_rx = file_rx.clone();
+        let mon_local_rx = local_rx.clone();
+        let mon_net = &active_network;
+        let mon_ff = &active_ffmpeg;
+        let mon_processed = &processed_count;
+        let mon_done = &is_done;
+
+        scope.spawn(move || {
+            let mut last_processed = 0;
+            let mut stall_timer = Duration::ZERO;
+            let tick = Duration::from_secs(2);
+
+            while !mon_done.load(Ordering::Relaxed) {
+                let cur_net = mon_net.load(Ordering::Relaxed);
+                let cur_ff = mon_ff.load(Ordering::Relaxed);
+                let file_q = mon_file_rx.len();
+                let local_q = mon_local_rx.len();
+                let cur_processed = mon_processed.load(Ordering::Relaxed);
+
+                log::info!(
+                    "Pipeline | Network: {}/{} [Q: {}/{}] | FFmpeg: {}/{} [Q: {}/{}]",
+                    cur_net, NETWORK_WORKERS,
+                    file_q, QUEUE_SIZE,
+                    cur_ff, FFMPEG_WORKERS,
+                    local_q, QUEUE_SIZE
+                );
+
+                if (cur_net > 0 || cur_ff > 0) && cur_processed == last_processed {
+                    stall_timer += tick;
+                    if stall_timer >= STALL_TIMEOUT {
+                        log::warn!(
+                            "Pipeline stalled for {:?} | Network: {}/{} [Q: {}/{}] | FFmpeg: {}/{} [Q: {}/{}]",
+                            STALL_TIMEOUT,
+                            cur_net, NETWORK_WORKERS,
+                            file_q, QUEUE_SIZE,
+                            cur_ff, FFMPEG_WORKERS,
+                            local_q, QUEUE_SIZE
+                        );
+                        stall_timer = Duration::ZERO;
                     }
+                } else {
+                    stall_timer = Duration::ZERO;
+                    last_processed = cur_processed;
                 }
+
+                std::thread::sleep(tick);
+            }
+        });
+
+        scope.spawn(move || {
+            for path in pending_files {
+                let _ = file_tx.send(path);
             }
             drop(file_tx);
         });
@@ -533,25 +537,27 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
             let rx = file_rx.clone();
             let tx = local_tx.clone();
             let t_dir = custom_temp_dir.clone();
+            let net_counter = &active_network;
 
             scope.spawn(move || {
-                copy_worker(rx, tx, t_dir);
+                copy_worker(rx, tx, t_dir, net_counter);
             });
         }
+
         drop(local_tx);
+        drop(file_rx);
 
         let ffmpeg_pool = rayon::ThreadPoolBuilder::new()
             .num_threads(FFMPEG_WORKERS)
             .build()?;
 
-        ffmpeg_pool.install(|| {
-            let stall_iter = StallWarningIter {
-                receiver: local_rx,
-                timeout: STALL_TIMEOUT,
-                warn_msg: "Stall: FFmpeg worker starved. Waiting for local files.",
-            };
+        let ff_counter = &active_ffmpeg;
+        let p_counter = &processed_count;
 
-            stall_iter.par_bridge().for_each(|item| {
+        ffmpeg_pool.install(|| {
+            local_rx.into_iter().par_bridge().for_each(|item| {
+                ff_counter.fetch_add(1, Ordering::Relaxed);
+
                 let save_path = item
                     .original_path
                     .with_extension(spectrogram_file_extension);
@@ -564,10 +570,16 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
                         item.original_path.display(),
                         e
                     );
+                } else {
+                    log::info!("Saved spectrogram: {}", save_path.display());
                 }
+
+                ff_counter.fetch_sub(1, Ordering::Relaxed);
+                p_counter.fetch_add(1, Ordering::Relaxed);
             });
         });
 
+        is_done.store(true, Ordering::Relaxed);
         Ok(())
     })
 }
