@@ -3,7 +3,8 @@ use rayon::prelude::*;
 use sonogram::Spectrogram;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::{fs, path};
+use std::sync::{Arc, Mutex};
+use std::{fs, path, thread};
 
 use std::{
     fs::File,
@@ -373,7 +374,7 @@ Find files
           ▼
     temp file automatically deleted
 */
-use crossbeam_channel::bounded;
+use crossbeam_channel::{Receiver, Sender, bounded};
 
 #[derive(Clone, Copy)]
 pub struct PipelineConfig {
@@ -384,24 +385,76 @@ pub struct PipelineConfig {
     pub stall_timeout: Duration,
 }
 
+#[derive(Default)]
+struct PipelineFiles {
+    next: Option<PathBuf>,
+    network: Vec<PathBuf>,
+    ffmpeg: Vec<PathBuf>,
+}
+fn preview_name(path: Option<&Path>) -> String {
+    path.and_then(|p| p.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "-".to_string())
+}
+fn pipeline_status(
+    file_q: usize,
+    cur_net: usize,
+    local_q: usize,
+    cur_ff: usize,
+    config: &PipelineConfig,
+    next_file: Option<&Path>,
+    network_file: Option<&Path>,
+    ffmpeg_file: Option<&Path>,
+) -> String {
+    format!(
+        "Q [{}/{}] → Network [{}/{}] → Q [{}/{}] → FFmpeg [{}/{}]\n\
+         └─ Next: {} | Network: {} | FFmpeg: {}",
+        file_q,
+        config.network_queue_size,
+        cur_net,
+        config.network_workers,
+        local_q,
+        config.ffmpeg_queue_size,
+        cur_ff,
+        config.ffmpeg_workers,
+        preview_name(next_file),
+        preview_name(network_file),
+        preview_name(ffmpeg_file),
+    )
+}
+
 struct LocalAudioFile {
     original_path: PathBuf,
     temp_file: tempfile::NamedTempFile,
 }
 
 fn copy_worker(
-    receiver: crossbeam_channel::Receiver<PathBuf>,
-    sender: crossbeam_channel::Sender<LocalAudioFile>,
+    receiver: Receiver<PathBuf>,
+    sender: Sender<LocalAudioFile>,
     temp_dir: Option<PathBuf>,
     active_counter: &AtomicUsize,
+    pipeline_files: Arc<Mutex<PipelineFiles>>,
 ) {
     for zlbl_path in receiver {
         active_counter.fetch_add(1, Ordering::Relaxed);
+
+        // Add this file to the active Network workers.
+        {
+            let mut files = pipeline_files.lock().unwrap();
+            files.network.push(zlbl_path.clone());
+        }
 
         let zaoai_label = match ZaoaiLabelsLoader::load_single(&zlbl_path) {
             Ok(label) => label,
             Err(e) => {
                 log::error!("Failed to load label {}:\n{:?}", zlbl_path.display(), e);
+
+                // Remove from Network.
+                {
+                    let mut files = pipeline_files.lock().unwrap();
+                    files.network.retain(|p| p != &zlbl_path);
+                }
+
                 active_counter.fetch_sub(1, Ordering::Relaxed);
                 continue;
             }
@@ -410,24 +463,42 @@ fn copy_worker(
         match copy_to_local_temp(&zaoai_label.path, temp_dir.as_deref()) {
             Ok(temp_file) => {
                 let item = LocalAudioFile {
-                    original_path: zlbl_path,
+                    original_path: zlbl_path.clone(),
                     temp_file,
                 };
+
+                // Network work is finished.
+                {
+                    let mut files = pipeline_files.lock().unwrap();
+                    files.network.retain(|p| p != &zlbl_path);
+                }
+
                 active_counter.fetch_sub(1, Ordering::Relaxed);
-                let _ = sender.send(item);
+
+                if sender.send(item).is_err() {
+                    log::error!("Failed to send {} to FFmpeg queue", zlbl_path.display());
+                    break;
+                }
             }
+
             Err(e) => {
                 log::error!(
                     "Failed to copy media for {} locally:\n{:?}",
                     zlbl_path.display(),
                     e
                 );
+
+                // Remove from Network.
+                {
+                    let mut files = pipeline_files.lock().unwrap();
+                    files.network.retain(|p| p != &zlbl_path);
+                }
+
                 active_counter.fetch_sub(1, Ordering::Relaxed);
             }
         }
     }
 }
-
 fn copy_to_local_temp(path: &Path, temp_dir: Option<&Path>) -> Result<tempfile::NamedTempFile> {
     use std::fs::File;
     use std::io::copy;
@@ -463,26 +534,6 @@ fn process_local_file(local_audio_path: &Path, save_path: &Path, dim: [usize; 2]
     Ok(())
 }
 
-fn pipeline_status(
-    file_q: usize,
-    cur_net: usize,
-    local_q: usize,
-    cur_ff: usize,
-    config: &PipelineConfig,
-) -> String {
-    format!(
-        "Q [{}/{}] -> Network [{}/{}] -> Q [{}/{}] -> FFmpeg [{}/{}]",
-        file_q,
-        config.network_queue_size,
-        cur_net,
-        config.network_workers,
-        local_q,
-        config.ffmpeg_queue_size,
-        cur_ff,
-        config.ffmpeg_workers,
-    )
-}
-
 pub fn generate_zaoai_label_spectrograms_queued_multithread(
     list: &[EntryKind],
     spectrogram_file_extension: &str,
@@ -499,7 +550,7 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
     let mut files = Vec::new();
     collect_target_files(list, &mut files)?;
 
-    let mut pending_files: Vec<_> = files
+    let mut pending_files: Vec<PathBuf> = files
         .into_iter()
         .filter(|path| !path.with_extension(spectrogram_file_extension).exists())
         .collect();
@@ -509,9 +560,11 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
     }
 
     let total_files = pending_files.len();
+
     log::info!("Files found for spectrogram generation ({}):", total_files);
 
     let (file_tx, file_rx) = bounded::<PathBuf>(config.network_queue_size);
+
     let (local_tx, local_rx) = bounded::<LocalAudioFile>(config.ffmpeg_queue_size);
 
     let active_network = AtomicUsize::new(0);
@@ -519,13 +572,23 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
     let processed_count = AtomicUsize::new(0);
     let is_done = AtomicBool::new(false);
 
-    std::thread::scope(|scope| -> Result<()> {
+    // Names of files currently moving through the pipeline.
+    let pipeline_files = Arc::new(Mutex::new(PipelineFiles::default()));
+
+    thread::scope(|scope| -> Result<()> {
+        // ============================================================
+        // PIPELINE MONITOR
+        // ============================================================
+
         let mon_file_rx = file_rx.clone();
         let mon_local_rx = local_rx.clone();
+
         let mon_net = &active_network;
         let mon_ff = &active_ffmpeg;
         let mon_processed = &processed_count;
         let mon_done = &is_done;
+
+        let mon_pipeline_files = Arc::clone(&pipeline_files);
 
         scope.spawn(move || {
             let mut last_processed = 0;
@@ -535,22 +598,39 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
             while !mon_done.load(Ordering::Relaxed) {
                 let cur_net = mon_net.load(Ordering::Relaxed);
                 let cur_ff = mon_ff.load(Ordering::Relaxed);
+
                 let file_q = mon_file_rx.len();
                 let local_q = mon_local_rx.len();
+
                 let cur_processed = mon_processed.load(Ordering::Relaxed);
 
-                log::info!(
-                    "Pipeline | {}",
-                    pipeline_status(file_q, cur_net, local_q, cur_ff, &config)
-                );
+                let status = {
+                    let files = mon_pipeline_files.lock().unwrap();
+
+                    pipeline_status(
+                        file_q,
+                        cur_net,
+                        local_q,
+                        cur_ff,
+                        &config,
+                        files.next.as_deref(),
+                        files.network.first().map(PathBuf::as_path),
+                        files.ffmpeg.first().map(PathBuf::as_path),
+                    )
+                };
+
+                log::info!("Pipeline | {}", status);
+
                 if (cur_net > 0 || cur_ff > 0) && cur_processed == last_processed {
                     stall_timer += tick;
+
                     if stall_timer >= config.stall_timeout {
                         log::warn!(
                             "Pipeline stalled for {:?} | {}",
                             config.stall_timeout,
-                            pipeline_status(file_q, cur_net, local_q, cur_ff, &config),
+                            status
                         );
+
                         stall_timer = Duration::ZERO;
                     }
                 } else {
@@ -558,31 +638,74 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
                     last_processed = cur_processed;
                 }
 
-                std::thread::sleep(tick);
+                thread::sleep(tick);
             }
         });
 
+        // ============================================================
+        // FILE PRODUCER
+        // ============================================================
+
+        let producer_pipeline_files = Arc::clone(&pipeline_files);
+
         scope.spawn(move || {
-            for path in pending_files {
-                let _ = file_tx.send(path);
+            for index in 0..pending_files.len() {
+                let path = pending_files[index].clone();
+
+                // This is the next file being submitted.
+                {
+                    let mut files = producer_pipeline_files.lock().unwrap();
+
+                    files.next = Some(path.clone());
+                }
+
+                if file_tx.send(path).is_err() {
+                    break;
+                }
+
+                // Show the following file as "Next".
+                {
+                    let mut files = producer_pipeline_files.lock().unwrap();
+
+                    files.next = pending_files.get(index + 1).cloned();
+                }
             }
+
+            // Nothing left to submit.
+            {
+                let mut files = producer_pipeline_files.lock().unwrap();
+
+                files.next = None;
+            }
+
             drop(file_tx);
         });
+
+        // ============================================================
+        // NETWORK WORKERS
+        // ============================================================
 
         for _ in 0..config.network_workers {
             let rx = file_rx.clone();
             let tx = local_tx.clone();
+
             let t_dir = custom_temp_dir.clone();
+
             let net_counter = &active_network;
 
+            let worker_pipeline_files = Arc::clone(&pipeline_files);
+
             scope.spawn(move || {
-                copy_worker(rx, tx, t_dir, net_counter);
+                copy_worker(rx, tx, t_dir, net_counter, worker_pipeline_files);
             });
         }
 
-        // Dropping these handles closes the channels when threads finish sending
+        // The network workers own the remaining sender handles.
         drop(local_tx);
-        drop(file_rx);
+
+        // ============================================================
+        // FFMPEG WORKERS
+        // ============================================================
 
         let ffmpeg_pool = rayon::ThreadPoolBuilder::new()
             .num_threads(config.ffmpeg_workers)
@@ -591,9 +714,18 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
         let ff_counter = &active_ffmpeg;
         let p_counter = &processed_count;
 
+        let ffmpeg_pipeline_files = Arc::clone(&pipeline_files);
+
         ffmpeg_pool.install(|| {
             local_rx.into_iter().par_bridge().for_each(|item| {
                 ff_counter.fetch_add(1, Ordering::Relaxed);
+
+                // Add this file to active FFmpeg workers.
+                {
+                    let mut files = ffmpeg_pipeline_files.lock().unwrap();
+
+                    files.ffmpeg.push(item.original_path.clone());
+                }
 
                 let save_path = item
                     .original_path
@@ -611,12 +743,21 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
                     log::trace!("Saved spectrogram: {}", save_path.display());
                 }
 
+                // Remove this file from active FFmpeg.
+                {
+                    let mut files = ffmpeg_pipeline_files.lock().unwrap();
+
+                    files.ffmpeg.retain(|p| p != &item.original_path);
+                }
+
                 ff_counter.fetch_sub(1, Ordering::Relaxed);
                 p_counter.fetch_add(1, Ordering::Relaxed);
             });
         });
 
+        // Tell the monitor to stop.
         is_done.store(true, Ordering::Relaxed);
+
         Ok(())
     })
 }
