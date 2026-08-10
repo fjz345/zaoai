@@ -1,62 +1,26 @@
 use std::env;
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::time::Duration;
 
+mod args;
 mod soloud;
 
 use anyhow::Result;
 
+use clap::Parser;
 use zaoai_types::spectrogram::{SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH};
 
 use zaoai_types::ai_labels::{
-    collect_zaoai_labels_multithread, generate_zaoai_label_spectrograms_multithread,
+    PipelineConfig, collect_zaoai_labels_multithread,
     generate_zaoai_label_spectrograms_queued_multithread,
 };
 use zaoai_types::file::{EntryKind, list_dir};
 use zaoai_types::time::*;
 use zaoai_types::utils::{ListDirSplit, collect_flat_files};
 
-use clap::Parser;
 use zaoai_types::mkv::{collect_list_dir_split, path_exists};
 
-#[derive(Parser)]
-struct Args {
-    #[arg(short, long, default_value = "")]
-    media: String,
-    #[arg(short, long, default_value = "")]
-    output: String,
-
-    // Deletes artifacts for step(s) before generating data
-    #[arg(short, long, default_value_t = false)]
-    delete_output: bool,
-
-    // Generate listdirsplit
-    #[arg(short, long, default_value_t = false)]
-    listdirsplit: bool,
-    // Generate .ZLBL(s) (Preq: listdirsplit)
-    #[arg(short, long, default_value_t = false)]
-    zlbl: bool,
-    // Generate Spectrograms (Preq: ZLBL)
-    #[arg(short, long, default_value_t = false)]
-    spectrogram: bool,
-}
-
-fn resolve_str(env_var: &str, cli_arg: String, default: &str) -> String {
-    std::env::var(env_var).unwrap_or_else(|_| {
-        if !cli_arg.is_empty() {
-            cli_arg
-        } else {
-            default.to_string()
-        }
-    })
-}
-
-fn resolve_parsed<T: FromStr>(env_var: &str, default: T) -> T {
-    std::env::var(env_var)
-        .ok()
-        .and_then(|v| v.parse::<T>().ok())
-        .unwrap_or(default)
-}
+use crate::args::*;
 
 fn main() -> Result<()> {
     let _program_timer = ScopeTimer::new("program_total");
@@ -72,8 +36,8 @@ fn main() -> Result<()> {
         );
     }
 
-    let media_path = resolve_str("ZAOAI_MEDIA_PATH", args.media, "test/test_Source");
-    let output_path = resolve_str("OUTPUT_PATH", args.output, "output");
+    let media_path: String = resolve(args.media, "ZAOAI_MEDIA_PATH", "test/test_Source".into())?;
+    let output_path: String = resolve(args.output, "OUTPUT_PATH", "output".into())?;
     std::fs::create_dir_all(&output_path)?;
     path_exists(&output_path);
 
@@ -82,7 +46,7 @@ fn main() -> Result<()> {
         let _timer_scope = ScopeTimer::new("list_dir_split");
 
         let listdirsplit_filename = "list_dir_split.json";
-        if resolve_parsed("OUTPUT_PATH_CLEAR", false) {
+        if resolve("".into(), "OUTPUT_PATH_CLEAR", false)? {
             let pathbuf = PathBuf::from(&output_path);
             for i in 0..=999 {
                 let filename = format!("list_dir_split_{:03}.json", i);
@@ -97,7 +61,7 @@ fn main() -> Result<()> {
 
         path_exists(&media_path);
 
-        let threads = resolve_parsed("LISTDIRSPLIT_NUM_THREADS", 0);
+        let threads: usize = resolve("".into(), "LISTDIRSPLIT_NUM_THREADS", 0)?;
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()
@@ -120,7 +84,7 @@ fn main() -> Result<()> {
         let read_list_dir_split =
             ListDirSplit::from_file_json("output/list_dir_split_001.json").unwrap();
 
-        if resolve_parsed("OUTPUT_PATH_CLEAR", false) {
+        if resolve("".into(), "OUTPUT_PATH_CLEAR", false)? {
             let mut flat_files = Vec::new();
             collect_flat_files(
                 &[EntryKind::Directory(zaoai_labels_out_path.clone())],
@@ -138,7 +102,7 @@ fn main() -> Result<()> {
             }
         }
 
-        let threads = resolve_parsed("ZLBL_NUM_THREADS", 0);
+        let threads = resolve("".into(), "ZLBL_NUM_THREADS", 0)?;
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()
@@ -160,12 +124,12 @@ fn main() -> Result<()> {
         std::fs::create_dir_all(&zaoai_labels_out_path)?;
         path_exists(&zaoai_labels_out_path);
 
-        let spectogram_width = resolve_parsed("SPECTROGRAM_WIDTH", SPECTROGRAM_WIDTH);
-        let spectogram_height = resolve_parsed("SPECTROGRAM_HEIGHT", SPECTROGRAM_HEIGHT);
-        let spectrogram_file_extension =
-            resolve_str("SPECTROGRAM_EXTENSION", String::new(), "spectrogram");
+        let spectogram_width = resolve("".into(), "SPECTROGRAM_WIDTH", SPECTROGRAM_WIDTH)?;
+        let spectogram_height = resolve("".into(), "SPECTROGRAM_HEIGHT", SPECTROGRAM_HEIGHT)?;
+        let spectrogram_file_extension: String =
+            resolve("".into(), "SPECTROGRAM_EXTENSION", "spectrogram".into())?;
 
-        if resolve_parsed("OUTPUT_PATH_CLEAR", false) {
+        if resolve("".into(), "OUTPUT_PATH_CLEAR", false)? {
             let mut flat_files = Vec::new();
             collect_flat_files(
                 &[EntryKind::Directory(zaoai_labels_out_path.clone())],
@@ -187,31 +151,43 @@ fn main() -> Result<()> {
 
         let list_dir = list_dir(zaoai_labels_out_path, true)?;
 
-        let threads = resolve_parsed("SPECTROGRAM_NUM_THREADS", 0);
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build()
-            .unwrap();
+        const DEFAULT_QUEUE_SIZE_NETWORK: usize = 4;
+        const DEFAULT_NETWORK_WORKERS: usize = 2;
+        const DEFAULT_QUEUE_SIZE_FFMPEG: usize = 4;
+        const DEFAULT_FFMPEG_WORKERS: usize = 8;
+        const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(10);
 
-        log::info!("spectrogram threads: {}", pool.current_num_threads());
-        pool.install(|| {
-            // if let Err(e) = generate_zaoai_label_spectrograms_multithread(
-            //     &list_dir,
-            //     &spectrogram_file_extension,
-            //     [spectogram_width, spectogram_height],
-            // ) {
-            //     log::error!("{}", e);
-            // };
-
-            if let Err(e) = generate_zaoai_label_spectrograms_queued_multithread(
-                &list_dir,
-                &spectrogram_file_extension,
-                [spectogram_width, spectogram_height],
-                None,
-            ) {
-                log::error!("{}", e);
-            };
-        });
+        if let Err(e) = generate_zaoai_label_spectrograms_queued_multithread(
+            &list_dir,
+            &spectrogram_file_extension,
+            [spectogram_width, spectogram_height],
+            None,
+            PipelineConfig {
+                network_queue_size: resolve(
+                    args.network_queue,
+                    "SPECTROGRAM_NETWORK_QUEUE",
+                    DEFAULT_QUEUE_SIZE_NETWORK,
+                )?,
+                network_workers: resolve(
+                    args.network_workers,
+                    "SPECTROGRAM_NETWORK_WORKERS",
+                    DEFAULT_NETWORK_WORKERS,
+                )?,
+                ffmpeg_queue_size: resolve(
+                    args.ffmpeg_queue,
+                    "SPECTROGRAM_FFMPEG_QUEUE",
+                    DEFAULT_QUEUE_SIZE_FFMPEG,
+                )?,
+                ffmpeg_workers: resolve(
+                    args.ffmpeg_workers,
+                    "SPECTROGRAM_FFMPEG_WORKERS",
+                    DEFAULT_FFMPEG_WORKERS,
+                )?,
+                stall_timeout: resolve(args.stall_timeout, "STALL_TIMEOUT", DEFAULT_STALL_TIMEOUT)?,
+            },
+        ) {
+            log::error!("{}", e);
+        };
     }
 
     Ok(())

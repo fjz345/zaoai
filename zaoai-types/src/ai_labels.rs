@@ -368,16 +368,22 @@ Find files
           ▼
     temp file automatically deleted
 */
-use crossbeam_channel::{RecvTimeoutError, SendTimeoutError, bounded};
-const NETWORK_WORKERS: usize = 2;
-const FFMPEG_WORKERS: usize = 8;
-const QUEUE_SIZE: usize = 4;
-const STALL_TIMEOUT: Duration = Duration::from_secs(15);
+use crossbeam_channel::bounded;
+
+#[derive(Clone, Copy)]
+pub struct PipelineConfig {
+    pub network_queue_size: usize,
+    pub network_workers: usize,
+    pub ffmpeg_queue_size: usize,
+    pub ffmpeg_workers: usize,
+    pub stall_timeout: Duration,
+}
 
 struct LocalAudioFile {
     original_path: PathBuf,
     temp_file: tempfile::NamedTempFile,
 }
+
 fn copy_worker(
     receiver: crossbeam_channel::Receiver<PathBuf>,
     sender: crossbeam_channel::Sender<LocalAudioFile>,
@@ -451,18 +457,39 @@ fn process_local_file(local_audio_path: &Path, save_path: &Path, dim: [usize; 2]
     save_spectrogram(spectro_buffer, dim[0], dim[1], save_path)?;
     Ok(())
 }
-fn pipeline_status(file_q: usize, cur_net: usize, local_q: usize, cur_ff: usize) -> String {
+
+fn pipeline_status(
+    file_q: usize,
+    cur_net: usize,
+    local_q: usize,
+    cur_ff: usize,
+    config: &PipelineConfig,
+) -> String {
     format!(
         "Q [{}/{}] -> Network [{}/{}] -> Q [{}/{}] -> FFmpeg [{}/{}]",
-        file_q, QUEUE_SIZE, cur_net, NETWORK_WORKERS, local_q, QUEUE_SIZE, cur_ff, FFMPEG_WORKERS,
+        file_q,
+        config.network_queue_size,
+        cur_net,
+        config.network_workers,
+        local_q,
+        config.ffmpeg_queue_size,
+        cur_ff,
+        config.ffmpeg_workers,
     )
 }
+
 pub fn generate_zaoai_label_spectrograms_queued_multithread(
     list: &[EntryKind],
     spectrogram_file_extension: &str,
     spectrogram_dim: [usize; 2],
     custom_temp_dir: Option<PathBuf>,
+    config: PipelineConfig,
 ) -> Result<()> {
+    log::debug!("QUEUE_SIZE_NETWORK: {}", config.network_queue_size);
+    log::debug!("NETWORK_WORKERS: {}", config.network_workers);
+    log::debug!("QUEUE_SIZE_FFMPEG: {}", config.ffmpeg_queue_size);
+    log::debug!("FFMPEG_WORKERS: {}", config.ffmpeg_workers);
+
     let mut files = Vec::new();
     collect_target_files(list, &mut files)?;
 
@@ -474,8 +501,8 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
     let total_files = pending_files.len();
     log::info!("Files found for spectrogram generation ({}):", total_files);
 
-    let (file_tx, file_rx) = bounded::<PathBuf>(QUEUE_SIZE);
-    let (local_tx, local_rx) = bounded::<LocalAudioFile>(QUEUE_SIZE);
+    let (file_tx, file_rx) = bounded::<PathBuf>(config.network_queue_size);
+    let (local_tx, local_rx) = bounded::<LocalAudioFile>(config.ffmpeg_queue_size);
 
     let active_network = AtomicUsize::new(0);
     let active_ffmpeg = AtomicUsize::new(0);
@@ -504,15 +531,15 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
 
                 log::info!(
                     "Pipeline | {}",
-                    pipeline_status(file_q, cur_net, local_q, cur_ff)
+                    pipeline_status(file_q, cur_net, local_q, cur_ff, &config)
                 );
                 if (cur_net > 0 || cur_ff > 0) && cur_processed == last_processed {
                     stall_timer += tick;
-                    if stall_timer >= STALL_TIMEOUT {
+                    if stall_timer >= config.stall_timeout {
                         log::warn!(
                             "Pipeline stalled for {:?} | {}",
-                            STALL_TIMEOUT,
-                            pipeline_status(file_q, cur_net, local_q, cur_ff),
+                            config.stall_timeout,
+                            pipeline_status(file_q, cur_net, local_q, cur_ff, &config),
                         );
                         stall_timer = Duration::ZERO;
                     }
@@ -532,7 +559,7 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
             drop(file_tx);
         });
 
-        for _ in 0..NETWORK_WORKERS {
+        for _ in 0..config.network_workers {
             let rx = file_rx.clone();
             let tx = local_tx.clone();
             let t_dir = custom_temp_dir.clone();
@@ -543,11 +570,12 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
             });
         }
 
+        // Dropping these handles closes the channels when threads finish sending
         drop(local_tx);
         drop(file_rx);
 
         let ffmpeg_pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(FFMPEG_WORKERS)
+            .num_threads(config.ffmpeg_workers)
             .build()?;
 
         let ff_counter = &active_ffmpeg;
