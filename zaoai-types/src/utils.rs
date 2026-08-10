@@ -243,7 +243,18 @@ pub fn list_dir_with_kind_has_chapters_split(
 }
 
 pub fn preview_name(path: Option<&Path>) -> String {
-    path.and_then(|p| p.file_name())
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "-".to_string())
+    const MAX_LEN: usize = 24;
+
+    let name = match path.and_then(|p| p.file_name()) {
+        Some(name) => name.to_string_lossy(),
+        None => return "-".to_string(),
+    };
+
+    let char_count = name.chars().count();
+
+    if char_count <= MAX_LEN {
+        name.into_owned()
+    } else {
+        format!("{}…", name.chars().take(MAX_LEN - 1).collect::<String>())
+    }
 }
