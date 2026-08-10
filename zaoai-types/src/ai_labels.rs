@@ -451,6 +451,12 @@ fn process_local_file(local_audio_path: &Path, save_path: &Path, dim: [usize; 2]
     save_spectrogram(spectro_buffer, dim[0], dim[1], save_path)?;
     Ok(())
 }
+fn pipeline_status(file_q: usize, cur_net: usize, local_q: usize, cur_ff: usize) -> String {
+    format!(
+        "Q [{}/{}] -> Network [{}/{}] -> Q [{}/{}] -> FFmpeg [{}/{}]",
+        file_q, QUEUE_SIZE, cur_net, NETWORK_WORKERS, local_q, QUEUE_SIZE, cur_ff, FFMPEG_WORKERS,
+    )
+}
 pub fn generate_zaoai_label_spectrograms_queued_multithread(
     list: &[EntryKind],
     spectrogram_file_extension: &str,
@@ -497,23 +503,16 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
                 let cur_processed = mon_processed.load(Ordering::Relaxed);
 
                 log::info!(
-                    "Pipeline | Network: {}/{} [Q: {}/{}] | FFmpeg: {}/{} [Q: {}/{}]",
-                    cur_net, NETWORK_WORKERS,
-                    file_q, QUEUE_SIZE,
-                    cur_ff, FFMPEG_WORKERS,
-                    local_q, QUEUE_SIZE
+                    "Pipeline | {}",
+                    pipeline_status(file_q, cur_net, local_q, cur_ff)
                 );
-
                 if (cur_net > 0 || cur_ff > 0) && cur_processed == last_processed {
                     stall_timer += tick;
                     if stall_timer >= STALL_TIMEOUT {
                         log::warn!(
-                            "Pipeline stalled for {:?} | Network: {}/{} [Q: {}/{}] | FFmpeg: {}/{} [Q: {}/{}]",
+                            "Pipeline stalled for {:?} | {}",
                             STALL_TIMEOUT,
-                            cur_net, NETWORK_WORKERS,
-                            file_q, QUEUE_SIZE,
-                            cur_ff, FFMPEG_WORKERS,
-                            local_q, QUEUE_SIZE
+                            pipeline_status(file_q, cur_net, local_q, cur_ff),
                         );
                         stall_timer = Duration::ZERO;
                     }
