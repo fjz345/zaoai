@@ -197,17 +197,6 @@ pub fn collect_list_dir_split(
             .collect()
     };
 
-    log::trace!(
-        "With chapters[{}]: {:?}",
-        list_dir_split.num_with_chapters,
-        entry_kind_vec_string(&list_dir_split.with_chapters)
-    );
-    log::trace!(
-        "Without chapters[{}]: {:?}",
-        list_dir_split.num_without_chapters,
-        entry_kind_vec_string(&list_dir_split.without_chapters)
-    );
-
     let next_file_name = find_next_available_file(out_path.to_path_buf())?;
     assert!(ends_with_numbered_json(&next_file_name));
 
@@ -219,7 +208,7 @@ pub fn collect_list_dir_split(
 
     out_file.write_all(&serde_json::to_vec_pretty(&list_dir_split)?)?;
 
-    log::info!(
+    log::trace!(
         "ListDirSplit:\n\
      ├─ with chapters:    {}\n\
      ├─ without chapters: {}\n\

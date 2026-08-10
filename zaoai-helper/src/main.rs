@@ -73,9 +73,9 @@ fn main() -> Result<()> {
 
         path_exists(&media_path);
 
-        let threads: usize = resolve("".into(), "LISTDIRSPLIT_NUM_THREADS", 0)?;
+        let workers: usize = resolve("".into(), "LISTDIRSPLIT_NETWORK_WORKERS", 0)?;
         let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
+            .num_threads(workers)
             .build()
             .unwrap();
 

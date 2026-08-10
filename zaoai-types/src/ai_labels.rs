@@ -18,6 +18,7 @@ use crate::file::{EntryKind, list_dir, list_dir_all, relative_path_from_base};
 use crate::mkv::process_mkv_file;
 use crate::spectrogram::{S_SPECTROGRAM_NUM_BINS, generate_spectrogram_ffmpeg};
 use crate::spectrogram::{generate_spectrogram, save_spectrogram};
+use crate::utils::preview_name;
 use crate::{chapters::VideoMetadata, utils::ListDirSplit};
 
 pub struct AnimeDataPoint {
@@ -391,11 +392,7 @@ struct PipelineFiles {
     network: Vec<PathBuf>,
     ffmpeg: Vec<PathBuf>,
 }
-fn preview_name(path: Option<&Path>) -> String {
-    path.and_then(|p| p.file_name())
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "-".to_string())
-}
+
 fn pipeline_status(
     file_q: usize,
     cur_net: usize,

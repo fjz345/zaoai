@@ -10,7 +10,7 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     thread,
@@ -42,6 +42,39 @@ impl ListDirSplit {
         let new = serde_json::from_str::<Self>(&json_str)?;
         Ok(new)
     }
+}
+fn list_dir_split_status(
+    completed: usize,
+    total: usize,
+    active: &[PathBuf],
+    active_workers: usize,
+    workers: usize,
+) -> String {
+    let percent = if total > 0 {
+        completed as f64 / total as f64 * 100.0
+    } else {
+        100.0
+    };
+
+    let active_names = if active.is_empty() {
+        "-".to_string()
+    } else {
+        active
+            .iter()
+            .map(|path| {
+                path.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "-".to_string())
+            })
+            .collect::<Vec<_>>()
+            .join(" | ")
+    };
+
+    format!(
+        "ListDirSplit | Workers [{}/{}] | Progress [{}/{}] {:.1}%\n\
+         └─ Active: {}",
+        active_workers, workers, completed, total, percent, active_names,
+    )
 }
 
 pub fn collect_flat_files(
@@ -78,62 +111,110 @@ pub fn list_dir_with_kind_has_chapters_split(
     collect_flat_files(list, cull_empty_folders, &mut flat_files, limit)?;
 
     let total = flat_files.len();
+    let workers = rayon::current_num_threads();
 
     let completed = Arc::new(AtomicUsize::new(0));
+    let active_workers = Arc::new(AtomicUsize::new(0));
     let stop_progress = Arc::new(AtomicBool::new(false));
 
+    let pipeline_files = Arc::new(Mutex::new(Vec::<PathBuf>::new()));
+
+    // ============================================================
+    // PROGRESS MONITOR
+    // ============================================================
+
     let progress_completed = Arc::clone(&completed);
+    let progress_active_workers = Arc::clone(&active_workers);
     let progress_stop = Arc::clone(&stop_progress);
+    let progress_pipeline_files = Arc::clone(&pipeline_files);
 
     let progress_thread = thread::spawn(move || {
         while !progress_stop.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_secs(2));
 
             let done = progress_completed.load(Ordering::Relaxed);
+            let active_count = progress_active_workers.load(Ordering::Relaxed);
+
+            let active = {
+                let files = progress_pipeline_files.lock().unwrap();
+                files
+                    .iter()
+                    .map(|f| PathBuf::from(preview_name(Some(f))))
+                    .collect::<Vec<PathBuf>>()
+            };
 
             log::info!(
-                "ListDirSplit progress: {}/{} ({:.1}%)",
-                done,
-                total,
-                if total > 0 {
-                    done as f64 / total as f64 * 100.0
-                } else {
-                    100.0
-                }
+                "{}",
+                list_dir_split_status(done, total, &active, active_count, workers,)
             );
         }
     });
 
+    // ============================================================
+    // RAYON WORKERS
+    // ============================================================
+
     let split = flat_files
         .into_par_iter()
         .fold(ListDirSplit::default, |mut acc, item| {
-            if let EntryKind::File(path_buf) = &item {
-                if path_buf.extension().is_some_and(|ext| ext == "mkv") {
-                    if let Some(mkv_file_str) = path_buf.to_str() {
-                        match extract_chapters(mkv_file_str) {
-                            Ok(chapters) => {
-                                if chapters.iter().next().is_some() {
-                                    acc.with_chapters.push(item);
-                                } else {
-                                    acc.without_chapters.push(item);
-                                }
-                            }
-                            Err(e) => {
-                                log::error!(
-                                    "Chapter extract failed for {}: {e}",
-                                    path_buf.as_os_str().display()
-                                );
-                                acc.skipped.push(item);
-                            }
-                        }
+            let path_buf = match &item {
+                EntryKind::File(path) => path.clone(),
 
-                        completed.fetch_add(1, Ordering::Relaxed);
-                        return acc;
-                    }
+                _ => {
+                    completed.fetch_add(1, Ordering::Relaxed);
+                    acc.skipped.push(item);
+                    return acc;
                 }
+            };
+
+            // ----------------------------------------------------
+            // Worker starts processing this file
+            // ----------------------------------------------------
+
+            active_workers.fetch_add(1, Ordering::Relaxed);
+
+            {
+                let mut active = pipeline_files.lock().unwrap();
+                active.push(path_buf.clone());
             }
 
-            acc.skipped.push(item);
+            // ----------------------------------------------------
+            // Process the file
+            // ----------------------------------------------------
+
+            if path_buf
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("mkv"))
+            {
+                match extract_chapters(&path_buf) {
+                    Ok(chapters) => {
+                        if chapters.iter().next().is_some() {
+                            acc.with_chapters.push(item);
+                        } else {
+                            acc.without_chapters.push(item);
+                        }
+                    }
+
+                    Err(e) => {
+                        log::error!("Chapter extract failed for {}: {e}", path_buf.display());
+
+                        acc.skipped.push(item);
+                    }
+                }
+            } else {
+                acc.skipped.push(item);
+            }
+
+            // ----------------------------------------------------
+            // Worker finished processing this file
+            // ----------------------------------------------------
+
+            {
+                let mut active = pipeline_files.lock().unwrap();
+                active.retain(|p| p != &path_buf);
+            }
+
+            active_workers.fetch_sub(1, Ordering::Relaxed);
             completed.fetch_add(1, Ordering::Relaxed);
 
             acc
@@ -145,6 +226,10 @@ pub fn list_dir_with_kind_has_chapters_split(
             a
         });
 
+    // ============================================================
+    // STOP PROGRESS MONITOR
+    // ============================================================
+
     stop_progress.store(true, Ordering::Relaxed);
     progress_thread.join().ok();
 
@@ -155,4 +240,10 @@ pub fn list_dir_with_kind_has_chapters_split(
     );
 
     Ok(split)
+}
+
+pub fn preview_name(path: Option<&Path>) -> String {
+    path.and_then(|p| p.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "-".to_string())
 }
