@@ -38,6 +38,10 @@ fn main() -> Result<()> {
 
     let media_path: String = resolve(args.media, "ZAOAI_MEDIA_PATH", "test/test_Source".into())?;
     let output_path: String = resolve(args.output, "OUTPUT_PATH", "output".into())?;
+    let output_delete = resolve(args.delete_output.to_string(), "OUTPUT_DELETE", false)?;
+    if output_delete {
+        log::debug!("delete_output: {}", "true");
+    }
     std::fs::create_dir_all(&output_path)?;
     path_exists(&output_path);
 
@@ -46,12 +50,13 @@ fn main() -> Result<()> {
         let _timer_scope = ScopeTimer::new("list_dir_split");
 
         let listdirsplit_filename = "list_dir_split.json";
-        if resolve("".into(), "OUTPUT_PATH_CLEAR", false)? {
+        if output_delete {
             let pathbuf = PathBuf::from(&output_path);
             for i in 0..=999 {
                 let filename = format!("list_dir_split_{:03}.json", i);
                 let file_path = pathbuf.join(filename);
                 if file_path.exists() {
+                    log::debug!("Removing file: {}", file_path.display());
                     std::fs::remove_file(file_path)?;
                 }
             }
@@ -84,7 +89,7 @@ fn main() -> Result<()> {
         let read_list_dir_split =
             ListDirSplit::from_file_json("output/list_dir_split_001.json").unwrap();
 
-        if resolve("".into(), "OUTPUT_PATH_CLEAR", false)? {
+        if output_delete {
             let mut flat_files = Vec::new();
             collect_flat_files(
                 &[EntryKind::Directory(zaoai_labels_out_path.clone())],
@@ -129,7 +134,7 @@ fn main() -> Result<()> {
         let spectrogram_file_extension: String =
             resolve("".into(), "SPECTROGRAM_EXTENSION", "spectrogram".into())?;
 
-        if resolve("".into(), "OUTPUT_PATH_CLEAR", false)? {
+        if output_delete {
             let mut flat_files = Vec::new();
             collect_flat_files(
                 &[EntryKind::Directory(zaoai_labels_out_path.clone())],

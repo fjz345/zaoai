@@ -6,34 +6,26 @@ use clap::Parser;
 pub struct Args {
     #[arg(short, long, default_value = "")]
     pub media: String,
-
     #[arg(short, long, default_value = "")]
     pub output: String,
-
     #[arg(short, long, default_value_t = false)]
     pub delete_output: bool,
 
     #[arg(short, long, default_value_t = false)]
     pub listdirsplit: bool,
-
     #[arg(short, long, default_value_t = false)]
     pub zlbl: bool,
-
     #[arg(short, long, default_value_t = false)]
     pub spectrogram: bool,
 
     #[arg(long, default_value = "")]
     pub network_queue: String,
-
     #[arg(long, default_value = "")]
     pub network_workers: String,
-
     #[arg(long, default_value = "")]
     pub ffmpeg_queue: String,
-
     #[arg(long, default_value = "")]
     pub ffmpeg_workers: String,
-
     #[arg(long, default_value = "")]
     pub stall_timeout: String,
 }
