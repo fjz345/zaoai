@@ -3,6 +3,7 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
+    process::Command,
 };
 
 use sonogram::{SpecOptionsBuilder, Spectrogram};
@@ -14,6 +15,44 @@ pub static S_SPECTROGRAM_NUM_BINS: usize = 2048;
 pub static S_SPECTROGRAM_STEP_SIZE: usize = 2048;
 pub const SPECTROGRAM_WIDTH: usize = 128;
 pub const SPECTROGRAM_HEIGHT: usize = 32 as usize;
+
+pub fn generate_spectrogram_ffmpeg(path: &Path, width: usize, height: usize) -> Result<Vec<f32>> {
+    let path_str = path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid path string"))?;
+
+    // mode=combined: downmix to mono
+    // color=intensity: output grayscale bytes (0-255)
+    // scale=lin: linear frequency scale
+    // legend=0: remove text/axes padding from the raw image
+    // vflip: flips Y-axis so index 0 is 0Hz (matching sonogram array layout)
+    let filter = format!(
+        "aformat=channel_layouts=mono,showspectrumpic=s={}x{}:mode=combined:color=intensity:scale=lin:legend=0,vflip",
+        width, height
+    );
+
+    let output = Command::new("ffmpeg")
+        .args([
+            "-v", "error", "-i", path_str, "-lavfi", &filter, "-f", "rawvideo", "-pix_fmt", "gray",
+            "-",
+        ])
+        .output()
+        .context("Failed to execute ffmpeg command")?;
+
+    if !output.status.success() {
+        anyhow::bail!("FFmpeg failed: {}", String::from_utf8_lossy(&output.stderr));
+    }
+
+    // Convert FFmpeg's 8-bit grayscale intensity into normalized f32 (0.0 - 1.0).
+    // This perfectly mimics sonogram::to_buffer's output type and layout.
+    let f32_buffer: Vec<f32> = output
+        .stdout
+        .into_iter()
+        .map(|byte| byte as f32 / 255.0)
+        .collect();
+
+    Ok(f32_buffer)
+}
 
 pub fn generate_spectrogram(path: &PathBuf, num_spectrogram_bins: usize) -> Result<Spectrogram> {
     let (samples, sample_rate) = decode_audio_with_ffmpeg_f32(&path.to_str().unwrap())?;
@@ -28,8 +67,28 @@ pub fn generate_spectrogram(path: &PathBuf, num_spectrogram_bins: usize) -> Resu
     Ok(spectrogram)
 }
 
-const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 pub fn save_spectrogram(
+    buffer: Vec<f32>,
+    width: usize,
+    height: usize,
+    path: impl AsRef<Path>,
+) -> Result<()> {
+    log::debug!("save_spectrogram [{},{}]", width, height);
+
+    // Consuming Vec directly prevents cloning the giant buffer inside the tuple
+    let data = (width, height, buffer);
+    let bytes = bincode::encode_to_vec(data, BINCODE_CONFIG)?;
+
+    let mut file = File::create(path.as_ref())
+        .with_context(|| format!("Failed to create file at {}", path.as_ref().display()))?;
+
+    file.write_all(&bytes)?;
+
+    Ok(())
+}
+
+const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
+pub fn save_spectrogram_sonogram(
     spectrogram: &Spectrogram,
     width: usize,
     height: usize,

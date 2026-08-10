@@ -25,6 +25,7 @@ plotlib = "0.5.1"
 color-backtrace = "0.7.4"
 rayon = "1.12.0"
 clap = { version = "4", features = ["derive"] }
+crossbeam-channel = "0.5.16"
 
 [profile.dev]
 debug = true

@@ -1,4 +1,5 @@
 use std::env;
+use std::path::PathBuf;
 use std::str::FromStr;
 
 mod soloud;
@@ -9,10 +10,11 @@ use zaoai_types::spectrogram::{SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH};
 
 use zaoai_types::ai_labels::{
     collect_zaoai_labels_multithread, generate_zaoai_label_spectrograms_multithread,
+    generate_zaoai_label_spectrograms_queued_multithread,
 };
-use zaoai_types::file::list_dir;
+use zaoai_types::file::{EntryKind, list_dir};
 use zaoai_types::time::*;
-use zaoai_types::utils::ListDirSplit;
+use zaoai_types::utils::{ListDirSplit, collect_flat_files};
 
 use clap::Parser;
 use zaoai_types::mkv::{collect_list_dir_split, path_exists};
@@ -23,6 +25,10 @@ struct Args {
     media: String,
     #[arg(short, long, default_value = "")]
     output: String,
+
+    // Deletes artifacts for step(s) before generating data
+    #[arg(short, long, default_value_t = false)]
+    delete_output: bool,
 
     // Generate listdirsplit
     #[arg(short, long, default_value_t = false)]
@@ -68,17 +74,26 @@ fn main() -> Result<()> {
 
     let media_path = resolve_str("ZAOAI_MEDIA_PATH", args.media, "test/test_Source");
     let output_path = resolve_str("OUTPUT_PATH", args.output, "output");
-
-    if resolve_parsed("OUTPUT_PATH_CLEAR", false) {
-        std::fs::remove_dir_all(&output_path)?;
-    }
     std::fs::create_dir_all(&output_path)?;
+    path_exists(&output_path);
 
-    let zaoai_labels_out_path = format!("{output_path}/zaoai_labels");
-
+    let zaoai_labels_out_path = PathBuf::from(format!("{output_path}/zaoai_labels"));
     if args.listdirsplit {
         let _timer_scope = ScopeTimer::new("list_dir_split");
-        let list_dir_split_out_path = format!("{output_path}/list_dir_split.json");
+
+        let listdirsplit_filename = "list_dir_split.json";
+        if resolve_parsed("OUTPUT_PATH_CLEAR", false) {
+            let pathbuf = PathBuf::from(&output_path);
+            for i in 0..=999 {
+                let filename = format!("list_dir_split_{:03}.json", i);
+                let file_path = pathbuf.join(filename);
+                if file_path.exists() {
+                    std::fs::remove_file(file_path)?;
+                }
+            }
+        }
+
+        let list_dir_split_out_path = format!("{output_path}/{listdirsplit_filename}");
 
         path_exists(&media_path);
 
@@ -98,8 +113,30 @@ fn main() -> Result<()> {
 
     if args.zlbl {
         let _timer_scope = ScopeTimer::new("zaoai_labels");
+
+        std::fs::create_dir_all(&zaoai_labels_out_path)?;
+        path_exists(&zaoai_labels_out_path);
+
         let read_list_dir_split =
             ListDirSplit::from_file_json("output/list_dir_split_001.json").unwrap();
+
+        if resolve_parsed("OUTPUT_PATH_CLEAR", false) {
+            let mut flat_files = Vec::new();
+            collect_flat_files(
+                &[EntryKind::Directory(zaoai_labels_out_path.clone())],
+                false,
+                &mut flat_files,
+                None,
+            )?;
+            for item in flat_files {
+                if let EntryKind::File(path) = item {
+                    if path.extension().and_then(|ext| ext.to_str()) == Some("zlbl") {
+                        log::debug!("Deleting: {}", path.display());
+                        std::fs::remove_file(path)?;
+                    }
+                }
+            }
+        }
 
         let threads = resolve_parsed("ZLBL_NUM_THREADS", 0);
         let pool = rayon::ThreadPoolBuilder::new()
@@ -120,10 +157,33 @@ fn main() -> Result<()> {
     if args.spectrogram {
         let _timer_scope = ScopeTimer::new("spectrogram");
 
+        std::fs::create_dir_all(&zaoai_labels_out_path)?;
+        path_exists(&zaoai_labels_out_path);
+
         let spectogram_width = resolve_parsed("SPECTROGRAM_WIDTH", SPECTROGRAM_WIDTH);
         let spectogram_height = resolve_parsed("SPECTROGRAM_HEIGHT", SPECTROGRAM_HEIGHT);
         let spectrogram_file_extension =
             resolve_str("SPECTROGRAM_EXTENSION", String::new(), "spectrogram");
+
+        if resolve_parsed("OUTPUT_PATH_CLEAR", false) {
+            let mut flat_files = Vec::new();
+            collect_flat_files(
+                &[EntryKind::Directory(zaoai_labels_out_path.clone())],
+                false,
+                &mut flat_files,
+                None,
+            )?;
+            for item in flat_files {
+                if let EntryKind::File(path) = item {
+                    if path.extension().and_then(|ext| ext.to_str())
+                        == Some(spectrogram_file_extension.as_str())
+                    {
+                        log::debug!("Deleting: {}", path.display());
+                        std::fs::remove_file(path)?;
+                    }
+                }
+            }
+        }
 
         let list_dir = list_dir(zaoai_labels_out_path, true)?;
 
@@ -135,10 +195,19 @@ fn main() -> Result<()> {
 
         log::info!("spectrogram threads: {}", pool.current_num_threads());
         pool.install(|| {
-            if let Err(e) = generate_zaoai_label_spectrograms_multithread(
+            // if let Err(e) = generate_zaoai_label_spectrograms_multithread(
+            //     &list_dir,
+            //     &spectrogram_file_extension,
+            //     [spectogram_width, spectogram_height],
+            // ) {
+            //     log::error!("{}", e);
+            // };
+
+            if let Err(e) = generate_zaoai_label_spectrograms_queued_multithread(
                 &list_dir,
                 &spectrogram_file_extension,
                 [spectogram_width, spectogram_height],
+                None,
             ) {
                 log::error!("{}", e);
             };

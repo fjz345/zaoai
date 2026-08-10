@@ -38,7 +38,7 @@ impl ListDirSplit {
     }
 }
 
-fn collect_flat_files(
+pub fn collect_flat_files(
     list: &[EntryKind],
     cull_empty_folders: bool,
     flat_files: &mut Vec<EntryKind>,
