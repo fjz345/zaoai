@@ -40,7 +40,11 @@ fn main() -> Result<()> {
     let output_path: String = resolve(args.output, "OUTPUT_PATH", "output".into())?;
     let output_delete = resolve(args.delete_output.to_string(), "OUTPUT_DELETE", false)?;
     if output_delete {
-        log::debug!("delete_output: {}", "true");
+        log::debug!("delete_output: {}", output_delete);
+    }
+    let limit = resolve(args.limit.to_string(), "LIMIT", 0 as usize)?;
+    if limit != 0 {
+        log::debug!("limit: {}", limit);
     }
     std::fs::create_dir_all(&output_path)?;
     path_exists(&output_path);
@@ -74,7 +78,7 @@ fn main() -> Result<()> {
 
         log::info!("listdirsplit threads: {}", pool.current_num_threads());
         pool.install(|| {
-            if let Err(e) = collect_list_dir_split(media_path, list_dir_split_out_path) {
+            if let Err(e) = collect_list_dir_split(media_path, list_dir_split_out_path, limit) {
                 log::error!("{}", e);
             }
         });
@@ -95,7 +99,7 @@ fn main() -> Result<()> {
                 &[EntryKind::Directory(zaoai_labels_out_path.clone())],
                 false,
                 &mut flat_files,
-                None,
+                0,
             )?;
             for item in flat_files {
                 if let EntryKind::File(path) = item {
@@ -115,9 +119,11 @@ fn main() -> Result<()> {
 
         log::info!("zlbl threads: {}", pool.current_num_threads());
         pool.install(|| {
-            if let Err(e) =
-                collect_zaoai_labels_multithread(&read_list_dir_split, &zaoai_labels_out_path)
-            {
+            if let Err(e) = collect_zaoai_labels_multithread(
+                &read_list_dir_split,
+                &zaoai_labels_out_path,
+                limit,
+            ) {
                 log::error!("{}", e);
             }
         });
@@ -140,7 +146,7 @@ fn main() -> Result<()> {
                 &[EntryKind::Directory(zaoai_labels_out_path.clone())],
                 false,
                 &mut flat_files,
-                None,
+                0,
             )?;
             for item in flat_files {
                 if let EntryKind::File(path) = item {
@@ -162,11 +168,17 @@ fn main() -> Result<()> {
         const DEFAULT_FFMPEG_WORKERS: usize = 8;
         const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(10);
 
+        let temp_dir_string: String = resolve(args.temp_dir, "TEMP_DIR", "".into())?;
+        let custom_temp_dir = if temp_dir_string != "" {
+            Some(temp_dir_string.into())
+        } else {
+            None
+        };
         if let Err(e) = generate_zaoai_label_spectrograms_queued_multithread(
             &list_dir,
             &spectrogram_file_extension,
             [spectogram_width, spectogram_height],
-            None,
+            custom_temp_dir,
             PipelineConfig {
                 network_queue_size: resolve(
                     args.network_queue,
@@ -190,6 +202,7 @@ fn main() -> Result<()> {
                 )?,
                 stall_timeout: resolve(args.stall_timeout, "STALL_TIMEOUT", DEFAULT_STALL_TIMEOUT)?,
             },
+            limit,
         ) {
             log::error!("{}", e);
         };

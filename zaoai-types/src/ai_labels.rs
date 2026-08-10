@@ -79,6 +79,7 @@ impl ZaoaiLabel {
 pub fn collect_zaoai_labels_multithread(
     list_dir_split: &ListDirSplit,
     out_path: impl AsRef<Path> + Sync,
+    limit: usize,
 ) -> Result<()> {
     let out_path_ref = out_path.as_ref();
     let path_source = &list_dir_split.path_source;
@@ -93,125 +94,129 @@ pub fn collect_zaoai_labels_multithread(
         list_dir_split.num_skipped,
     );
 
-    list_dir_split.with_chapters.par_iter().for_each(|entry| {
-        let path_buf = entry.as_ref();
+    list_dir_split
+        .with_chapters
+        .par_iter()
+        .take(limit)
+        .for_each(|entry| {
+            let path_buf = entry.as_ref();
 
-        if !path_buf.is_file() {
-            log::error!("Entry not a file, skipping");
-            return;
-        }
-
-        let mkv_metadata = match process_mkv_file(entry) {
-            Ok(m) => m,
-            Err(e) => {
-                log::error!("process_mkv_file error on {}: {e}", path_buf.display());
+            if !path_buf.is_file() {
+                log::error!("Entry not a file, skipping");
                 return;
             }
-        };
 
-        let ((op_start, op_end), (ed_start, ed_end)) =
-            mkv_metadata.extract_opening_and_ending_times();
+            let mkv_metadata = match process_mkv_file(entry) {
+                Ok(m) => m,
+                Err(e) => {
+                    log::error!("process_mkv_file error on {}: {e}", path_buf.display());
+                    return;
+                }
+            };
 
-        match (op_start.zip(op_end), ed_start.zip(ed_end)) {
-            (Some((ops, ope)), Some((eds, ede))) => log::debug!(
-                "Extract OP&ED: {}\n\
+            let ((op_start, op_end), (ed_start, ed_end)) =
+                mkv_metadata.extract_opening_and_ending_times();
+
+            match (op_start.zip(op_end), ed_start.zip(ed_end)) {
+                (Some((ops, ope)), Some((eds, ede))) => log::debug!(
+                    "Extract OP&ED: {}\n\
         ├─ OP:    {}s-{}s\n\
         └─ ED:    {}s-{}s",
-                path_buf.as_os_str().display(),
-                ops.as_secs(),
-                ope.as_secs(),
-                eds.as_secs(),
-                ede.as_secs()
-            ),
-            (Some((ops, ope)), None) => log::debug!(
-                "Extract OP&ED: {}\n\
+                    path_buf.as_os_str().display(),
+                    ops.as_secs(),
+                    ope.as_secs(),
+                    eds.as_secs(),
+                    ede.as_secs()
+                ),
+                (Some((ops, ope)), None) => log::debug!(
+                    "Extract OP&ED: {}\n\
             ├─ OP:    {}s-{}s\n\
             └─ ED:    None",
-                path_buf.as_os_str().display(),
-                ops.as_secs(),
-                ope.as_secs()
-            ),
-            (None, Some((eds, ede))) => log::debug!(
-                "Extract OP&ED: {}\n\
+                    path_buf.as_os_str().display(),
+                    ops.as_secs(),
+                    ope.as_secs()
+                ),
+                (None, Some((eds, ede))) => log::debug!(
+                    "Extract OP&ED: {}\n\
         ├─ OP:    None\n\
         └─ ED:    {}s-{}s",
-                path_buf.as_os_str().display(),
-                eds.as_secs(),
-                ede.as_secs()
-            ),
-            (None, None) => {
-                log::debug!("No OP or ED found: {}", path_buf.as_os_str().display());
-                return;
-            }
-        }
-
-        let video_metadata: VideoMetadata = mkv_metadata.into();
-        let total_secs = video_metadata.duration.as_secs_f64();
-
-        let label = ZaoaiLabel {
-            path: path_buf.to_path_buf(),
-            path_source: path_source.clone(),
-            metadata: video_metadata,
-            version: ZAOAI_LABEL_VERSION,
-            opening_start_time: op_start,
-            opening_end_time: op_end,
-            opening_start_normalized: op_start.map(|f| f.as_secs_f64() / total_secs),
-            opening_end_normalized: op_end.map(|f| f.as_secs_f64() / total_secs),
-            ending_start_time: ed_start,
-            ending_end_time: ed_end,
-            ending_start_normalized: ed_start.map(|f| f.as_secs_f64() / total_secs),
-            ending_end_normalized: ed_end.map(|f| f.as_secs_f64() / total_secs),
-            ..Default::default()
-        };
-
-        let relative_path = match relative_path_from_base(path_buf, path_source) {
-            Ok(p) => p,
-            Err(e) => {
-                log::error!(
-                    "Failed to compute relative path for {}: {e}",
-                    path_buf.display()
-                );
-                return;
-            }
-        };
-
-        let output_path = out_path_ref.join(relative_path).with_extension("zlbl");
-
-        if let Some(parent) = output_path.parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
-                log::error!("Failed to create directory {}: {e}", parent.display());
-                return;
-            }
-        }
-
-        if output_path.exists() {
-            log::warn!(
-                "Output file already exists and will be overwritten: {}",
-                output_path.display()
-            );
-        }
-
-        match File::create(&output_path) {
-            Ok(mut file) => match serde_json::to_string_pretty(&label) {
-                Ok(json) => {
-                    if let Err(e) = writeln!(file, "{}", json) {
-                        log::error!("Failed to write to {}: {e}", output_path.display());
-                    } else {
-                        log::info!("Wrote: {}", output_path.display());
-                    }
+                    path_buf.as_os_str().display(),
+                    eds.as_secs(),
+                    ede.as_secs()
+                ),
+                (None, None) => {
+                    log::debug!("No OP or ED found: {}", path_buf.as_os_str().display());
+                    return;
                 }
+            }
+
+            let video_metadata: VideoMetadata = mkv_metadata.into();
+            let total_secs = video_metadata.duration.as_secs_f64();
+
+            let label = ZaoaiLabel {
+                path: path_buf.to_path_buf(),
+                path_source: path_source.clone(),
+                metadata: video_metadata,
+                version: ZAOAI_LABEL_VERSION,
+                opening_start_time: op_start,
+                opening_end_time: op_end,
+                opening_start_normalized: op_start.map(|f| f.as_secs_f64() / total_secs),
+                opening_end_normalized: op_end.map(|f| f.as_secs_f64() / total_secs),
+                ending_start_time: ed_start,
+                ending_end_time: ed_end,
+                ending_start_normalized: ed_start.map(|f| f.as_secs_f64() / total_secs),
+                ending_end_normalized: ed_end.map(|f| f.as_secs_f64() / total_secs),
+                ..Default::default()
+            };
+
+            let relative_path = match relative_path_from_base(path_buf, path_source) {
+                Ok(p) => p,
                 Err(e) => {
                     log::error!(
-                        "Failed to serialize JSON for {}: {e}",
-                        output_path.display()
+                        "Failed to compute relative path for {}: {e}",
+                        path_buf.display()
                     );
+                    return;
                 }
-            },
-            Err(e) => {
-                log::error!("Failed to create file {}: {e}", output_path.display());
+            };
+
+            let output_path = out_path_ref.join(relative_path).with_extension("zlbl");
+
+            if let Some(parent) = output_path.parent() {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    log::error!("Failed to create directory {}: {e}", parent.display());
+                    return;
+                }
             }
-        }
-    });
+
+            if output_path.exists() {
+                log::warn!(
+                    "Output file already exists and will be overwritten: {}",
+                    output_path.display()
+                );
+            }
+
+            match File::create(&output_path) {
+                Ok(mut file) => match serde_json::to_string_pretty(&label) {
+                    Ok(json) => {
+                        if let Err(e) = writeln!(file, "{}", json) {
+                            log::error!("Failed to write to {}: {e}", output_path.display());
+                        } else {
+                            log::info!("Wrote: {}", output_path.display());
+                        }
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Failed to serialize JSON for {}: {e}",
+                            output_path.display()
+                        );
+                    }
+                },
+                Err(e) => {
+                    log::error!("Failed to create file {}: {e}", output_path.display());
+                }
+            }
+        });
 
     Ok(())
 }
@@ -484,6 +489,7 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
     spectrogram_dim: [usize; 2],
     custom_temp_dir: Option<PathBuf>,
     config: PipelineConfig,
+    limit: usize,
 ) -> Result<()> {
     log::debug!("QUEUE_SIZE_NETWORK: {}", config.network_queue_size);
     log::debug!("NETWORK_WORKERS: {}", config.network_workers);
@@ -493,10 +499,14 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
     let mut files = Vec::new();
     collect_target_files(list, &mut files)?;
 
-    let pending_files: Vec<_> = files
+    let mut pending_files: Vec<_> = files
         .into_iter()
         .filter(|path| !path.with_extension(spectrogram_file_extension).exists())
         .collect();
+
+    if limit > 0 {
+        pending_files.truncate(limit);
+    }
 
     let total_files = pending_files.len();
     log::info!("Files found for spectrogram generation ({}):", total_files);

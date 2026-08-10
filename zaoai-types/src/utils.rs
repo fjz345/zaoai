@@ -42,11 +42,11 @@ pub fn collect_flat_files(
     list: &[EntryKind],
     cull_empty_folders: bool,
     flat_files: &mut Vec<EntryKind>,
-    limit: Option<usize>,
+    limit: usize,
 ) -> Result<()> {
     for item in list {
-        if let Some(max) = limit {
-            if flat_files.len() >= max {
+        if limit != 0 {
+            if flat_files.len() >= limit {
                 return Ok(());
             }
         }
@@ -67,7 +67,7 @@ pub fn collect_flat_files(
 pub fn list_dir_with_kind_has_chapters_split(
     list: &[EntryKind],
     cull_empty_folders: bool,
-    limit: Option<usize>,
+    limit: usize,
 ) -> Result<ListDirSplit> {
     let mut flat_files = Vec::new();
     collect_flat_files(list, cull_empty_folders, &mut flat_files, limit)?;

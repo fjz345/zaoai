@@ -11,6 +11,9 @@ pub struct Args {
     #[arg(short, long, default_value_t = false)]
     pub delete_output: bool,
 
+    #[arg(long, default_value_t = 0)]
+    pub limit: usize,
+
     #[arg(short, long, default_value_t = false)]
     pub listdirsplit: bool,
     #[arg(short, long, default_value_t = false)]
@@ -28,6 +31,8 @@ pub struct Args {
     pub ffmpeg_workers: String,
     #[arg(long, default_value = "")]
     pub stall_timeout: String,
+    #[arg(long, default_value = "")]
+    pub temp_dir: String,
 }
 
 #[derive(Debug)]

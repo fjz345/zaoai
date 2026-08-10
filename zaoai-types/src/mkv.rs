@@ -167,13 +167,13 @@ fn find_next_available_file(mut out_path: PathBuf) -> Result<PathBuf> {
     anyhow::bail!("Ran out of numbers (this should be practically impossible)")
 }
 
-pub fn collect_list_dir_split(path: impl AsRef<Path>, out_path: impl AsRef<Path>) -> Result<()> {
+pub fn collect_list_dir_split(
+    path: impl AsRef<Path>,
+    out_path: impl AsRef<Path>,
+    limit: usize,
+) -> Result<()> {
     let path = path.as_ref();
     let out_path = out_path.as_ref();
-
-    let limit = std::env::var("MAX_FILE_CHECK_LIMIT")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok());
 
     let list_of_entries = list_dir(path, true)?;
     let mut list_dir_split = list_dir_with_kind_has_chapters_split(&list_of_entries, true, limit)?;
