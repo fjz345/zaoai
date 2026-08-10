@@ -73,8 +73,6 @@ pub fn save_spectrogram(
     height: usize,
     path: impl AsRef<Path>,
 ) -> Result<()> {
-    log::debug!("save_spectrogram [{},{}]", width, height);
-
     // Consuming Vec directly prevents cloning the giant buffer inside the tuple
     let data = (width, height, buffer);
     let bytes = bincode::encode_to_vec(data, BINCODE_CONFIG)?;

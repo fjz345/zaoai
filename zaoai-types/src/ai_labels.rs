@@ -571,7 +571,7 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
                         e
                     );
                 } else {
-                    log::info!("Saved spectrogram: {}", save_path.display());
+                    log::debug!("Saved spectrogram: {}", save_path.display());
                 }
 
                 ff_counter.fetch_sub(1, Ordering::Relaxed);
