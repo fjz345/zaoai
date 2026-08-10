@@ -9,6 +9,12 @@ use std::{
     fs::{self},
     io::Read,
     path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
+    thread,
+    time::Duration,
 };
 
 pub(crate) fn get_third_party_binary(name: &str) -> PathBuf {
@@ -63,7 +69,6 @@ pub fn collect_flat_files(
     }
     Ok(())
 }
-
 pub fn list_dir_with_kind_has_chapters_split(
     list: &[EntryKind],
     cull_empty_folders: bool,
@@ -71,6 +76,33 @@ pub fn list_dir_with_kind_has_chapters_split(
 ) -> Result<ListDirSplit> {
     let mut flat_files = Vec::new();
     collect_flat_files(list, cull_empty_folders, &mut flat_files, limit)?;
+
+    let total = flat_files.len();
+
+    let completed = Arc::new(AtomicUsize::new(0));
+    let stop_progress = Arc::new(AtomicBool::new(false));
+
+    let progress_completed = Arc::clone(&completed);
+    let progress_stop = Arc::clone(&stop_progress);
+
+    let progress_thread = thread::spawn(move || {
+        while !progress_stop.load(Ordering::Relaxed) {
+            thread::sleep(Duration::from_secs(2));
+
+            let done = progress_completed.load(Ordering::Relaxed);
+
+            log::info!(
+                "ListDirSplit progress: {}/{} ({:.1}%)",
+                done,
+                total,
+                if total > 0 {
+                    done as f64 / total as f64 * 100.0
+                } else {
+                    100.0
+                }
+            );
+        }
+    });
 
     let split = flat_files
         .into_par_iter()
@@ -89,17 +121,21 @@ pub fn list_dir_with_kind_has_chapters_split(
                             Err(e) => {
                                 log::error!(
                                     "Chapter extract failed for {}: {e}",
-                                    path_buf.display()
+                                    path_buf.as_os_str().display()
                                 );
                                 acc.skipped.push(item);
                             }
                         }
+
+                        completed.fetch_add(1, Ordering::Relaxed);
                         return acc;
                     }
                 }
             }
 
             acc.skipped.push(item);
+            completed.fetch_add(1, Ordering::Relaxed);
+
             acc
         })
         .reduce(ListDirSplit::default, |mut a, mut b| {
@@ -108,6 +144,15 @@ pub fn list_dir_with_kind_has_chapters_split(
             a.skipped.append(&mut b.skipped);
             a
         });
+
+    stop_progress.store(true, Ordering::Relaxed);
+    progress_thread.join().ok();
+
+    log::info!(
+        "ListDirSplit complete: {}/{} files processed",
+        completed.load(Ordering::Relaxed),
+        total
+    );
 
     Ok(split)
 }

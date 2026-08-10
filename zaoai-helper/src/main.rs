@@ -56,14 +56,17 @@ fn main() -> Result<()> {
         let listdirsplit_filename = "list_dir_split.json";
         if output_delete {
             let pathbuf = PathBuf::from(&output_path);
+            let mut count_deleted = 0;
             for i in 0..=999 {
                 let filename = format!("list_dir_split_{:03}.json", i);
                 let file_path = pathbuf.join(filename);
                 if file_path.exists() {
                     log::debug!("Removing file: {}", file_path.display());
                     std::fs::remove_file(file_path)?;
+                    count_deleted += 1;
                 }
             }
+            log::debug!("Deleted list_dir_split_: {}", count_deleted);
         }
 
         let list_dir_split_out_path = format!("{output_path}/{listdirsplit_filename}");
@@ -101,14 +104,18 @@ fn main() -> Result<()> {
                 &mut flat_files,
                 0,
             )?;
+            let zlbl_extension = "zlbl";
+            let mut count_deleted = 0;
             for item in flat_files {
                 if let EntryKind::File(path) = item {
-                    if path.extension().and_then(|ext| ext.to_str()) == Some("zlbl") {
-                        log::debug!("Deleting: {}", path.display());
+                    if path.extension().and_then(|ext| ext.to_str()) == Some(zlbl_extension) {
+                        log::trace!("Deleting: {}", path.display());
                         std::fs::remove_file(path)?;
+                        count_deleted += 1;
                     }
                 }
             }
+            log::debug!("Deleted .{}: {}", zlbl_extension, count_deleted);
         }
 
         let threads = resolve("".into(), "ZLBL_NUM_THREADS", 0)?;
@@ -148,16 +155,19 @@ fn main() -> Result<()> {
                 &mut flat_files,
                 0,
             )?;
+            let mut count_deleted = 0;
             for item in flat_files {
                 if let EntryKind::File(path) = item {
                     if path.extension().and_then(|ext| ext.to_str())
                         == Some(spectrogram_file_extension.as_str())
                     {
-                        log::debug!("Deleting: {}", path.display());
+                        log::trace!("Deleting: {}", path.display());
                         std::fs::remove_file(path)?;
+                        count_deleted += 1;
                     }
                 }
             }
+            log::debug!("Deleted .{}: {}", spectrogram_file_extension, count_deleted);
         }
 
         let list_dir = list_dir(zaoai_labels_out_path, true)?;

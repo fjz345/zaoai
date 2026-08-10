@@ -118,7 +118,7 @@ pub fn collect_zaoai_labels_multithread(
                 mkv_metadata.extract_opening_and_ending_times();
 
             match (op_start.zip(op_end), ed_start.zip(ed_end)) {
-                (Some((ops, ope)), Some((eds, ede))) => log::debug!(
+                (Some((ops, ope)), Some((eds, ede))) => log::trace!(
                     "Extract OP&ED: {}\n\
         ├─ OP:    {}s-{}s\n\
         └─ ED:    {}s-{}s",
@@ -128,7 +128,7 @@ pub fn collect_zaoai_labels_multithread(
                     eds.as_secs(),
                     ede.as_secs()
                 ),
-                (Some((ops, ope)), None) => log::debug!(
+                (Some((ops, ope)), None) => log::trace!(
                     "Extract OP&ED: {}\n\
             ├─ OP:    {}s-{}s\n\
             └─ ED:    None",
@@ -136,7 +136,7 @@ pub fn collect_zaoai_labels_multithread(
                     ops.as_secs(),
                     ope.as_secs()
                 ),
-                (None, Some((eds, ede))) => log::debug!(
+                (None, Some((eds, ede))) => log::trace!(
                     "Extract OP&ED: {}\n\
         ├─ OP:    None\n\
         └─ ED:    {}s-{}s",
@@ -145,7 +145,7 @@ pub fn collect_zaoai_labels_multithread(
                     ede.as_secs()
                 ),
                 (None, None) => {
-                    log::debug!("No OP or ED found: {}", path_buf.as_os_str().display());
+                    log::trace!("No OP or ED found: {}", path_buf.as_os_str().display());
                     return;
                 }
             }
@@ -202,7 +202,7 @@ pub fn collect_zaoai_labels_multithread(
                         if let Err(e) = writeln!(file, "{}", json) {
                             log::error!("Failed to write to {}: {e}", output_path.display());
                         } else {
-                            log::info!("Wrote: {}", output_path.display());
+                            log::trace!("Wrote: {}", output_path.display());
                         }
                     }
                     Err(e) => {
@@ -340,7 +340,7 @@ pub fn process_single_zaoai_label(path: &Path, ext: &str, dim: [usize; 2]) -> Re
     let spectro_buffer = generate_spectrogram_ffmpeg(&zaoai_label.path, dim[0], dim[1])?;
 
     save_spectrogram(spectro_buffer, dim[0], dim[1], &save_path)?;
-    log::info!("Saved spectrogram: {}", save_path.display());
+    log::trace!("Saved spectrogram: {}", save_path.display());
 
     Ok(())
 }
@@ -608,7 +608,7 @@ pub fn generate_zaoai_label_spectrograms_queued_multithread(
                         e
                     );
                 } else {
-                    log::debug!("Saved spectrogram: {}", save_path.display());
+                    log::trace!("Saved spectrogram: {}", save_path.display());
                 }
 
                 ff_counter.fetch_sub(1, Ordering::Relaxed);

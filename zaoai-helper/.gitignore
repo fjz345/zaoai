@@ -8,6 +8,8 @@ test/
 third_party/mkvtoolnix/
 output/
 output_save/
+output_old/
+output_base/
 
 Cargo.lock
 .env

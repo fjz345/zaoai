@@ -14,7 +14,7 @@ use crate::utils::get_third_party_binary;
 pub fn extract_chapters(mkv_file_path: impl AsRef<Path>) -> anyhow::Result<Option<Chapters>> {
     let (_temp_dir, temp_file) = create_temp_file("chapters.xml")?;
 
-    log::debug!(
+    log::trace!(
         "Extracting chapters \"{}\" to \"{}\"",
         mkv_file_path.as_ref().as_os_str().display(),
         temp_file.display()
