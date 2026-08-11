@@ -100,7 +100,7 @@ pub fn collect_zaoai_labels_multithread(
     list_dir_split
         .with_chapters
         .par_iter()
-        .take(limit)
+        .take(if limit == 0 { usize::MAX } else { limit })
         .for_each(|entry| {
             let path_buf = entry.as_ref();
 
