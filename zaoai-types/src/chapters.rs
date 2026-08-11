@@ -33,8 +33,15 @@ pub fn extract_chapters(mkv_file_path: impl AsRef<Path>) -> anyhow::Result<Optio
         log::trace!("Input MKV path: {:?}", mkv_file_path.as_ref().display());
         log::trace!("Output XML path: {:?}", temp_file);
 
-        log::trace!("stdout\n{:?}", String::from_utf8_lossy(&output.stdout));
-        log::error!("stderr\n{:?}", String::from_utf8_lossy(&output.stderr));
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.to_lowercase().contains("error") {
+            log::error!("stdout\n{:?}", stdout);
+        } else {
+            log::trace!("stdout\n{:?}", stdout);
+        }
+        if !output.stderr.is_empty() {
+            log::error!("stderr\n{:?}", String::from_utf8_lossy(&output.stderr));
+        }
         anyhow::bail!(
             "mkvextract failed on {} with status: {}",
             mkv_file_path.as_ref().display(),

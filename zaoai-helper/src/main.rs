@@ -94,7 +94,13 @@ fn main() -> Result<()> {
         path_exists(&zaoai_labels_out_path);
 
         let read_list_dir_split =
-            ListDirSplit::from_file_json("output/list_dir_split_001.json").unwrap();
+            match ListDirSplit::from_file_json("output/list_dir_split_001.json") {
+                Ok(r) => r,
+                Err(e) => {
+                    log::error!("{e}");
+                    ListDirSplit::default()
+                }
+            };
 
         if output_delete {
             let mut flat_files = Vec::new();
