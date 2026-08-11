@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 mod args;
@@ -180,7 +180,7 @@ fn main() -> Result<()> {
 
         let temp_dir_string: String = resolve(args.temp_dir, "TEMP_DIR", "".into())?;
         let custom_temp_dir = if temp_dir_string != "" {
-            Some(temp_dir_string.into())
+            Some(Path::new(&temp_dir_string))
         } else {
             None
         };
