@@ -99,26 +99,32 @@ impl VideoMetadata {
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct Chapters {
-    #[serde(rename = "EditionEntry")]
-    edition_entry: EditionEntry,
+    #[serde(rename = "EditionEntry", default)]
+    pub edition_entries: Vec<EditionEntry>,
 }
 
 impl Into<Vec<ChapterAtom>> for Chapters {
     fn into(self) -> Vec<ChapterAtom> {
-        let vec: Vec<ChapterAtom> = self.edition_entry.chapters.to_owned();
-        vec
+        self.edition_entries
+            .into_iter()
+            .flat_map(|e| e.chapters)
+            .collect()
     }
 }
 
 impl Chapters {
     pub fn num_chapters(&self) -> usize {
-        self.edition_entry.chapters.len()
+        self.edition_entries.iter().map(|e| e.chapters.len()).sum()
     }
+
     pub fn iter(&self) -> impl Iterator<Item = &ChapterAtom> {
-        self.edition_entry.chapters.iter()
+        self.edition_entries.iter().flat_map(|e| e.chapters.iter())
     }
+
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut ChapterAtom> {
-        self.edition_entry.chapters.iter_mut()
+        self.edition_entries
+            .iter_mut()
+            .flat_map(|e| e.chapters.iter_mut())
     }
 
     pub fn to_os_string(&self) -> OsString {
@@ -143,18 +149,33 @@ impl Chapters {
 
 impl<'a> IntoIterator for &'a Chapters {
     type Item = &'a ChapterAtom;
-    type IntoIter = std::slice::Iter<'a, ChapterAtom>;
+    type IntoIter = std::iter::FlatMap<
+        std::slice::Iter<'a, EditionEntry>,
+        std::slice::Iter<'a, ChapterAtom>,
+        fn(&'a EditionEntry) -> std::slice::Iter<'a, ChapterAtom>,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.edition_entry.chapters.iter()
+        fn get_chapters<'a>(e: &'a EditionEntry) -> std::slice::Iter<'a, ChapterAtom> {
+            e.chapters.iter()
+        }
+        self.edition_entries.iter().flat_map(get_chapters)
     }
 }
+
 impl<'a> IntoIterator for &'a mut Chapters {
     type Item = &'a mut ChapterAtom;
-    type IntoIter = std::slice::IterMut<'a, ChapterAtom>;
+    type IntoIter = std::iter::FlatMap<
+        std::slice::IterMut<'a, EditionEntry>,
+        std::slice::IterMut<'a, ChapterAtom>,
+        fn(&'a mut EditionEntry) -> std::slice::IterMut<'a, ChapterAtom>,
+    >;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.edition_entry.chapters.iter_mut()
+        fn get_chapters_mut<'a>(e: &'a mut EditionEntry) -> std::slice::IterMut<'a, ChapterAtom> {
+            e.chapters.iter_mut()
+        }
+        self.edition_entries.iter_mut().flat_map(get_chapters_mut)
     }
 }
 
@@ -207,7 +228,12 @@ pub fn add_chapter_to_mkv(mkv_file: &str, timestamp: &str, title: &str) -> anyho
             title: title.to_string(),
         },
     };
-    chapters.edition_entry.chapters.push(new_chapter);
+
+    if let Some(edition) = chapters.edition_entries.first_mut() {
+        edition.chapters.push(new_chapter);
+    } else {
+        anyhow::bail!("No EditionEntry found in chapters structure");
+    }
 
     let xml_output = chapters_to_xml(&chapters)?;
 
@@ -216,7 +242,7 @@ pub fn add_chapter_to_mkv(mkv_file: &str, timestamp: &str, title: &str) -> anyho
     let mut file = File::create(&temp_file)?;
     file.write_all(xml_output.as_bytes())?;
 
-    // Step 6: Apply changes via mkvpropedit
+    // Apply changes via mkvpropedit
     let status = Command::new("third_party/bin/mkvpropedit.exe")
         .arg(mkv_file)
         .arg("--chapters")
