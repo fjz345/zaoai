@@ -37,7 +37,9 @@ pub fn extract_chapters(mkv_file_path: impl AsRef<Path>) -> anyhow::Result<Optio
         if stdout.to_lowercase().contains("error") {
             log::error!("stdout\n{:?}", stdout);
         } else {
-            log::trace!("stdout\n{:?}", stdout);
+            if !output.stdout.is_empty() {
+                log::trace!("stdout\n{:?}", stdout);
+            }
         }
         if !output.stderr.is_empty() {
             log::error!("stderr\n{:?}", String::from_utf8_lossy(&output.stderr));
