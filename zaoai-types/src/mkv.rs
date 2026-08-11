@@ -171,31 +171,23 @@ pub fn collect_list_dir_split(
     path: impl AsRef<Path>,
     out_path: impl AsRef<Path>,
     limit: usize,
+    progress_visualize_interval: Duration,
 ) -> Result<()> {
     let path = path.as_ref();
     let out_path = out_path.as_ref();
 
     let list_of_entries = list_dir(path, true)?;
-    let mut list_dir_split = list_dir_with_kind_has_chapters_split(&list_of_entries, true, limit)?;
+    let mut list_dir_split = list_dir_with_kind_has_chapters_split(
+        &list_of_entries,
+        true,
+        limit,
+        progress_visualize_interval,
+    )?;
 
     list_dir_split.path_source = path.to_path_buf();
     list_dir_split.num_with_chapters = list_dir_split.with_chapters.len() as u32;
     list_dir_split.num_without_chapters = list_dir_split.without_chapters.len() as u32;
     list_dir_split.num_skipped = list_dir_split.skipped.len() as u32;
-
-    let entry_kind_vec_string = |vec: &[EntryKind]| -> Vec<String> {
-        vec.iter()
-            .map(|f| match f {
-                EntryKind::File(path_buf)
-                | EntryKind::Directory(path_buf)
-                | EntryKind::Other(path_buf) => path_buf
-                    .file_stem()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned(),
-            })
-            .collect()
-    };
 
     let next_file_name = find_next_available_file(out_path.to_path_buf())?;
     assert!(ends_with_numbered_json(&next_file_name));

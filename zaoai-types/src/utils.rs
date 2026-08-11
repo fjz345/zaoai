@@ -106,6 +106,7 @@ pub fn list_dir_with_kind_has_chapters_split(
     list: &[EntryKind],
     cull_empty_folders: bool,
     limit: usize,
+    progress_visualize_interval: Duration,
 ) -> Result<ListDirSplit> {
     let mut flat_files = Vec::new();
     collect_flat_files(list, cull_empty_folders, &mut flat_files, limit)?;
@@ -122,7 +123,6 @@ pub fn list_dir_with_kind_has_chapters_split(
     // ============================================================
     // PROGRESS MONITOR
     // ============================================================
-
     let progress_completed = Arc::clone(&completed);
     let progress_active_workers = Arc::clone(&active_workers);
     let progress_stop = Arc::clone(&stop_progress);
@@ -130,7 +130,7 @@ pub fn list_dir_with_kind_has_chapters_split(
 
     let progress_thread = thread::spawn(move || {
         while !progress_stop.load(Ordering::Relaxed) {
-            thread::sleep(Duration::from_secs(2));
+            thread::sleep(progress_visualize_interval);
 
             let done = progress_completed.load(Ordering::Relaxed);
             let active_count = progress_active_workers.load(Ordering::Relaxed);
@@ -153,7 +153,6 @@ pub fn list_dir_with_kind_has_chapters_split(
     // ============================================================
     // RAYON WORKERS
     // ============================================================
-
     let split = flat_files
         .into_par_iter()
         .fold(ListDirSplit::default, |mut acc, item| {

@@ -13,6 +13,8 @@ pub struct Args {
 
     #[arg(long, default_value_t = 0)]
     pub limit: usize,
+    #[arg(short, long, default_value = "")]
+    pub interval: String,
 
     #[arg(short, long, default_value_t = false)]
     pub listdirsplit: bool,

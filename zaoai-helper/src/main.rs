@@ -73,6 +73,12 @@ fn main() -> Result<()> {
 
         path_exists(&media_path);
 
+        const DEFAULT_PROGRESS_VISUALIZE_INTERVAL: Duration = Duration::from_secs(5);
+        let progress_visualize_interval = resolve(
+            args.interval,
+            "PROGRESS_VISUALIZE_INTERVAL",
+            DEFAULT_PROGRESS_VISUALIZE_INTERVAL,
+        )?;
         let workers: usize = resolve("".into(), "LISTDIRSPLIT_NETWORK_WORKERS", 0)?;
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(workers)
@@ -81,7 +87,12 @@ fn main() -> Result<()> {
 
         log::info!("listdirsplit threads: {}", pool.current_num_threads());
         pool.install(|| {
-            if let Err(e) = collect_list_dir_split(media_path, list_dir_split_out_path, limit) {
+            if let Err(e) = collect_list_dir_split(
+                media_path,
+                list_dir_split_out_path,
+                limit,
+                progress_visualize_interval,
+            ) {
                 log::error!("{}", e);
             }
         });
