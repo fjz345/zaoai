@@ -737,7 +737,6 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     state_ctx.training_data.set_thresholds(1.0, 1.0);},
                         Err(e) => log::error!("{:?}", e),
                     }
-                   
                 }
 
                 // let zaoai_label_path  = "training_data\\firstoutputlabels\\zaoai_labels";
@@ -749,7 +748,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     {
                         Ok(ok) => {
                             let culled = ok
-                             .cull_by(|a| true);
+                             .cull_by(|a| a.expected_outputs().is_some());
                             self.cached_zaoai_loader = Some(culled);
                             log::info!("Set self.cached_zaoai_loader!: {}", self.cached_zaoai_loader.as_mut().unwrap().len());
                         }

@@ -58,10 +58,6 @@ pub struct ZaoaiLabel {
 }
 
 impl ZaoaiLabel {
-    pub fn has_opening(&self) -> bool {
-        self.opening_start_frame.is_some() && self.opening_end_frame.is_some()
-    }
-
     pub fn expected_outputs(&self) -> Option<Vec<f64>> {
         let mut start_normalized = None;
         let mut end_normalized = None;

@@ -288,7 +288,7 @@ fn zaoai_label_to_datapoint(
 
     let expected_outputs_correct_type = label
         .expected_outputs()
-        .ok_or(anyhow::Error::msg("ASD"))?
+        .ok_or(anyhow::Error::msg("NO EXPECTED OUTPUTS"))?
         .iter()
         .map(|f| *f as f32)
         .collect::<Vec<_>>();
