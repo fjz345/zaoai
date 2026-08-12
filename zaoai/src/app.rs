@@ -285,16 +285,20 @@ impl eframe::App for ZaoaiApp {
                             let result = rx_neural_network.try_recv();
                             match result {
                                 Ok(result) => {
-                                    log::info!("Training result recieved, updating AI");
+                                    log::trace!("Training result recieved, updating AI");
                                     self.ai = Some(result);
 
                                     self.training_session.set_state(TrainingState::Idle);
                                     self.state = AppState::Idle;
                                 }
-                                Err(e) => log::error!(
-                                    "Failed to recieve training finish data data: {}",
-                                    e
-                                ),
+                                Err(e) => match e {
+                                    std::sync::mpsc::TryRecvError::Empty => { /*Waiting for sender*/
+                                    }
+                                    std::sync::mpsc::TryRecvError::Disconnected => log::error!(
+                                        "Failed to recieve training finish data data: {}",
+                                        e
+                                    ),
+                                },
                             }
                         } else {
                             log::error!("Failed to get training thread neural network reciever");

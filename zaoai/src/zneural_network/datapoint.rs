@@ -286,10 +286,17 @@ fn zaoai_label_to_datapoint(
         spectrogram = unsafe { resize_spectrogram(spectrogram, dim[0], dim[1]) };
     }
 
+    let expected_outputs_correct_type = label
+        .expected_outputs()
+        .ok_or(anyhow::Error::msg("ASD"))?
+        .iter()
+        .map(|f| *f as f32)
+        .collect::<Vec<_>>();
+
     let new_point = AnimeDataPoint {
         path: label.path.clone(),
         spectrogram: spectrogram,
-        expected_outputs: label.expected_outputs(),
+        expected_outputs: expected_outputs_correct_type,
     };
 
     Ok(DataPoint::from_anime_data_point(new_point, dim[0], dim[1]))

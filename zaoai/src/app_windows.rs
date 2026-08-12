@@ -747,15 +747,20 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                     let new_label_loader = ZaoaiLabelsLoader::new(&zaoai_label_path);
                     match new_label_loader
                     {
-                        Ok(ok) => {self.cached_zaoai_loader = Some(ok);}
-                        Err(e) => log::debug!("Failed to load ZaoaiLabelsLoader: {:?}", e),
+                        Ok(ok) => {
+                            let culled = ok
+                             .cull_by(|a| true);
+                            self.cached_zaoai_loader = Some(culled);
+                            log::info!("Set self.cached_zaoai_loader!: {}", self.cached_zaoai_loader.as_mut().unwrap().len());
+                        }
+                        Err(e) => log::error!("Failed to load ZaoaiLabelsLoader: {:?}", e),
                     }
                 }
                 if let  Some(zaoai_label_loader) = &self.cached_zaoai_loader 
                 {
                     ui.horizontal(|ui|
                     {
-                        if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTROGRAM_WIDTH*SPECTROGRAM_HEIGHT, 2, zaoai_label_loader.len)).clicked()
+                        if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTROGRAM_WIDTH*SPECTROGRAM_HEIGHT, 2, zaoai_label_loader.len())).clicked()
                         {
                             let zaoai_labels = zaoai_label_loader.load_zaoai_labels().expect("failed to load zaoai_labels");
                             *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset::new(PathBuf::from(zaoai_label_path), zaoai_labels, [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]));

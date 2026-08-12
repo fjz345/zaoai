@@ -62,7 +62,7 @@ impl ZaoaiLabel {
         self.opening_start_frame.is_some() && self.opening_end_frame.is_some()
     }
 
-    pub fn expected_outputs(&self) -> Vec<f32> {
+    pub fn expected_outputs(&self) -> Option<Vec<f64>> {
         let mut start_normalized = None;
         let mut end_normalized = None;
         if let Some(t0) = self.opening_start_normalized {
@@ -72,10 +72,7 @@ impl ZaoaiLabel {
             end_normalized = Some(t1);
         }
 
-        let start = start_normalized.expect("failed to get start normalized");
-        let end = end_normalized.expect("failed to get end normalized");
-
-        vec![start as f32, end as f32]
+        Some(vec![start_normalized?, end_normalized?])
     }
 }
 
@@ -256,30 +253,22 @@ impl ZaoaiLabelsLoader {
     where
         F: Fn(&ZaoaiLabel) -> bool,
     {
-        let load_labels_result = self.load_zaoai_labels();
-
-        if let Err(e) = load_labels_result {
-            log::error!("cull_by failed: {}", e);
-            return self;
-        }
-
-        let all_labels = load_labels_result.unwrap();
-
-        let culled_labels: Vec<_> = all_labels
+        let culled_labels = self
+            .label_file_paths
             .iter()
-            .filter(|zlbl| fn_filter(*zlbl))
-            .cloned()
-            .collect();
-        let label_file_paths = culled_labels
-            .iter()
-            .map(|f| {
-                log::info!("{:?}", f.path.clone());
-                f.path.clone()
+            .filter(|path_zlbl| {
+                if let Ok(zlbl) = Self::load_zaoai_label(path_zlbl) {
+                    fn_filter(&zlbl)
+                } else {
+                    false
+                }
             })
-            .collect();
+            .cloned()
+            .collect::<Vec<_>>();
+
         Self {
             path_source: self.path_source,
-            label_file_paths: label_file_paths,
+            label_file_paths: culled_labels,
             label_input_dim: self.label_input_dim,
         }
     }
