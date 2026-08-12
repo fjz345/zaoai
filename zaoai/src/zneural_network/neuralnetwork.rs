@@ -196,6 +196,25 @@ impl NeuralNetwork {
         max
     }
 
+    pub fn get_parameters_num(&self) -> usize {
+        let mut total_params = 0;
+        let mut prev_nodes = self.graph_structure.input_nodes;
+
+        for &nodes in &self.graph_structure.hidden_layers {
+            total_params += (prev_nodes * nodes) + nodes;
+            prev_nodes = nodes;
+        }
+
+        let out_nodes = self.graph_structure.output_nodes;
+        total_params += (prev_nodes * out_nodes) + out_nodes;
+
+        total_params
+    }
+
+    pub fn get_parameters_unit_size(&self) -> usize {
+        std::mem::size_of::<f32>()
+    }
+
     fn apply_dropout(inputs: &mut [f32], mask: &mut Vec<f32>, dropout_prob: f32) {
         let keep_prob = 1.0 - dropout_prob;
         let mut rng = rand::thread_rng();
@@ -692,6 +711,21 @@ impl NeuralNetwork {
         is_valid
     }
 
+    fn format_count(n: usize) -> String {
+        let n = n as f64;
+        if n >= 1e12 {
+            format!("{:.1}T", n / 1e12).replace(".0", "")
+        } else if n >= 1e9 {
+            format!("{:.1}B", n / 1e9).replace(".0", "")
+        } else if n >= 1e6 {
+            format!("{:.1}M", n / 1e6).replace(".0", "")
+        } else if n >= 1e3 {
+            format!("{:.1}K", n / 1e3).replace(".0", "")
+        } else {
+            n.to_string()
+        }
+    }
+
     pub fn to_string(&self) -> String {
         let last_test_result_string = if let Some(last_test_results) = &self.last_test_results {
             format!("{}", last_test_results)
@@ -701,8 +735,12 @@ impl NeuralNetwork {
         let print_string: String = format!(
             "\
         Graph Structure: {}\n\
+        Parameters: {}\n\
+        Raw Bytes: {}\n\
         Last Test Results: {}\n",
             self.graph_structure.to_string(),
+            Self::format_count(self.get_parameters_num()),
+            self.get_parameters_num() * self.get_parameters_unit_size(),
             last_test_result_string
         );
 

@@ -277,7 +277,7 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
                     TrainingState::Finish => {
-                        log::info!("Training Finished! Waiting for result");
+                        log::trace!("Training Finished! Waiting for result");
 
                         if let Some(rx_neural_network) =
                             self.training_thread.rx_neuralnetwork.as_ref()
