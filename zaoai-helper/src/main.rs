@@ -49,6 +49,13 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(&output_path)?;
     path_exists(&output_path);
 
+    const DEFAULT_PROGRESS_VISUALIZE_INTERVAL: Duration = Duration::from_secs(5);
+    let progress_visualize_interval = resolve(
+        args.interval,
+        "PROGRESS_VISUALIZE_INTERVAL",
+        DEFAULT_PROGRESS_VISUALIZE_INTERVAL,
+    )?;
+
     let zaoai_labels_out_path = PathBuf::from(format!("{output_path}/zaoai_labels"));
     if args.listdirsplit {
         let _timer_scope = ScopeTimer::new("list_dir_split");
@@ -73,12 +80,6 @@ fn main() -> Result<()> {
 
         path_exists(&media_path);
 
-        const DEFAULT_PROGRESS_VISUALIZE_INTERVAL: Duration = Duration::from_secs(5);
-        let progress_visualize_interval = resolve(
-            args.interval,
-            "PROGRESS_VISUALIZE_INTERVAL",
-            DEFAULT_PROGRESS_VISUALIZE_INTERVAL,
-        )?;
         let workers: usize = resolve("".into(), "LISTDIRSPLIT_NETWORK_WORKERS", 0)?;
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(workers)
@@ -147,6 +148,7 @@ fn main() -> Result<()> {
                 &read_list_dir_split,
                 &zaoai_labels_out_path,
                 limit,
+                progress_visualize_interval,
             ) {
                 log::error!("{}", e);
             }
