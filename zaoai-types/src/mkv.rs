@@ -34,20 +34,21 @@ impl Into<VideoMetadata> for MkvMetadata {
     }
 }
 
+pub struct ChapterInverval {
+    pub start: Duration,
+    pub end: Option<Duration>,
+}
 impl MkvMetadata {
     pub fn extract_opening_and_ending_times(
         &self,
-    ) -> (
-        (Option<Duration>, Option<Duration>),
-        (Option<Duration>, Option<Duration>),
-    ) {
+    ) -> (Option<ChapterInverval>, Option<ChapterInverval>) {
         (
             self.find_chapter_times(&["op", "opening", "ncop"]),
             self.find_chapter_times(&["ed", "ending", "nced"]),
         )
     }
 
-    fn find_chapter_times(&self, keywords: &[&str]) -> (Option<Duration>, Option<Duration>) {
+    fn find_chapter_times(&self, keywords: &[&str]) -> Option<ChapterInverval> {
         for (i, chapter) in self.chapters.iter().enumerate() {
             let title = chapter.display.title.to_lowercase();
 
@@ -57,6 +58,10 @@ impl MkvMetadata {
 
             if is_match {
                 let start = parse_time(&chapter.start_time);
+                if start.is_none() {
+                    return None;
+                }
+                let start = start.unwrap();
                 let end = chapter
                     .end_time
                     .as_ref()
@@ -67,11 +72,11 @@ impl MkvMetadata {
                             .and_then(|next| parse_time(&next.start_time))
                     });
 
-                return (start, end);
+                return Some(ChapterInverval { start, end });
             }
         }
 
-        (None, None)
+        None
     }
 }
 

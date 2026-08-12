@@ -117,45 +117,56 @@ pub fn collect_zaoai_labels_multithread(
                 }
             };
 
-            let ((op_start, op_end), (ed_start, ed_end)) =
-                mkv_metadata.extract_opening_and_ending_times();
+            let (op_interval, ed_interval) = mkv_metadata.extract_opening_and_ending_times();
 
-            match (op_start.zip(op_end), ed_start.zip(ed_end)) {
-                (Some((ops, ope)), Some((eds, ede))) => log::trace!(
-                    "Extract OP&ED: {}\n\
-        ├─ OP:    {}s-{}s\n\
-        └─ ED:    {}s-{}s",
-                    path_buf.as_os_str().display(),
-                    ops.as_secs(),
-                    ope.as_secs(),
-                    eds.as_secs(),
-                    ede.as_secs()
-                ),
-                (Some((ops, ope)), None) => log::trace!(
-                    "Extract OP&ED: {}\n\
-            ├─ OP:    {}s-{}s\n\
-            └─ ED:    None",
-                    path_buf.as_os_str().display(),
-                    ops.as_secs(),
-                    ope.as_secs()
-                ),
-                (None, Some((eds, ede))) => log::trace!(
-                    "Extract OP&ED: {}\n\
-        ├─ OP:    None\n\
-        └─ ED:    {}s-{}s",
-                    path_buf.as_os_str().display(),
-                    eds.as_secs(),
-                    ede.as_secs()
-                ),
+            match (&op_interval, &ed_interval) {
                 (None, None) => {
                     log::trace!("No OP or ED found: {}", path_buf.as_os_str().display());
                     return;
                 }
+                (None, Some(ed)) => log::trace!(
+                    "Extract OP&ED: {}\n\
+                ├─ OP:    None\n\
+                └─ ED:    {}s-{}s",
+                    path_buf.as_os_str().display(),
+                    ed.start.as_secs(),
+                    ed.end
+                        .and_then(|f| Some(f.as_secs().to_string()))
+                        .unwrap_or("Null".to_string())
+                ),
+                (Some(op), None) => log::trace!(
+                    "Extract OP&ED: {}\n\
+                ├─ OP:    {}s-{}s\n\
+                └─ ED:    None",
+                    path_buf.as_os_str().display(),
+                    op.start.as_secs(),
+                    op.end
+                        .and_then(|f| Some(f.as_secs().to_string()))
+                        .unwrap_or("Null".to_string())
+                ),
+                (Some(op), Some(ed)) => log::trace!(
+                    "Extract OP&ED: {}\n\
+                ├─ OP:    {}s-{}s\n\
+                └─ ED:    {}s-{}s",
+                    path_buf.as_os_str().display(),
+                    op.start.as_secs(),
+                    op.end
+                        .and_then(|f| Some(f.as_secs().to_string()))
+                        .unwrap_or("Null".to_string()),
+                    ed.start.as_secs(),
+                    ed.end
+                        .and_then(|f| Some(f.as_secs().to_string()))
+                        .unwrap_or("Null".to_string())
+                ),
             }
 
             let video_metadata: VideoMetadata = mkv_metadata.into();
             let total_secs = video_metadata.duration.as_secs_f64();
 
+            let op_start = op_interval.as_ref().and_then(|f| Some(f.start.clone()));
+            let op_end = op_interval.and_then(|f| f.end);
+            let ed_start = ed_interval.as_ref().and_then(|f| Some(f.start.clone()));
+            let ed_end = ed_interval.and_then(|f| f.end);
             let label = ZaoaiLabel {
                 path: path_buf.to_path_buf(),
                 path_source: path_source.clone(),
@@ -227,7 +238,6 @@ pub fn collect_zaoai_labels_multithread(
 #[derive(Serialize, Deserialize)]
 pub struct ZaoaiLabelsLoader {
     pub path_source: PathBuf,
-    pub len: usize,
     pub label_file_paths: Vec<PathBuf>,
     pub label_input_dim: Option<[usize; 2]>,
 }
@@ -239,6 +249,39 @@ impl ZaoaiLabelsLoader {
 
         let label = Self::load_zaoai_label(path)?;
         Ok(label)
+    }
+
+    // TODO: Can be optimized
+    pub fn cull_by<F>(self, fn_filter: F) -> Self
+    where
+        F: Fn(&ZaoaiLabel) -> bool,
+    {
+        let load_labels_result = self.load_zaoai_labels();
+
+        if let Err(e) = load_labels_result {
+            log::error!("cull_by failed: {}", e);
+            return self;
+        }
+
+        let all_labels = load_labels_result.unwrap();
+
+        let culled_labels: Vec<_> = all_labels
+            .iter()
+            .filter(|zlbl| fn_filter(*zlbl))
+            .cloned()
+            .collect();
+        let label_file_paths = culled_labels
+            .iter()
+            .map(|f| {
+                log::info!("{:?}", f.path.clone());
+                f.path.clone()
+            })
+            .collect();
+        Self {
+            path_source: self.path_source,
+            label_file_paths: label_file_paths,
+            label_input_dim: self.label_input_dim,
+        }
     }
 
     pub fn new(path: impl AsRef<Path>) -> Result<Self> {
@@ -253,7 +296,6 @@ impl ZaoaiLabelsLoader {
 
         Ok(Self {
             path_source: path.as_ref().to_path_buf(),
-            len: list_of_entries.len(),
             label_file_paths: list_of_entries,
             label_input_dim: None,
         })
@@ -277,6 +319,10 @@ impl ZaoaiLabelsLoader {
         }
 
         Ok(vec)
+    }
+
+    pub fn len(&self) -> usize {
+        self.label_file_paths.len()
     }
 }
 
