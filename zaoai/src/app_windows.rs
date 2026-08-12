@@ -740,7 +740,8 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                    
                 }
 
-                let zaoai_label_path  = "training_data\\firstoutputlabels\\zaoai_labels";
+                // let zaoai_label_path  = "training_data\\firstoutputlabels\\zaoai_labels";
+                let zaoai_label_path  = "training_data\\output\\zaoai_labels";
                 if self.cached_zaoai_loader.is_none()
                 {
                     let new_label_loader = ZaoaiLabelsLoader::new(&zaoai_label_path);

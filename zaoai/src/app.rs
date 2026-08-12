@@ -277,21 +277,29 @@ impl eframe::App for ZaoaiApp {
                         }
                     }
                     TrainingState::Finish => {
-                        log::trace!("Training Finished! Waiting for result");
+                        log::info!("Training Finished! Waiting for result");
 
-                        let result = self
-                            .training_thread
-                            .rx_neuralnetwork
-                            .as_ref()
-                            .expect("ERROR")
-                            .try_recv();
-                        if let Ok(result) = result {
-                            log::info!("Training result recieved, updating AI");
-                            self.ai = Some(result);
+                        if let Some(rx_neural_network) =
+                            self.training_thread.rx_neuralnetwork.as_ref()
+                        {
+                            let result = rx_neural_network.try_recv();
+                            match result {
+                                Ok(result) => {
+                                    log::info!("Training result recieved, updating AI");
+                                    self.ai = Some(result);
 
-                            self.training_session.set_state(TrainingState::Idle);
-                            self.state = AppState::Idle;
+                                    self.training_session.set_state(TrainingState::Idle);
+                                    self.state = AppState::Idle;
+                                }
+                                Err(e) => log::error!(
+                                    "Failed to recieve training finish data data: {}",
+                                    e
+                                ),
+                            }
+                        } else {
+                            log::error!("Failed to get training thread neural network reciever");
                         }
+
                         ctx.request_repaint();
                     }
                 }
