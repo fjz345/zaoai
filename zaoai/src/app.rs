@@ -22,6 +22,7 @@ use std::{
     ops::RangeInclusive,
     str::FromStr,
     sync::{Arc, Mutex},
+    time::Instant,
 };
 
 use crate::{
@@ -284,8 +285,10 @@ impl eframe::App for ZaoaiApp {
                             self.training_thread.rx_neuralnetwork.as_ref()
                         {
                             let result = rx_neural_network.try_recv();
+                            let mut finish_time = false;
                             match result {
                                 Ok(result) => {
+                                    finish_time = true;
                                     log::trace!("Training result recieved, updating AI");
                                     self.ai = Some(result);
 
@@ -295,11 +298,26 @@ impl eframe::App for ZaoaiApp {
                                 Err(e) => match e {
                                     std::sync::mpsc::TryRecvError::Empty => { /*Waiting for sender*/
                                     }
-                                    std::sync::mpsc::TryRecvError::Disconnected => log::error!(
-                                        "Failed to recieve training finish data data: {}",
-                                        e
-                                    ),
+                                    std::sync::mpsc::TryRecvError::Disconnected => {
+                                        finish_time = true;
+                                        log::error!(
+                                            "Failed to recieve training finish data data: {}",
+                                            e
+                                        )
+                                    }
                                 },
+                            }
+                            if finish_time {
+                                let start = self
+                                    .training_thread
+                                    .start_time
+                                    .take()
+                                    .expect("Failed to get start_time");
+
+                                log::info!(
+                                    "Training complete, took {:.2} seconds",
+                                    start.elapsed().as_secs_f64()
+                                );
                             }
                         } else {
                             log::error!("Failed to get training thread neural network reciever");

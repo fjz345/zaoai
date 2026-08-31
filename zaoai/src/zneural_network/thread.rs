@@ -1,6 +1,7 @@
 use std::{
     sync::mpsc::{self, Receiver, SendError, Sender},
     thread::JoinHandle,
+    time::Instant,
 };
 
 #[cfg(feature = "serde")]
@@ -35,6 +36,8 @@ pub struct TrainingThreadController {
     pub rx_validation_payload: Option<Receiver<TrainingThreadPayload>>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub tx_abort: Option<Sender<()>>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub start_time: Option<Instant>,
 }
 
 impl TrainingThreadController {
@@ -55,6 +58,7 @@ impl TrainingThreadController {
             let (tx_validation_metadata, rx_validation_metadata) = mpsc::channel();
             let (tx_abort, rx_abort) = mpsc::channel();
 
+            self.start_time = Some(Instant::now());
             let training_thread = std::thread::spawn(move || {
                 let training_data_vec = training_data.training_split();
                 let validation_data_vec = training_data.validation_split();
