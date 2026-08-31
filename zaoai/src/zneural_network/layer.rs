@@ -6,10 +6,8 @@ use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 use wide::f32x8;
 
+use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
-use crate::zneural_network::{
-    activation::ActivationFunctionType, neuralnetwork::NeuralNetworkPingPong,
-};
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -231,6 +229,7 @@ impl Layer {
         }
     }
 
+    #[cfg(not(feature = "simd"))]
     fn compute_weighted_inputs_scalar(
         &self,
         inputs: &[LayerTypeCPU],
@@ -281,12 +280,22 @@ impl Layer {
         }
     }
 
-    #[cfg(not(feature = "simd"))]
     pub fn apply_activation(weighted_inputs: &mut [LayerTypeCPU], t: ActivationFunctionType) {
+        #[cfg(feature = "simd")]
+        Self::apply_activation_simd(weighted_inputs, t);
+        #[cfg(not(feature = "simd"))]
+        Self::apply_activation_scalar(weighted_inputs, t);
+    }
+
+    #[cfg(not(feature = "simd"))]
+    pub fn apply_activation_scalar(
+        weighted_inputs: &mut [LayerTypeCPU],
+        t: ActivationFunctionType,
+    ) {
         weighted_inputs.iter_mut().for_each(|x| *x = t.activate(*x));
     }
     #[cfg(feature = "simd")]
-    pub fn apply_activation(input: &mut [f32], t: ActivationFunctionType) {
+    pub fn apply_activation_simd(input: &mut [f32], t: ActivationFunctionType) {
         const CHUNK_SIZE: usize = 8;
 
         let mut chunks = input.chunks_exact_mut(CHUNK_SIZE);
@@ -307,8 +316,18 @@ impl Layer {
         }
     }
 
-    #[cfg(not(feature = "simd"))]
     fn fill_learn_data(&self, learn_data: &mut LayerLearnData, weighted_inputs: &[LayerTypeCPU]) {
+        #[cfg(feature = "simd")]
+        self.fill_learn_data_simd(learn_data, weighted_inputs);
+        #[cfg(not(feature = "simd"))]
+        self.fill_learn_data_scaler(learn_data, weighted_inputs);
+    }
+    #[cfg(not(feature = "simd"))]
+    fn fill_learn_data_scalar(
+        &self,
+        learn_data: &mut LayerLearnData,
+        weighted_inputs: &[LayerTypeCPU],
+    ) {
         assert_eq!(learn_data.weighted_inputs.len(), self.num_out_nodes);
         assert_eq!(learn_data.activation_values.len(), self.num_out_nodes);
 
@@ -322,9 +341,8 @@ impl Layer {
             *act = self.activation_type.activate(*w_in);
         }
     }
-    // not tested
     #[cfg(feature = "simd")]
-    fn fill_learn_data(&self, learn_data: &mut LayerLearnData, weighted_inputs: &[f32]) {
+    fn fill_learn_data_simd(&self, learn_data: &mut LayerLearnData, weighted_inputs: &[f32]) {
         use wide::f32x8;
 
         assert_eq!(learn_data.weighted_inputs.len(), self.num_out_nodes);
@@ -361,8 +379,14 @@ impl Layer {
         }
     }
 
-    #[cfg(not(feature = "simd"))]
     pub fn calculate_outputs(&self, inputs: &[LayerTypeCPU], outputs: &mut [LayerTypeCPU]) {
+        #[cfg(not(feature = "simd"))]
+        self.calculate_outputs_scalar(inputs, outputs);
+        #[cfg(feature = "simd")]
+        self.calculate_outputs_simd(inputs, outputs);
+    }
+    #[cfg(not(feature = "simd"))]
+    pub fn calculate_outputs_scalar(&self, inputs: &[LayerTypeCPU], outputs: &mut [LayerTypeCPU]) {
         self.compute_weighted_inputs_scalar(inputs, outputs);
         Self::apply_activation(outputs, self.activation_type);
     }
@@ -373,6 +397,18 @@ impl Layer {
     }
 
     pub fn calculate_outputs_learn(
+        &mut self,
+        inputs: &[LayerTypeCPU],
+        outputs: &mut [LayerTypeCPU],
+        learn_data: &mut LayerLearnData,
+    ) {
+        #[cfg(feature = "simd")]
+        self.calculate_outputs_learn_simd(inputs, outputs, learn_data);
+        #[cfg(not(feature = "simd"))]
+        self.calculate_outputs_learn_scalar(inputs, outputs, learn_data);
+    }
+    #[cfg(not(feature = "simd"))]
+    pub fn calculate_outputs_learn_scalar(
         &mut self,
         inputs: &[LayerTypeCPU],
         outputs: &mut [LayerTypeCPU],

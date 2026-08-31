@@ -502,10 +502,6 @@ impl NeuralNetwork {
             pingpong.next.resize(layer.num_out_nodes, 0.0);
 
             let learn_data = &mut self.layer_learn_data[i];
-            #[cfg(feature = "simd")]
-            layer.calculate_outputs_learn_simd(&pingpong.current, &mut pingpong.next, learn_data);
-
-            #[cfg(not(feature = "simd"))]
             layer.calculate_outputs_learn(&pingpong.current, &mut pingpong.next, learn_data);
 
             if let Some(prob) = layer.dropout_prob {
@@ -602,9 +598,6 @@ impl NeuralNetwork {
         for layer in &self.layers {
             pingpong.next.resize(layer.num_out_nodes, 0.0);
 
-            #[cfg(feature = "simd")]
-            layer.calculate_outputs_simd(&pingpong.current, &mut pingpong.next);
-            #[cfg(not(feature = "simd"))]
             layer.calculate_outputs(&pingpong.current, &mut pingpong.next);
 
             std::mem::swap(&mut pingpong.current, &mut pingpong.next);
