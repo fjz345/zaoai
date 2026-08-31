@@ -4,7 +4,7 @@ use crate::{
     app::{AppState, MenuWindowData}, egui_ext::{Interval, add_slider_sized}, mnist::get_mnist, zneural_network::{
         activation::ActivationFunctionType, cost::CostFunction, datapoint::{
             DataPoint, TrainingData, TrainingDataset, VirtualTrainingDataset, create_2x2_test_datapoints,
-        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn}
+        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn}
     },
 };
 use zaoai_types::ai_labels::LayerTypeCPU;
@@ -348,7 +348,7 @@ impl WindowTrainingGraph {
 }
 
 pub struct WindowAiCtx<'a> {
-    pub ai: &'a mut Option<NeuralNetwork>,
+    pub ai: &'a mut Option<NeuralNetworkCPU>,
     pub test_button_training_data: &'a Option<&'a TrainingData>,
     pub ai_is_corret_fn: &'a ConfusionEvaluator,
     pub payload_test_buffer: &'a mut Vec<TrainingThreadPayload>,

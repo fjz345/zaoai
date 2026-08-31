@@ -113,7 +113,7 @@ impl NeuralNetworkPingPong {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, bincode::Encode, bincode::Decode)]
-pub struct NeuralNetwork {
+pub struct NeuralNetworkCPU {
     pub graph_structure: GraphStructure,
     pub layers: Vec<Layer>,
     pub last_test_results: Option<TestResults>,
@@ -125,7 +125,7 @@ pub struct NeuralNetwork {
 }
 
 pub type NNOutputs<T> = Vec<T>;
-impl NeuralNetwork {
+impl NeuralNetworkCPU {
     const VERSION: u8 = 2;
     pub fn new(
         graph_structure: GraphStructure,
@@ -134,7 +134,7 @@ impl NeuralNetwork {
         dropout_prob: Option<LayerTypeCPU>,
         weight_init: WeightInit,
         bias_init: BiasInit,
-    ) -> NeuralNetwork {
+    ) -> NeuralNetworkCPU {
         let mut layers: Vec<Layer> = Vec::new();
         let mut prev_out_size = graph_structure.input_nodes;
 
@@ -169,7 +169,7 @@ impl NeuralNetwork {
             layer_learn_data.push(LayerLearnData::new(&layer));
         }
 
-        NeuralNetwork {
+        NeuralNetworkCPU {
             graph_structure,
             layers,
             last_test_results: None,
@@ -624,7 +624,7 @@ impl NeuralNetwork {
 }
 
 const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
-pub fn save_neural_network<P: AsRef<Path>>(nn: &NeuralNetwork, path: P) -> std::io::Result<()> {
+pub fn save_neural_network<P: AsRef<Path>>(nn: &NeuralNetworkCPU, path: P) -> std::io::Result<()> {
     // Create parent directories if they don't exist
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
@@ -637,12 +637,12 @@ pub fn save_neural_network<P: AsRef<Path>>(nn: &NeuralNetwork, path: P) -> std::
     Ok(())
 }
 
-pub fn load_neural_network(path: &str) -> std::io::Result<NeuralNetwork> {
+pub fn load_neural_network(path: &str) -> std::io::Result<NeuralNetworkCPU> {
     let mut file = File::open(path)?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
 
-    let (decoded, len): (NeuralNetwork, usize) =
+    let (decoded, len): (NeuralNetworkCPU, usize) =
         bincode::decode_from_slice(&buffer[..], BINCODE_CONFIG)
             .expect("load_neural_network failed, decoding failed.");
 

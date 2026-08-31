@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::zneural_network::{
-    neuralnetwork::NeuralNetwork,
+    neuralnetwork::NeuralNetworkCPU,
     training::{AIResultMetadata, TrainingSession},
 };
 
@@ -29,7 +29,7 @@ pub struct TrainingThreadController {
     #[cfg_attr(feature = "serde", serde(skip))]
     pub handle: Option<JoinHandle<()>>,
     #[cfg_attr(feature = "serde", serde(skip))]
-    pub rx_neuralnetwork: Option<Receiver<NeuralNetwork>>,
+    pub rx_neuralnetwork: Option<Receiver<NeuralNetworkCPU>>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub rx_training_payload: Option<Receiver<TrainingThreadPayload>>,
     #[cfg_attr(feature = "serde", serde(skip))]

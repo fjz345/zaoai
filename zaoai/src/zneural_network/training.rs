@@ -15,7 +15,7 @@ use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
     is_correct::ConfusionEvaluator,
     layer::calculate_cost,
-    neuralnetwork::{NNOutputs, NeuralNetwork, NeuralNetworkPingPong},
+    neuralnetwork::{NNOutputs, NeuralNetworkCPU, NeuralNetworkPingPong},
     thread::TrainingThreadPayload,
 };
 
@@ -162,7 +162,7 @@ impl AIResultMetadata {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone)]
 pub struct TrainingSession {
-    pub nn: Option<NeuralNetwork>,
+    pub nn: Option<NeuralNetworkCPU>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub state: TrainingState,
     pub num_epochs: usize,
@@ -177,7 +177,7 @@ pub struct TrainingSession {
 
 impl TrainingSession {
     pub fn new(
-        nn: Option<&NeuralNetwork>,
+        nn: Option<&NeuralNetworkCPU>,
         training_data: TrainingData,
         num_epochs: usize,
         batch_size: usize,
@@ -201,7 +201,7 @@ impl TrainingSession {
         }
     }
 
-    pub fn set_nn(&mut self, nn: &NeuralNetwork) {
+    pub fn set_nn(&mut self, nn: &NeuralNetworkCPU) {
         self.nn = Some(nn.clone());
     }
     pub fn set_state(&mut self, new_state: TrainingState) {
@@ -331,7 +331,7 @@ pub enum TrainingState {
 }
 
 pub fn test_nn<'a>(
-    nn: &'a mut NeuralNetwork,
+    nn: &'a mut NeuralNetworkCPU,
     test_data: &[DataPoint],
     is_correct_fn: ConfusionEvaluator,
     tx_test_metadata: Option<Sender<TrainingThreadPayload>>,

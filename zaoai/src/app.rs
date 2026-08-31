@@ -31,7 +31,7 @@ use crate::{
     egui_ext::add_slider_sized,
     zneural_network::{
         datapoint::DataPoint,
-        neuralnetwork::{GraphStructure, NeuralNetwork},
+        neuralnetwork::{GraphStructure, NeuralNetworkCPU},
         thread::{TrainingThreadController, TrainingThreadPayload},
         training::{TrainingSession, TrainingState},
     },
@@ -70,7 +70,7 @@ pub struct ZaoaiApp {
     #[cfg_attr(feature = "serde", serde(skip))]
     state: AppState,
     #[cfg_attr(feature = "serde", serde(skip))]
-    ai: Option<NeuralNetwork>,
+    ai: Option<NeuralNetworkCPU>,
     last_ai_filepath: Option<String>,
     window_data: MenuWindowData,
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -460,7 +460,7 @@ impl ZaoaiApp {
 
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
         log::info!("setup_ai");
-        self.ai = Some(NeuralNetwork::new(
+        self.ai = Some(NeuralNetworkCPU::new(
             nn_structure,
             self.window_data.ai_activation_function,
             self.window_data.ai_cost_fn,
