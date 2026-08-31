@@ -19,10 +19,8 @@ use eframe::{
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 use std::{
-    ops::RangeInclusive,
     str::FromStr,
     sync::{Arc, Mutex},
-    time::Instant,
 };
 
 use crate::{
@@ -231,17 +229,16 @@ impl eframe::App for ZaoaiApp {
                     }
                     TrainingState::Training => {
                         let mut received_any_training = false;
-                        let mut train_disconnected = true;
-                        let mut received_any_validation = false;
-                        let mut train_disconnected = true;
+                        let mut _received_any_validation = false;
+                        let mut _train_disconnected = true;
                         if let Some(rx_training) = self.training_thread.rx_training_payload.as_mut()
                         {
-                            (received_any_training, train_disconnected) = process_payload_channel(
+                            (received_any_training, _train_disconnected) = process_payload_channel(
                                 rx_training,
                                 &mut self.training_thread.payload_training_buffer,
                                 "Training channel disconnected",
                             );
-                            if train_disconnected {
+                            if _train_disconnected {
                                 self.training_thread.rx_training_payload = None;
                             }
                         } else {
@@ -250,7 +247,7 @@ impl eframe::App for ZaoaiApp {
                         if let Some(rx_validation) =
                             self.training_thread.rx_validation_payload.as_mut()
                         {
-                            let (received_any_validation, validation_disconnected) =
+                            let (_received_any_validation, validation_disconnected) =
                                 process_payload_channel(
                                     rx_validation,
                                     &mut self.training_thread.payload_validation_buffer,
@@ -263,7 +260,7 @@ impl eframe::App for ZaoaiApp {
                             log::error!("TrainingState::Training but could not get Validation Payload Reciever");
                         }
 
-                        // if received_any_training || received_any_validation {
+                        // if received_any_training || _received_any_validation {
                         // Need to repaint each frame for now. Otherwise crash due to channel disconnect on complete
                         ctx.request_repaint();
                         // }

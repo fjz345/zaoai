@@ -1,8 +1,6 @@
 #[cfg(feature = "simd")]
 use wide::f32x8;
 
-use zaoai_types::ai_labels::LayerTypeCPU;
-
 #[cfg(feature = "simd")]
 use crate::zneural_network::activation::relu_d;
 
@@ -27,16 +25,6 @@ pub fn cross_entropy_loss_multiclass_simd(predicted: f32x8, expected: f32x8) -> 
 
     let clamped = predicted.min(one - epsilon).max(epsilon);
     -expected * clamped.ln()
-}
-pub fn cross_entropy_loss_multiclass_d(
-    predicted: &[LayerTypeCPU],
-    expected: &[LayerTypeCPU],
-) -> LayerTypeCPU {
-    predicted
-        .iter()
-        .zip(expected.iter())
-        .map(|(p, y)| p - y)
-        .sum()
 }
 #[cfg(feature = "simd")]
 pub fn cross_entropy_loss_multiclass_d_simd(predicted: f32x8, expected: f32x8) -> f32x8 {

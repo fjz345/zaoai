@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use std::{fs, path, thread};
+use std::{fs, thread};
 
 use std::{
     fs::File,
@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::file::{EntryKind, list_dir, list_dir_all, relative_path_from_base};
 use crate::mkv::process_mkv_file;
-use crate::spectrogram::{S_SPECTROGRAM_NUM_BINS, generate_spectrogram_ffmpeg};
-use crate::spectrogram::{generate_spectrogram, save_spectrogram};
+use crate::spectrogram::generate_spectrogram_ffmpeg;
+use crate::spectrogram::save_spectrogram;
 use crate::utils::preview_name;
 use crate::{chapters::VideoMetadata, utils::ListDirSplit};
 
@@ -509,7 +509,7 @@ Find files
           ▼
     temp file automatically deleted
 */
-use crossbeam_channel::{Receiver, Sender, bounded};
+use crossbeam_channel::bounded;
 
 #[derive(Clone, Copy)]
 pub struct PipelineConfig {

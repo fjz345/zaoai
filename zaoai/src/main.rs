@@ -17,7 +17,6 @@ mod app;
 mod app_windows;
 mod egui_ext;
 mod error;
-mod filesystem;
 mod graphviz;
 mod graphviz_examples;
 mod mnist;
@@ -31,7 +30,7 @@ use crate::zneural_network::*;
 use eframe::egui;
 use std::env;
 
-static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
+// static NN_GRAPH_LAYOUT_FILEPATH: &'static str = "zaoai_nn_layout.dot";
 
 // Change the alias to `Box<dyn error::Error>`.
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;

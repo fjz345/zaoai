@@ -15,7 +15,6 @@ use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::mpsc::Sender;
-use wide::f32x8;
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 impl LayerLearnData {
@@ -34,7 +33,7 @@ impl LayerLearnData {
 #[derive(Clone, PartialEq, Debug, bincode::Encode, bincode::Decode)]
 pub struct GraphStructure {
     pub input_nodes: usize,
-    pub hidden_layers: Vec<usize>, // contais nodes
+    pub hidden_layers: Vec<usize>,
     pub output_nodes: usize,
 }
 
@@ -389,7 +388,7 @@ impl NeuralNetwork {
         batch_size: usize,
         learn_rate: LayerTypeCPU,
         learn_rate_decay: Option<FloatDecay>,
-        learn_rate_decay_rate: LayerTypeCPU,
+        _learn_rate_decay_rate: LayerTypeCPU,
         tx_training_metadata: Option<&Sender<TrainingThreadPayload>>,
         tx_validation_metadata: Option<&Sender<TrainingThreadPayload>>,
         is_correct_fn: ConfusionEvaluator,
@@ -563,29 +562,29 @@ impl NeuralNetwork {
         }
     }
 
-    pub fn validate(&self) -> bool {
-        let mut is_valid: bool = true;
+    // pub fn validate(&self) -> bool {
+    //     let mut is_valid: bool = true;
 
-        // Validate Graph Structure
-        if !self.graph_structure.validate() {
-            is_valid = false;
-        }
+    //     // Validate Graph Structure
+    //     if !self.graph_structure.validate() {
+    //         is_valid = false;
+    //     }
 
-        // Ensure that the layers input/output numbers match
-        let mut prev_out_size: usize = self.graph_structure.input_nodes;
-        for layer in &self.layers[..] {
-            if layer.num_in_nodes != prev_out_size {
-                is_valid = false;
-                break;
-            }
+    //     // Ensure that the layers input/output numbers match
+    //     let mut prev_out_size: usize = self.graph_structure.input_nodes;
+    //     for layer in &self.layers[..] {
+    //         if layer.num_in_nodes != prev_out_size {
+    //             is_valid = false;
+    //             break;
+    //         }
 
-            prev_out_size = layer.num_out_nodes;
-        }
+    //         prev_out_size = layer.num_out_nodes;
+    //     }
 
-        // TODO: validate In_nodes & out_nodes with graph_strucutre values also
+    //     // TODO: validate In_nodes & out_nodes with graph_strucutre values also
 
-        is_valid
-    }
+    //     is_valid
+    // }
 
     fn format_count(n: usize) -> String {
         let n = n as f64;
@@ -621,12 +620,6 @@ impl NeuralNetwork {
         );
 
         print_string
-    }
-
-    pub fn print(&self) {
-        log::info!("----------NEURAL NETWORK----------\n");
-        log::info!("{}", self.to_string());
-        log::info!("----------------------------------\n");
     }
 }
 

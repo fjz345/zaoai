@@ -116,13 +116,6 @@ impl AIResultMetadata {
         self
     }
 
-    // pub fn add_counts(&mut self, tp: usize, tn: usize, fp: usize, fn_: usize) {
-    //     self.true_positives += tp;
-    //     self.true_negatives += tn;
-    //     self.false_positives += fp;
-    //     self.false_negatives += fn_;
-    // }
-
     pub fn positive_instances(&self) -> usize {
         self.true_positives + self.false_negatives
     }
@@ -163,42 +156,6 @@ impl AIResultMetadata {
         let recall =
             self.true_positives as f64 / (self.true_positives + self.false_negatives) as f64;
         2.0 * (precision * recall) / (precision + recall)
-    }
-
-    pub fn get_metrics(&self) -> AIPerformanceMetrics {
-        self.clone().into()
-    }
-}
-
-#[derive(Clone)]
-pub struct AIPerformanceMetrics {
-    pub cost: LayerTypeCPU,
-    pub last_loss: LayerTypeCPU,
-    pub learn_rate: LayerTypeCPU,
-    pub accuracy: f64,
-    pub f1_score: f64,
-}
-
-impl From<AIResultMetadata> for AIPerformanceMetrics {
-    fn from(value: AIResultMetadata) -> Self {
-        Self {
-            cost: value.cost,
-            last_loss: value.last_loss,
-            learn_rate: value.learn_rate,
-            accuracy: value.calc_accuracy(),
-            f1_score: value.calc_f1_score(),
-        }
-    }
-}
-
-impl AIPerformanceMetrics {
-    pub fn max_value(&self) -> LayerTypeCPU {
-        self.cost.max(
-            self.last_loss.max(
-                (self.learn_rate as LayerTypeCPU)
-                    .max((self.accuracy as LayerTypeCPU).max(self.f1_score as LayerTypeCPU)),
-            ),
-        )
     }
 }
 

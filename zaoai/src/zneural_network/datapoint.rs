@@ -85,7 +85,7 @@ pub fn create_2x2_test_datapoints(seed: u64, num_datapoints: i32) -> Vec<DataPoi
     result
 }
 
-pub fn split_datapoints(
+pub fn _split_datapoints(
     datapoints: &[DataPoint],
     thresholds: [f64; 2],
     out_training_datapoints: &mut Vec<DataPoint>,
@@ -234,13 +234,13 @@ pub struct VirtualTrainingDataset {
 }
 
 #[derive(Debug)]
-pub struct VirtualTrainingBatchIter<'a> {
+pub struct _VirtualTrainingBatchIter<'a> {
     dataset: &'a VirtualTrainingDataset,
     batch_size: usize,
     index: usize,
     end: usize,
 }
-impl<'a> Iterator for VirtualTrainingBatchIter<'a> {
+impl<'a> Iterator for _VirtualTrainingBatchIter<'a> {
     type Item = Vec<DataPoint>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -325,9 +325,6 @@ impl VirtualTrainingDataset {
             virtual_dataset_input_desiered_dim: None,
         }
     }
-    pub fn set_thresholds(&mut self, thresholds: [f64; 2]) {
-        self.thresholds = thresholds;
-    }
     pub fn set_desiered_input_dim(&mut self, dim: [usize; 2]) {
         self.virtual_dataset_input_desiered_dim = Some(dim);
     }
@@ -378,13 +375,13 @@ impl VirtualTrainingDataset {
         end - start
     }
 
-    pub fn batch_iter(
+    pub fn _batch_iter(
         &'_ self,
         split: SplitType,
         batch_size: usize,
-    ) -> VirtualTrainingBatchIter<'_> {
+    ) -> _VirtualTrainingBatchIter<'_> {
         let (start, end) = self.get_split_range(split);
-        VirtualTrainingBatchIter {
+        _VirtualTrainingBatchIter {
             dataset: self,
             batch_size,
             index: start,
@@ -392,14 +389,14 @@ impl VirtualTrainingDataset {
         }
     }
 
-    pub fn training_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
-        self.batch_iter(SplitType::Training, batch_size)
+    pub fn _training_batch_iter(&'_ self, batch_size: usize) -> _VirtualTrainingBatchIter<'_> {
+        self._batch_iter(SplitType::Training, batch_size)
     }
-    pub fn validation_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
-        self.batch_iter(SplitType::Validation, batch_size)
+    pub fn _validation_batch_iter(&'_ self, batch_size: usize) -> _VirtualTrainingBatchIter<'_> {
+        self._batch_iter(SplitType::Validation, batch_size)
     }
-    pub fn test_batch_iter(&'_ self, batch_size: usize) -> VirtualTrainingBatchIter<'_> {
-        self.batch_iter(SplitType::Test, batch_size)
+    pub fn _test_batch_iter(&'_ self, batch_size: usize) -> _VirtualTrainingBatchIter<'_> {
+        self._batch_iter(SplitType::Test, batch_size)
     }
 
     fn convert_labels_to_datapoints(
@@ -490,16 +487,13 @@ impl TrainingDataset {
         &self.full_dataset[start..end]
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &DataPoint> + '_ {
+    pub fn _iter(&self) -> impl Iterator<Item = &DataPoint> + '_ {
         self.training_split()
             .iter()
             .chain(self.validation_split().iter())
             .chain(self.test_split().iter())
     }
 
-    pub fn get_thresholds(&self) -> [f64; 2] {
-        self.thresholds
-    }
     // Returns the number of (in, out) nodes needed in layers
     pub fn get_dimensions(&self) -> (usize, usize) {
         self.full_dataset

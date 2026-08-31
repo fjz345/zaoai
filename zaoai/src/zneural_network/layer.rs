@@ -4,13 +4,15 @@ use rand_distr::{num_traits::FromPrimitive, Distribution, Normal};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
-use wide::f32x8;
 
 use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
 use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::neuralnetwork::NeuralNetworkPingPong;
 use zaoai_types::ai_labels::LayerTypeCPU;
+
+#[cfg(feature = "simd")]
+use wide::f32x8;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
@@ -66,10 +68,8 @@ where
     rand_distr::StandardNormal: Distribution<T>,
 {
     pub weight_init: WeightInit,
-    #[allow(clippy::collection_is_never_read)]
-    pub num_inputs: usize,
-    #[allow(clippy::collection_is_never_read)]
-    pub num_outputs: usize,
+    pub _num_inputs: usize,
+    pub _num_outputs: usize,
     pub normal_dist: Option<rand_distr::Normal<T>>,
     pub limit: Option<T>,
 }
@@ -119,8 +119,8 @@ where
 
         Self {
             weight_init,
-            num_inputs,
-            num_outputs,
+            _num_inputs: num_inputs,
+            _num_outputs: num_outputs,
             normal_dist,
             limit,
         }
@@ -265,8 +265,8 @@ impl Layer {
             .zip(self.biases.iter())
         {
             let mut sum = f32x8::splat(0.0);
-            let mut input_chunks = inputs.as_chunks::<8>();
-            let mut weight_chunks = weights_row.as_chunks::<8>();
+            let input_chunks = inputs.as_chunks::<8>();
+            let weight_chunks = weights_row.as_chunks::<8>();
 
             for (i_chunk, w_chunk) in input_chunks.0.iter().zip(weight_chunks.0.iter()) {
                 sum += f32x8::from(*i_chunk) * f32x8::from(*w_chunk);
@@ -457,6 +457,7 @@ impl Layer {
         self.update_cost_gradients_scalar(learn_data);
     }
 
+    #[cfg(not(feature = "simd"))]
     fn update_cost_gradient_for_node(
         weight_grad_row: &mut [LayerTypeCPU],
         bias_grad: &mut LayerTypeCPU,
