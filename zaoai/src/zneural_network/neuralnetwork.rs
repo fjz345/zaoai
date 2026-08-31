@@ -504,6 +504,7 @@ impl NeuralNetwork {
             let learn_data = &mut self.layer_learn_data[i];
             #[cfg(feature = "simd")]
             layer.calculate_outputs_learn_simd(&pingpong.current, &mut pingpong.next, learn_data);
+
             #[cfg(not(feature = "simd"))]
             layer.calculate_outputs_learn(&pingpong.current, &mut pingpong.next, learn_data);
 
@@ -556,10 +557,13 @@ impl NeuralNetwork {
     }
 
     #[inline]
+    #[cfg(feature = "simd")]
     fn update_gradients(layer: &mut Layer, learn_data: &mut LayerLearnData) {
-        #[cfg(feature = "simd")]
         layer.update_cost_gradients_simd(learn_data);
-        #[cfg(not(feature = "simd"))]
+    }
+    #[inline]
+    #[cfg(not(feature = "simd"))]
+    fn update_gradients(layer: &mut Layer, learn_data: &mut LayerLearnData) {
         layer.update_cost_gradients(learn_data);
     }
     fn apply_all_cost_gradients(&mut self, learn_rate: LayerTypeCPU) {

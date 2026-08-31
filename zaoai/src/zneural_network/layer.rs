@@ -1,10 +1,6 @@
 use rand::prelude::*;
 use rand_chacha::{self, ChaCha8Rng};
 use rand_distr::{num_traits::FromPrimitive, Distribution, Normal};
-use rayon::iter::{
-    IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator,
-};
-
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
@@ -285,41 +281,6 @@ impl Layer {
         }
     }
 
-    #[allow(dead_code)]
-    #[cfg(feature = "simd")]
-    fn compute_weighted_inputs_simd_rayon(&self, inputs: &[f32], output_buf: &mut [f32]) {
-        use rayon::prelude::*;
-
-        assert_eq!(inputs.len(), self.num_in_nodes);
-        assert_eq!(output_buf.len(), self.num_out_nodes);
-
-        output_buf
-            .par_iter_mut()
-            .zip(self.weights.par_iter())
-            .zip(self.biases.par_iter())
-            .for_each(|((out_val, weight_row), &bias)| {
-                let mut sum = f32x8::splat(0.0);
-                let mut input_chunks = inputs.chunks_exact(8);
-                let mut weight_chunks = weight_row.chunks_exact(8);
-
-                for (i_chunk, w_chunk) in input_chunks.by_ref().zip(weight_chunks.by_ref()) {
-                    sum += f32x8::from(i_chunk) * f32x8::from(w_chunk);
-                }
-
-                let mut weighted_sum = sum.reduce_add();
-
-                for (i, w) in input_chunks
-                    .remainder()
-                    .iter()
-                    .zip(weight_chunks.remainder().iter())
-                {
-                    weighted_sum += i * w;
-                }
-
-                *out_val = weighted_sum + bias;
-            });
-    }
-
     #[cfg(not(feature = "simd"))]
     pub fn apply_activation(weighted_inputs: &mut [LayerTypeCPU], t: ActivationFunctionType) {
         weighted_inputs.iter_mut().for_each(|x| *x = t.activate(*x));
@@ -410,12 +371,6 @@ impl Layer {
         self.compute_weighted_inputs_simd(inputs, outputs);
         Self::apply_activation(outputs, self.activation_type);
     }
-    #[allow(dead_code)]
-    #[cfg(feature = "simd")]
-    pub fn calculate_outputs_simd_rayon(&self, inputs: &[f32], outputs: &mut [f32]) {
-        self.compute_weighted_inputs_simd_rayon(inputs, outputs);
-        Self::apply_activation(outputs, self.activation_type);
-    }
 
     pub fn calculate_outputs_learn(
         &mut self,
@@ -441,21 +396,6 @@ impl Layer {
         learn_data.inputs.extend_from_slice(inputs);
 
         self.compute_weighted_inputs_simd(inputs, outputs);
-        self.fill_learn_data(learn_data, &outputs);
-        outputs.copy_from_slice(&learn_data.activation_values);
-    }
-    #[allow(dead_code)]
-    #[cfg(feature = "simd")]
-    pub fn calculate_outputs_learn_simd_rayon(
-        &mut self,
-        inputs: &[f32],
-        outputs: &mut [f32],
-        learn_data: &mut LayerLearnData,
-    ) {
-        learn_data.inputs.clear();
-        learn_data.inputs.extend_from_slice(inputs);
-
-        self.compute_weighted_inputs_simd_rayon(inputs, outputs);
         self.fill_learn_data(learn_data, &outputs);
         outputs.copy_from_slice(&learn_data.activation_values);
     }
@@ -590,48 +530,6 @@ impl Layer {
                     num_in_nodes,
                 );
             }
-        }
-    }
-
-    #[allow(dead_code)]
-    #[cfg(feature = "simd")]
-    pub fn update_cost_gradients_simd_rayon(&mut self, learn_data: &LayerLearnData) {
-        use rayon::prelude::*;
-
-        let inputs = &learn_data.inputs;
-        let num_in_nodes = self.num_in_nodes;
-
-        if let Some(mask) = learn_data.dropout_mask.as_ref() {
-            self.weights_cost_grads
-                .par_iter_mut()
-                .zip(self.biases_cost_grads.par_iter_mut())
-                .zip(learn_data.node_values.par_iter().copied())
-                .zip(mask.par_iter().copied())
-                .for_each(|(((weight_grad_row, bias_grad), node_value), m)| {
-                    if m != 0.0 {
-                        Self::update_cost_gradient_for_node_simd(
-                            weight_grad_row,
-                            bias_grad,
-                            node_value,
-                            inputs,
-                            num_in_nodes,
-                        );
-                    }
-                });
-        } else {
-            self.weights_cost_grads
-                .par_iter_mut()
-                .zip(self.biases_cost_grads.par_iter_mut())
-                .zip(learn_data.node_values.par_iter().copied())
-                .for_each(|((weight_grad_row, bias_grad), node_value)| {
-                    Self::update_cost_gradient_for_node_simd(
-                        weight_grad_row,
-                        bias_grad,
-                        node_value,
-                        inputs,
-                        num_in_nodes,
-                    );
-                });
         }
     }
 
