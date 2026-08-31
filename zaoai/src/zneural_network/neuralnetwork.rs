@@ -636,24 +636,19 @@ impl NeuralNetwork {
         const LAMBDA: LayerTypeCPU = 0.001;
         cost + LAMBDA * l2_penalty
     }
-    pub fn calculate_costs(
+
+    pub fn calculate_cost(
         &self,
         data: &[DataPoint],
         pingpong: &mut NeuralNetworkPingPong,
     ) -> LayerTypeCPU {
-        assert!(!data.is_empty(), "Input data was empty");
-
-        #[cfg(feature = "simd")]
-        {
-            self.calculate_cost_simd(data, pingpong)
-        }
         #[cfg(not(feature = "simd"))]
-        {
-            self.calculate_cost(data, pingpong)
-        }
+        return self.calculate_cost_scalar(data, pingpong);
+        #[cfg(feature = "simd")]
+        return self.calculate_cost_simd(data, pingpong);
     }
     #[cfg(not(feature = "simd"))]
-    fn calculate_cost(
+    fn calculate_cost_scalar(
         &self,
         data: &[DataPoint],
         pingpong: &mut NeuralNetworkPingPong,
