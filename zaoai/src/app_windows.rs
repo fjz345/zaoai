@@ -7,6 +7,7 @@ use crate::{
         }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetwork, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn}
     },
 };
+use zaoai_types::ai_labels::LayerTypeCPU;
 use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Sense, Slider, SliderClamping};
 use egui_plot::{Corner, Legend, PlotResponse};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
@@ -505,7 +506,7 @@ impl WindowAi {}
 #[derive(PartialEq, Clone)]
 pub struct AiSetupPreset{
     graph: GraphStructure, 
-    dropout_prob: f32, 
+    dropout_prob: LayerTypeCPU, 
     softmax_output: bool,
     activation_func: ActivationFunctionType,
     is_correct_fn: ConfusionEvaluator, 
@@ -695,7 +696,7 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
                 let mnist = get_mnist();
                 
                 let map_mnist = |(image, &label): (&[u8; 784], &u8)| -> DataPoint {
-                    let inputs: Vec<f32> = image.iter().map(|&p| p as f32 / 255.0).collect();
+                    let inputs: Vec<LayerTypeCPU> = image.iter().map(|&p| p as LayerTypeCPU / 255.0).collect();
                     let mut expected_outputs = vec![0.0; 10];
                     if (label as usize) < 10 {
                         expected_outputs[label as usize] = 1.0;
@@ -977,7 +978,7 @@ pub fn generate_cost_plotpoints_from_training_thread_payloads(
         let cost = payload.training_metadata.cost;
         let plotpoint = PlotPoint {
             x: payload.payload_index as f64,
-            y: cost,
+            y: cost as f64,
         };
         result.push(plotpoint);
     }

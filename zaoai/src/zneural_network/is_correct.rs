@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 
+use zaoai_types::ai_labels::LayerTypeCPU;
+
 pub enum ConfusionCategory {
     TruePositive,
     TrueNegative,
@@ -11,14 +13,18 @@ pub enum ConfusionCategory {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, PartialEq, Display)]
 pub enum ConfusionEvaluator {
-    BinaryThreshold { threshold: f32 },
+    BinaryThreshold { threshold: LayerTypeCPU },
     LargestLabel,
     Zlbl,
     ZlblLoose,
 }
 
 impl ConfusionEvaluator {
-    pub fn evaluate(&self, predicted: &[f32], expected: &[f32]) -> ConfusionCategory {
+    pub fn evaluate(
+        &self,
+        predicted: &[LayerTypeCPU],
+        expected: &[LayerTypeCPU],
+    ) -> ConfusionCategory {
         match self {
             ConfusionEvaluator::BinaryThreshold { threshold } => {
                 let pred_label = predicted.get(0).copied().unwrap_or(0.0) > *threshold;
@@ -60,7 +66,7 @@ impl ConfusionEvaluator {
         }
     }
 
-    fn determine_output_greatest_value_result(outputs: &[f32]) -> (usize, f32) {
+    fn determine_output_greatest_value_result(outputs: &[LayerTypeCPU]) -> (usize, LayerTypeCPU) {
         outputs
             .iter()
             .enumerate()
@@ -70,16 +76,16 @@ impl ConfusionEvaluator {
     }
 
     fn is_normalized_within_tolerance(
-        predicted_normalized: f32,
-        expected_normalized: f32,
-        tolerance_seconds: f32,
+        predicted_normalized: LayerTypeCPU,
+        expected_normalized: LayerTypeCPU,
+        tolerance_seconds: LayerTypeCPU,
         total_duration: std::time::Duration,
     ) -> bool {
-        let epsilon = tolerance_seconds / total_duration.as_secs_f32();
+        let epsilon = tolerance_seconds / total_duration.as_secs_f64() as LayerTypeCPU;
         (predicted_normalized - expected_normalized).abs() <= epsilon
     }
 
-    fn zlbl_is_correct_fn(outputs: &[f32], expected_outputs: &[f32]) -> bool {
+    fn zlbl_is_correct_fn(outputs: &[LayerTypeCPU], expected_outputs: &[LayerTypeCPU]) -> bool {
         let duration = std::time::Duration::from_secs(20 * 60);
         outputs
             .iter()
@@ -89,7 +95,10 @@ impl ConfusionEvaluator {
             })
     }
 
-    fn zlbl_loose_is_correct_fn(outputs: &[f32], expected_outputs: &[f32]) -> bool {
+    fn zlbl_loose_is_correct_fn(
+        outputs: &[LayerTypeCPU],
+        expected_outputs: &[LayerTypeCPU],
+    ) -> bool {
         let duration = std::time::Duration::from_secs(20 * 60);
         outputs
             .iter()

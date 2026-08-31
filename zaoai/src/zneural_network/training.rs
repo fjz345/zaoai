@@ -9,6 +9,7 @@ use std::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
+use zaoai_types::ai_labels::LayerTypeCPU;
 
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
@@ -34,11 +35,11 @@ pub struct AIResultMetadata {
     pub true_negatives: usize,
     pub false_positives: usize,
     pub false_negatives: usize,
-    pub cost: f64,
-    pub last_loss: f64,
+    pub cost: LayerTypeCPU,
+    pub last_loss: LayerTypeCPU,
     pub num_merged: usize,
     pub dataset_usage: DatasetUsage,
-    pub learn_rate: f32,
+    pub learn_rate: LayerTypeCPU,
 }
 
 impl Default for AIResultMetadata {
@@ -59,7 +60,12 @@ impl Default for AIResultMetadata {
 
 #[allow(dead_code)]
 impl AIResultMetadata {
-    pub fn new(dataset_usage: DatasetUsage, cost: f64, last_loss: f64, learn_rate: f32) -> Self {
+    pub fn new(
+        dataset_usage: DatasetUsage,
+        cost: LayerTypeCPU,
+        last_loss: LayerTypeCPU,
+        learn_rate: LayerTypeCPU,
+    ) -> Self {
         Self {
             cost: cost,
             last_loss: last_loss,
@@ -104,8 +110,8 @@ impl AIResultMetadata {
         self.false_negatives += other.false_negatives;
         self.last_loss = other.last_loss;
         self.learn_rate = other.learn_rate;
-        self.cost =
-            (self.cost * (self.num_merged - 1) as f64 + other.cost) / self.num_merged as f64;
+        self.cost = (self.cost * (self.num_merged - 1) as LayerTypeCPU + other.cost)
+            / self.num_merged as LayerTypeCPU;
         self
     }
 
@@ -165,9 +171,9 @@ impl AIResultMetadata {
 
 #[derive(Clone)]
 pub struct AIPerformanceMetrics {
-    pub cost: f64,
-    pub last_loss: f64,
-    pub learn_rate: f32,
+    pub cost: LayerTypeCPU,
+    pub last_loss: LayerTypeCPU,
+    pub learn_rate: LayerTypeCPU,
     pub accuracy: f64,
     pub f1_score: f64,
 }
@@ -185,10 +191,12 @@ impl From<AIResultMetadata> for AIPerformanceMetrics {
 }
 
 impl AIPerformanceMetrics {
-    pub fn max_value(&self) -> f64 {
+    pub fn max_value(&self) -> LayerTypeCPU {
         self.cost.max(
-            self.last_loss
-                .max((self.learn_rate as f64).max(self.accuracy.max(self.f1_score))),
+            self.last_loss.max(
+                (self.learn_rate as LayerTypeCPU)
+                    .max((self.accuracy as LayerTypeCPU).max(self.f1_score as LayerTypeCPU)),
+            ),
         )
     }
 }
@@ -201,9 +209,9 @@ pub struct TrainingSession {
     pub state: TrainingState,
     pub num_epochs: usize,
     pub batch_size: usize,
-    pub learn_rate: f32,
+    pub learn_rate: LayerTypeCPU,
     pub learn_rate_decay: Option<FloatDecay>,
-    pub learn_rate_decay_rate: f32,
+    pub learn_rate_decay_rate: LayerTypeCPU,
     pub training_data: TrainingData,
     pub is_correct_fn: ConfusionEvaluator,
     pub validation_each_epoch: usize,
@@ -215,9 +223,9 @@ impl TrainingSession {
         training_data: TrainingData,
         num_epochs: usize,
         batch_size: usize,
-        learn_rate: f32,
+        learn_rate: LayerTypeCPU,
         learn_rate_decay: Option<FloatDecay>,
-        learn_rate_decay_rate: f32,
+        learn_rate_decay_rate: LayerTypeCPU,
         is_correct_fn: ConfusionEvaluator,
         validation_each_epoch: usize,
     ) -> Self {
@@ -250,7 +258,7 @@ impl TrainingSession {
     pub fn get_batch_size(&self) -> usize {
         self.batch_size
     }
-    pub fn get_learn_rate(&self) -> f32 {
+    pub fn get_learn_rate(&self) -> LayerTypeCPU {
         self.learn_rate
     }
     pub fn set_training_data(&mut self, in_data: TrainingData) {
@@ -268,24 +276,24 @@ impl TrainingSession {
 
 #[derive(Serialize)]
 struct ResultNoInputs<'a> {
-    expected_outputs: &'a [f32],
-    outputs: &'a [f32],
+    expected_outputs: &'a [LayerTypeCPU],
+    outputs: &'a [LayerTypeCPU],
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, bincode::Encode, bincode::Decode)]
 pub struct TestResults {
-    pub results: Vec<(DataPoint, NNOutputs)>, // results for each datapoint
+    pub results: Vec<(DataPoint, NNOutputs<LayerTypeCPU>)>, // results for each datapoint
     pub num_correct: i32,
-    pub accuracy: Option<f32>,
-    pub cost: f32,
+    pub accuracy: Option<LayerTypeCPU>,
+    pub cost: LayerTypeCPU,
 }
 
 impl TestResults {
     pub fn new(
-        results: Vec<(DataPoint, NNOutputs)>,
+        results: Vec<(DataPoint, NNOutputs<LayerTypeCPU>)>,
         eval_correct_fn: ConfusionEvaluator,
-        avg_cost: f32,
+        avg_cost: LayerTypeCPU,
     ) -> Self {
         let mut num_correct = 0;
         for (datapoint, outputs) in &results {
@@ -300,7 +308,7 @@ impl TestResults {
 
         Self {
             num_correct: num_correct,
-            accuracy: Some((num_correct as f32) / (results.len() as f32)),
+            accuracy: Some((num_correct as LayerTypeCPU) / (results.len() as LayerTypeCPU)),
             cost: avg_cost,
             results,
         }
@@ -385,8 +393,12 @@ pub fn test_nn<'a>(
             let datapoint = &test_data[i];
             let cost = nn.calculate_costs(std::slice::from_ref(&test_data[i]), pingpong);
             if let Some(tx_test_metadata) = &tx_test_metadata {
-                let mut metadata_point =
-                    AIResultMetadata::new(DatasetUsage::Test, cost as f64, cost as f64, 0.0);
+                let mut metadata_point = AIResultMetadata::new(
+                    DatasetUsage::Test,
+                    cost as LayerTypeCPU,
+                    cost as LayerTypeCPU,
+                    0.0,
+                );
 
                 let confusion = is_correct_fn.evaluate(&pingpong.next, &datapoint.expected_outputs);
                 match confusion {
@@ -440,19 +452,19 @@ pub fn test_nn<'a>(
 #[derive(Clone, Display, PartialEq)]
 pub enum FloatDecay {
     Exponential {
-        rate: f32, // decay_rate is now embedded
+        rate: LayerTypeCPU, // decay_rate is now embedded
     },
     StepDecay {
         step_size: usize,
-        decay_factor: f32, // e.g. 0.5 to halve every step_size
+        decay_factor: LayerTypeCPU, // e.g. 0.5 to halve every step_size
     },
     Linear {
         max_steps: usize,
-        end_rate: f32,
+        end_rate: LayerTypeCPU,
     },
     Cosine {
         max_steps: usize,
-        min_val: f32,
+        min_val: LayerTypeCPU,
     },
 }
 
@@ -463,22 +475,22 @@ impl Default for FloatDecay {
 }
 
 impl FloatDecay {
-    pub fn decay(&self, init_val: f32, step: usize) -> f32 {
+    pub fn decay(&self, init_val: LayerTypeCPU, step: usize) -> LayerTypeCPU {
         match self {
-            Self::Exponential { rate } => init_val * (-rate * step as f32).exp(),
+            Self::Exponential { rate } => init_val * (-rate * step as LayerTypeCPU).exp(),
             Self::StepDecay {
                 step_size,
                 decay_factor,
             } => {
                 let inv_decay_factor = 1.0 - decay_factor.clamp(0.0, 1.0);
-                let exponent = (step / *step_size) as f32;
+                let exponent = (step / *step_size) as LayerTypeCPU;
                 init_val * inv_decay_factor.powf(exponent)
             }
             Self::Linear {
                 max_steps,
                 end_rate,
             } => {
-                let progress = step as f32 / *max_steps as f32;
+                let progress = step as LayerTypeCPU / *max_steps as LayerTypeCPU;
                 if progress >= 1.0 {
                     *end_rate
                 } else {
@@ -487,14 +499,14 @@ impl FloatDecay {
                 }
             }
             Self::Cosine { max_steps, min_val } => {
-                let progress = step as f32 / *max_steps as f32;
+                let progress = step as LayerTypeCPU / *max_steps as LayerTypeCPU;
                 if progress >= 1.0 {
                     *min_val
                 } else {
                     min_val
                         + 0.5
                             * (init_val - min_val)
-                            * (1.0 + (std::f32::consts::PI * progress).cos())
+                            * (1.0 + (std::f64::consts::PI as LayerTypeCPU * progress).cos())
                 }
             }
         }
@@ -509,7 +521,7 @@ impl FloatDecay {
         }
     }
 
-    pub fn set_decay_rate(&mut self, rate: f32) {
+    pub fn set_decay_rate(&mut self, rate: LayerTypeCPU) {
         match self {
             Self::Exponential { rate: r } => *r = rate,
             Self::StepDecay { decay_factor, .. } => *decay_factor = rate,

@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "simd")]
 use wide::f32x8;
+use zaoai_types::ai_labels::LayerTypeCPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Default, Clone, Copy, bincode::Encode, bincode::Decode, PartialEq)]
@@ -51,22 +52,22 @@ impl ActivationFunctionType {
         }
     }
     #[cfg(not(feature = "simd"))]
-    pub fn apply_softmax(layer_values: &[f32]) -> Vec<f32> {
+    pub fn apply_softmax(layer_values: &[LayerTypeCPU]) -> Vec<LayerTypeCPU> {
         let max_val = layer_values
             .iter()
             .cloned()
-            .fold(f32::NEG_INFINITY, f32::max);
-        let sum: f64 = layer_values
+            .fold(LayerTypeCPU::NEG_INFINITY, LayerTypeCPU::max);
+        let sum: LayerTypeCPU = layer_values
             .iter()
-            .map(|&v| (v - max_val).exp() as f64)
+            .map(|&v| (v - max_val).exp() as LayerTypeCPU)
             .sum();
 
         layer_values
             .iter()
-            .map(|&v| ((v - max_val).exp() as f64 / sum) as f32)
+            .map(|&v| ((v - max_val).exp() as LayerTypeCPU / sum) as LayerTypeCPU)
             .collect()
     }
-    pub fn activate(&self, x: f32) -> f32 {
+    pub fn activate(&self, x: LayerTypeCPU) -> LayerTypeCPU {
         match self {
             ActivationFunctionType::ReLU => relu(x),
             ActivationFunctionType::Sigmoid => sigmoid(x),
@@ -85,7 +86,7 @@ impl ActivationFunctionType {
             }
         }
     }
-    pub fn activate_derivative(&self, x: f32) -> f32 {
+    pub fn activate_derivative(&self, x: LayerTypeCPU) -> LayerTypeCPU {
         match self {
             ActivationFunctionType::ReLU => relu_d(x),
             ActivationFunctionType::Sigmoid => sigmoid_d(x),
@@ -123,11 +124,11 @@ impl std::fmt::Display for ActivationFunctionType {
     }
 }
 
-fn sigmoid(in_value: f32) -> f32 {
+fn sigmoid(in_value: LayerTypeCPU) -> LayerTypeCPU {
     1.0 / (1.0 + (-in_value).exp())
 }
 
-fn sigmoid_d(in_value: f32) -> f32 {
+fn sigmoid_d(in_value: LayerTypeCPU) -> LayerTypeCPU {
     let f = sigmoid(in_value);
     f * (1.0 - f)
 }
@@ -144,7 +145,7 @@ fn sigmoid_d_simd(x: f32x8) -> f32x8 {
     fx * (f32x8::splat(1.0) - fx)
 }
 
-fn relu(in_value: f32) -> f32 {
+fn relu(in_value: LayerTypeCPU) -> LayerTypeCPU {
     in_value.max(0.0)
 }
 
@@ -154,7 +155,7 @@ fn relu_simd(in_value: f32x8) -> f32x8 {
     in_value.max(f32x8::splat(0.0))
 }
 
-fn relu_d(in_value: f32) -> f32 {
+fn relu_d(in_value: LayerTypeCPU) -> LayerTypeCPU {
     if in_value > 0.0 {
         1.0
     } else {

@@ -16,6 +16,7 @@ use eframe::{
     egui::{self, InnerResponse, Slider},
     epaint::Rect,
 };
+use zaoai_types::ai_labels::LayerTypeCPU;
 
 use std::{
     ops::RangeInclusive,
@@ -48,7 +49,7 @@ pub struct MenuWindowData {
     pub show_training_session: bool,
     pub training_session_num_epochs: usize,
     pub training_session_batch_size: usize,
-    pub training_session_learn_rate: f32,
+    pub training_session_learn_rate: LayerTypeCPU,
     // Training Dataset
     pub show_traning_dataset: bool,
     pub training_dataset_split_thresholds_0: f64,
@@ -57,7 +58,7 @@ pub struct MenuWindowData {
     pub ai_use_softmax_output: bool,
     pub ai_activation_function: ActivationFunctionType,
     pub ai_cost_fn: CostFunction,
-    pub ai_dropout_prob: f32,
+    pub ai_dropout_prob: LayerTypeCPU,
     pub ai_is_correct_fn: ConfusionEvaluator,
     pub ai_weight_init: WeightInit,
     pub ai_bias_init: BiasInit,

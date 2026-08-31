@@ -16,6 +16,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::mpsc::Sender;
 use wide::f32x8;
+use zaoai_types::ai_labels::LayerTypeCPU;
 
 impl LayerLearnData {
     fn new(layer: &Layer) -> LayerLearnData {
@@ -98,8 +99,8 @@ impl GraphStructure {
 }
 
 pub struct NeuralNetworkPingPong {
-    pub current: Vec<f32>, // in
-    pub next: Vec<f32>,    // out
+    pub current: Vec<LayerTypeCPU>, // in
+    pub next: Vec<LayerTypeCPU>,    // out
 }
 
 impl NeuralNetworkPingPong {
@@ -124,14 +125,14 @@ pub struct NeuralNetwork {
     cost_fn: CostFunction,
 }
 
-pub type NNOutputs = Vec<f32>;
+pub type NNOutputs<T> = Vec<T>;
 impl NeuralNetwork {
     const VERSION: u8 = 2;
     pub fn new(
         graph_structure: GraphStructure,
         layer_activation: ActivationFunctionType,
         cost_fn: CostFunction,
-        dropout_prob: Option<f32>,
+        dropout_prob: Option<LayerTypeCPU>,
         weight_init: WeightInit,
         bias_init: BiasInit,
     ) -> NeuralNetwork {
@@ -212,15 +213,19 @@ impl NeuralNetwork {
     }
 
     pub fn get_parameters_unit_size(&self) -> usize {
-        std::mem::size_of::<f32>()
+        std::mem::size_of::<LayerTypeCPU>()
     }
 
-    fn apply_dropout(inputs: &mut [f32], mask: &mut Vec<f32>, dropout_prob: f32) {
+    fn apply_dropout(
+        inputs: &mut [LayerTypeCPU],
+        mask: &mut Vec<LayerTypeCPU>,
+        dropout_prob: LayerTypeCPU,
+    ) {
         let keep_prob = 1.0 - dropout_prob;
         let mut rng = rand::thread_rng();
 
         for (i, input) in inputs.iter_mut().enumerate() {
-            if rng.gen::<f32>() < dropout_prob {
+            if rng.gen::<LayerTypeCPU>() < dropout_prob {
                 mask[i] = 0.0;
                 *input = 0.0;
             } else {
@@ -233,17 +238,17 @@ impl NeuralNetwork {
     pub fn learn_batch(
         &mut self,
         batch_data: &[DataPoint],
-        learn_rate: f32,
-        batch_data_cost: &mut f32,
-        batch_data_loss: &mut f32,
+        learn_rate: LayerTypeCPU,
+        batch_data_cost: &mut LayerTypeCPU,
+        batch_data_loss: &mut LayerTypeCPU,
         pingpong: &mut NeuralNetworkPingPong,
-    ) -> Vec<Vec<f32>> {
+    ) -> Vec<Vec<LayerTypeCPU>> {
         if batch_data.len() <= 0 {
             panic!("DataPoints length was 0");
         }
 
-        let mut total_cost = 0.0;
-        let mut last_loss = 0.0; // last batches cost
+        let mut total_cost = 0.0 as LayerTypeCPU;
+        let mut last_loss = 0.0 as LayerTypeCPU; // last batches cost
         let mut batch_data_outputs = Vec::with_capacity(batch_data.len());
         for (i, datapoint) in batch_data.iter().enumerate() {
             self.learn_calculate_outputs(datapoint, pingpong);
@@ -258,10 +263,10 @@ impl NeuralNetwork {
             batch_data_outputs.push(pingpong.next.clone());
         }
         // Adjust weights & biases
-        self.apply_all_cost_gradients(learn_rate / (batch_data.len() as f32));
+        self.apply_all_cost_gradients(learn_rate / (batch_data.len() as LayerTypeCPU));
         self.clear_all_cost_gradients();
 
-        *batch_data_cost = total_cost / batch_data.len() as f32;
+        *batch_data_cost = total_cost / batch_data.len() as LayerTypeCPU;
         *batch_data_loss = last_loss;
         log::trace!("Cost: {}", batch_data_cost);
         log::trace!("Last Loss: {}", batch_data_loss);
@@ -274,7 +279,7 @@ impl NeuralNetwork {
         epoch_index: usize,
         training_data: &[DataPoint],
         batch_size: usize,
-        learn_rate: f32,
+        learn_rate: LayerTypeCPU,
         is_correct_fn: ConfusionEvaluator,
         mut epoch_metadata: Option<&mut AIResultMetadata>,
         pingpong: &mut NeuralNetworkPingPong,
@@ -316,8 +321,8 @@ impl NeuralNetwork {
                 if let Some(metadata) = epoch_metadata.as_mut() {
                     let mut new_metadata = AIResultMetadata::new(
                         DatasetUsage::Training,
-                        batch_data_cost as f64,
-                        batch_data_loss as f64,
+                        batch_data_cost as LayerTypeCPU,
+                        batch_data_loss as LayerTypeCPU,
                         learn_rate,
                     );
                     self.learn_batch_metadata(
@@ -349,8 +354,8 @@ impl NeuralNetwork {
     fn learn_batch_metadata(
         &self,
         epoch_data: &[DataPoint],
-        epoch_data_outputs: &Vec<Vec<f32>>,
-        epoch_data_cost: f32,
+        epoch_data_outputs: &Vec<Vec<LayerTypeCPU>>,
+        epoch_data_cost: LayerTypeCPU,
         is_correct_fn: ConfusionEvaluator,
         new_metadata: &mut AIResultMetadata,
     ) {
@@ -373,7 +378,7 @@ impl NeuralNetwork {
                 }
             }
         }
-        new_metadata.cost = epoch_data_cost as f64;
+        new_metadata.cost = epoch_data_cost as LayerTypeCPU;
     }
 
     pub fn learn<T: Fn() -> bool>(
@@ -382,9 +387,9 @@ impl NeuralNetwork {
         validation_data: &[DataPoint],
         num_epochs: usize,
         batch_size: usize,
-        learn_rate: f32,
+        learn_rate: LayerTypeCPU,
         learn_rate_decay: Option<FloatDecay>,
-        learn_rate_decay_rate: f32,
+        learn_rate_decay_rate: LayerTypeCPU,
         tx_training_metadata: Option<&Sender<TrainingThreadPayload>>,
         tx_validation_metadata: Option<&Sender<TrainingThreadPayload>>,
         is_correct_fn: ConfusionEvaluator,
@@ -407,8 +412,8 @@ impl NeuralNetwork {
                             test_results.accuracy.unwrap_or_default() as f64,
                             test_results.results.len(),
                         );
-                        result_metadata.cost = test_results.cost as f64;
-                        result_metadata.last_loss = test_results.cost as f64;
+                        result_metadata.cost = test_results.cost as LayerTypeCPU;
+                        result_metadata.last_loss = test_results.cost as LayerTypeCPU;
                         result_metadata.learn_rate = learn_rate;
 
                         let payload = TrainingThreadPayload {
@@ -489,7 +494,7 @@ impl NeuralNetwork {
         // Now results should be in pingpong.next
     }
 
-    fn forward(&mut self, inputs: &[f32], pingpong: &mut NeuralNetworkPingPong) {
+    fn forward(&mut self, inputs: &[LayerTypeCPU], pingpong: &mut NeuralNetworkPingPong) {
         pingpong.current.clear();
         pingpong.current.extend_from_slice(inputs);
 
@@ -557,7 +562,7 @@ impl NeuralNetwork {
         #[cfg(not(feature = "simd"))]
         layer.update_cost_gradients(learn_data);
     }
-    fn apply_all_cost_gradients(&mut self, learn_rate: f32) {
+    fn apply_all_cost_gradients(&mut self, learn_rate: LayerTypeCPU) {
         for layer in self.layers.iter_mut() {
             layer.apply_cost_gradient(learn_rate);
         }
@@ -586,7 +591,7 @@ impl NeuralNetwork {
     //     }
     //     current_inputs
     // }
-    pub fn calculate_outputs(&self, inputs: &[f32], pingpong: &mut NeuralNetworkPingPong) {
+    pub fn calculate_outputs(&self, inputs: &[LayerTypeCPU], pingpong: &mut NeuralNetworkPingPong) {
         pingpong.current.clear();
         pingpong.current.extend_from_slice(inputs);
 
@@ -609,7 +614,7 @@ impl NeuralNetwork {
         }
     }
 
-    fn cost_function(&self, predicted: &[f32], expected: &[f32]) -> f32 {
+    fn cost_function(&self, predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
         self.cost_fn.call(predicted, expected)
     }
     #[cfg(not(feature = "simd"))]
@@ -617,13 +622,13 @@ impl NeuralNetwork {
         &self,
         datapoint: &DataPoint,
         pingpong: &mut NeuralNetworkPingPong,
-    ) -> f32 {
+    ) -> LayerTypeCPU {
         // Prediction cost
         self.calculate_outputs(&datapoint.inputs, pingpong);
         let cost = self.cost_function(&pingpong.next, &datapoint.expected_outputs);
 
         // L2 regularization penalty (sum of squared weights)
-        let l2_penalty: f32 = self
+        let l2_penalty: LayerTypeCPU = self
             .layers
             .iter()
             .flat_map(|layer| layer.weights.iter())
@@ -631,10 +636,14 @@ impl NeuralNetwork {
             .map(|w| w.powi(2))
             .sum();
 
-        const LAMBDA: f32 = 0.001;
+        const LAMBDA: LayerTypeCPU = 0.001;
         cost + LAMBDA * l2_penalty
     }
-    pub fn calculate_costs(&self, data: &[DataPoint], pingpong: &mut NeuralNetworkPingPong) -> f32 {
+    pub fn calculate_costs(
+        &self,
+        data: &[DataPoint],
+        pingpong: &mut NeuralNetworkPingPong,
+    ) -> LayerTypeCPU {
         assert!(!data.is_empty(), "Input data was empty");
 
         #[cfg(feature = "simd")]
@@ -647,13 +656,17 @@ impl NeuralNetwork {
         }
     }
     #[cfg(not(feature = "simd"))]
-    fn calculate_cost(&self, data: &[DataPoint], pingpong: &mut NeuralNetworkPingPong) -> f32 {
-        let total: f32 = data
+    fn calculate_cost(
+        &self,
+        data: &[DataPoint],
+        pingpong: &mut NeuralNetworkPingPong,
+    ) -> LayerTypeCPU {
+        let total: LayerTypeCPU = data
             .iter()
             .map(|dp| self.calculate_cost_datapoint(dp, pingpong))
             .sum();
 
-        total / (data.len() as f32)
+        total / (data.len() as LayerTypeCPU)
     }
     #[cfg(feature = "simd")]
     fn calculate_cost_simd(&self, data: &[DataPoint], pingpong: &mut NeuralNetworkPingPong) -> f32 {

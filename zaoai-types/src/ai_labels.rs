@@ -22,10 +22,11 @@ use crate::spectrogram::{generate_spectrogram, save_spectrogram};
 use crate::utils::preview_name;
 use crate::{chapters::VideoMetadata, utils::ListDirSplit};
 
+pub type LayerTypeCPU = f32;
 pub struct AnimeDataPoint {
     pub path: PathBuf,
     pub spectrogram: Spectrogram,
-    pub expected_outputs: Vec<f32>,
+    pub expected_outputs: Vec<LayerTypeCPU>,
 }
 
 pub const ZAOAI_LABEL_VERSION: u8 = 1;

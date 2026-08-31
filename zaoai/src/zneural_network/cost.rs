@@ -3,6 +3,8 @@ use strum_macros::Display;
 #[cfg(feature = "simd")]
 use wide::f32x8;
 
+use zaoai_types::ai_labels::LayerTypeCPU;
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Copy, PartialEq, Display, bincode::Encode, bincode::Decode)]
 pub enum CostFunction {
@@ -12,7 +14,7 @@ pub enum CostFunction {
 }
 
 impl CostFunction {
-    pub fn call(&self, predicted: &[f32], expected: &[f32]) -> f32 {
+    pub fn call(&self, predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
         match self {
             CostFunction::Mse => mse(predicted, expected),
             CostFunction::CrossEntropyBinary => cross_entropy_loss_binary(predicted, expected),
@@ -21,7 +23,7 @@ impl CostFunction {
             }
         }
     }
-    pub fn call_d(&self, predicted: &[f32], expected: &[f32]) -> f32 {
+    pub fn call_d(&self, predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
         match self {
             CostFunction::Mse => mse_d(predicted, expected),
             CostFunction::CrossEntropyBinary => cross_entropy_loss_binary_d(predicted, expected),
@@ -58,11 +60,17 @@ impl CostFunction {
 // Cost Functions
 // ============================
 
-pub fn mse_single(output_activation: f32, expected_activation: f32) -> f32 {
+pub fn mse_single(
+    output_activation: LayerTypeCPU,
+    expected_activation: LayerTypeCPU,
+) -> LayerTypeCPU {
     let error = output_activation - expected_activation;
     0.5 * error * error
 }
-pub fn mse_single_d(output_activation: f32, expected_activation: f32) -> f32 {
+pub fn mse_single_d(
+    output_activation: LayerTypeCPU,
+    expected_activation: LayerTypeCPU,
+) -> LayerTypeCPU {
     output_activation - expected_activation
 }
 
@@ -77,14 +85,14 @@ pub fn mse_d_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8
     output_activation - expected_activation
 }
 
-pub fn mse(predicted: &[f32], expected: &[f32]) -> f32 {
+pub fn mse(predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
     predicted
         .iter()
         .zip(expected.iter())
         .map(|(p, e)| mse_single(*p, *e))
         .sum()
 }
-pub fn mse_d(predicted: &[f32], expected: &[f32]) -> f32 {
+pub fn mse_d(predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
     predicted
         .iter()
         .zip(expected.iter())
@@ -92,7 +100,10 @@ pub fn mse_d(predicted: &[f32], expected: &[f32]) -> f32 {
         .sum()
 }
 
-pub fn cross_entropy_loss_multiclass(predicted: &[f32], expected: &[f32]) -> f32 {
+pub fn cross_entropy_loss_multiclass(
+    predicted: &[LayerTypeCPU],
+    expected: &[LayerTypeCPU],
+) -> LayerTypeCPU {
     let epsilon = 1e-12;
 
     predicted
@@ -112,7 +123,10 @@ pub fn cross_entropy_loss_multiclass_simd(predicted: f32x8, expected: f32x8) -> 
     let clamped = predicted.min(one - epsilon).max(epsilon);
     -expected * clamped.ln()
 }
-pub fn cross_entropy_loss_multiclass_d(predicted: &[f32], expected: &[f32]) -> f32 {
+pub fn cross_entropy_loss_multiclass_d(
+    predicted: &[LayerTypeCPU],
+    expected: &[LayerTypeCPU],
+) -> LayerTypeCPU {
     predicted
         .iter()
         .zip(expected.iter())
@@ -125,7 +139,10 @@ pub fn cross_entropy_loss_multiclass_d_simd(predicted: f32x8, expected: f32x8) -
     predicted - expected
 }
 
-pub fn cross_entropy_loss_binary(predicted: &[f32], expected: &[f32]) -> f32 {
+pub fn cross_entropy_loss_binary(
+    predicted: &[LayerTypeCPU],
+    expected: &[LayerTypeCPU],
+) -> LayerTypeCPU {
     let epsilon = 1e-12;
 
     predicted
@@ -146,7 +163,10 @@ pub fn cross_entropy_loss_binary_simd(predicted: f32x8, expected: f32x8) -> f32x
 
     -(expected * clamped.ln() + (one - expected) * (one - clamped).ln())
 }
-pub fn cross_entropy_loss_binary_d(predicted: &[f32], expected: &[f32]) -> f32 {
+pub fn cross_entropy_loss_binary_d(
+    predicted: &[LayerTypeCPU],
+    expected: &[LayerTypeCPU],
+) -> LayerTypeCPU {
     let epsilon = 1e-12;
     let mut result = 0.0;
 

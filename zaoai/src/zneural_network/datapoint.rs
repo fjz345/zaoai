@@ -16,11 +16,13 @@ use zaoai_types::{
     FrequencyScale,
 };
 
+use zaoai_types::ai_labels::LayerTypeCPU;
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode)]
 pub struct DataPoint {
-    pub inputs: Vec<f32>,
-    pub expected_outputs: Vec<f32>,
+    pub inputs: Vec<LayerTypeCPU>,
+    pub expected_outputs: Vec<LayerTypeCPU>,
 }
 
 impl DataPoint {
@@ -29,20 +31,21 @@ impl DataPoint {
         img_width: usize,
         img_height: usize,
     ) -> DataPoint {
+        // TODO: Precision loss?
         let buffer =
             anime_data_point
                 .spectrogram
                 .to_buffer(FrequencyScale::Log, img_width, img_height);
         DataPoint {
-            inputs: buffer,
+            inputs: buffer.iter().map(|f| *f as LayerTypeCPU).collect(),
             expected_outputs: anime_data_point.expected_outputs,
         }
     }
 }
 
-fn calculate_y_for_datapoint(x1: f32, x2: f32) -> (f32, f32) {
-    let y1: f32;
-    let y2: f32;
+fn calculate_y_for_datapoint(x1: LayerTypeCPU, x2: LayerTypeCPU) -> (LayerTypeCPU, LayerTypeCPU) {
+    let y1: LayerTypeCPU;
+    let y2: LayerTypeCPU;
 
     // For simplicity assume that x2_max == x1_max
     let f_x1x2 = 1.0 - x1;
@@ -290,7 +293,7 @@ fn zaoai_label_to_datapoint(
         .expected_outputs()
         .ok_or(anyhow::Error::msg("NO EXPECTED OUTPUTS"))?
         .iter()
-        .map(|f| *f as f32)
+        .map(|f| *f as LayerTypeCPU)
         .collect::<Vec<_>>();
 
     let new_point = AnimeDataPoint {
