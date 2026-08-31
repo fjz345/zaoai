@@ -596,17 +596,32 @@ impl NeuralNetwork {
     fn cost_function(&self, predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
         self.cost_fn.call(predicted, expected)
     }
-    #[cfg(not(feature = "simd"))]
-    fn calculate_cost_datapoint(
+    pub fn calculate_cost(
         &self,
-        datapoint: &DataPoint,
+        data: &[DataPoint],
         pingpong: &mut NeuralNetworkPingPong,
     ) -> LayerTypeCPU {
-        // Prediction cost
-        self.calculate_outputs(&datapoint.inputs, pingpong);
-        let cost = self.cost_function(&pingpong.next, &datapoint.expected_outputs);
+        #[cfg(not(feature = "simd"))]
+        {
+            self.calculate_cost_scalar(data, pingpong)
+        }
+        #[cfg(feature = "simd")]
+        {
+            self.calculate_cost_simd(data, pingpong)
+        }
+    }
 
-        // L2 regularization penalty (sum of squared weights)
+    #[cfg(not(feature = "simd"))]
+    fn calculate_cost_scalar(
+        &self,
+        data: &[DataPoint],
+        pingpong: &mut NeuralNetworkPingPong,
+    ) -> LayerTypeCPU {
+        let total_cost: LayerTypeCPU = data
+            .iter()
+            .map(|dp| self.calculate_cost_datapoint(dp, pingpong))
+            .sum();
+
         let l2_penalty: LayerTypeCPU = self
             .layers
             .iter()
@@ -615,39 +630,28 @@ impl NeuralNetwork {
             .map(|w| w.powi(2))
             .sum();
 
-        const LAMBDA: LayerTypeCPU = 0.001;
-        cost + LAMBDA * l2_penalty
+        (total_cost / (data.len() as LayerTypeCPU)) + (0.001 * l2_penalty)
     }
 
-    pub fn calculate_cost(
-        &self,
-        data: &[DataPoint],
-        pingpong: &mut NeuralNetworkPingPong,
-    ) -> LayerTypeCPU {
-        #[cfg(not(feature = "simd"))]
-        return self.calculate_cost_scalar(data, pingpong);
-        #[cfg(feature = "simd")]
-        return self.calculate_cost_simd(data, pingpong);
-    }
     #[cfg(not(feature = "simd"))]
-    fn calculate_cost_scalar(
+    fn calculate_cost_datapoint(
+        &self,
+        datapoint: &DataPoint,
+        pingpong: &mut NeuralNetworkPingPong,
+    ) -> LayerTypeCPU {
+        self.calculate_outputs(&datapoint.inputs, pingpong);
+        self.cost_function(&pingpong.next, &datapoint.expected_outputs)
+    }
+
+    #[cfg(feature = "simd")]
+    fn calculate_cost_simd(
         &self,
         data: &[DataPoint],
         pingpong: &mut NeuralNetworkPingPong,
     ) -> LayerTypeCPU {
-        let total: LayerTypeCPU = data
-            .iter()
-            .map(|dp| self.calculate_cost_datapoint(dp, pingpong))
-            .sum();
+        let num_outputs = self.layers.last().unwrap().num_out_nodes;
 
-        total / (data.len() as LayerTypeCPU)
-    }
-    #[cfg(feature = "simd")]
-    fn calculate_cost_simd(&self, data: &[DataPoint], pingpong: &mut NeuralNetworkPingPong) -> f32 {
-        let output_layer = self.layers.last().unwrap();
-        let num_outputs = output_layer.num_out_nodes;
-
-        let total_cost: f32 = data
+        let total_cost: LayerTypeCPU = data
             .iter()
             .map(|datapoint| {
                 self.calculate_outputs(&datapoint.inputs, pingpong);
@@ -671,7 +675,15 @@ impl NeuralNetwork {
             })
             .sum();
 
-        total_cost / (data.len() as f32)
+        let l2_penalty: LayerTypeCPU = self
+            .layers
+            .iter()
+            .flat_map(|layer| layer.weights.iter())
+            .flat_map(|matrix| matrix.iter())
+            .map(|w| w.powi(2))
+            .sum();
+
+        (total_cost / (data.len() as LayerTypeCPU)) + (0.001 * l2_penalty)
     }
 
     pub fn validate(&self) -> bool {

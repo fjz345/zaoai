@@ -320,7 +320,7 @@ impl Layer {
         #[cfg(feature = "simd")]
         self.fill_learn_data_simd(learn_data, weighted_inputs);
         #[cfg(not(feature = "simd"))]
-        self.fill_learn_data_scaler(learn_data, weighted_inputs);
+        self.fill_learn_data_scalar(learn_data, weighted_inputs);
     }
     #[cfg(not(feature = "simd"))]
     fn fill_learn_data_scalar(
