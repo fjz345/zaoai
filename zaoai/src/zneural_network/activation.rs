@@ -2,6 +2,9 @@
 // Activation Functions
 // ============================
 
+#[cfg(feature = "simd")]
+use crate::simd::*;
+
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "simd")]
 use wide::f32x8;
@@ -133,29 +136,10 @@ fn sigmoid_d(in_value: LayerTypeCPU) -> LayerTypeCPU {
     f * (1.0 - f)
 }
 
-#[cfg(feature = "simd")]
-fn sigmoid_simd(x: f32x8) -> f32x8 {
-    let one = f32x8::splat(1.0);
-    one / (one + (-x).exp())
-}
-
-#[cfg(feature = "simd")]
-fn sigmoid_d_simd(x: f32x8) -> f32x8 {
-    let fx = sigmoid_simd(x);
-    fx * (f32x8::splat(1.0) - fx)
-}
-
 fn relu(in_value: LayerTypeCPU) -> LayerTypeCPU {
     in_value.max(0.0)
 }
-
-#[cfg(feature = "simd")]
-fn relu_simd(in_value: f32x8) -> f32x8 {
-    // Fastmax?
-    in_value.max(f32x8::splat(0.0))
-}
-
-fn relu_d(in_value: LayerTypeCPU) -> LayerTypeCPU {
+pub(crate) fn relu_d(in_value: LayerTypeCPU) -> LayerTypeCPU {
     if in_value > 0.0 {
         1.0
     } else {
@@ -163,14 +147,4 @@ fn relu_d(in_value: LayerTypeCPU) -> LayerTypeCPU {
     }
 }
 
-#[cfg(feature = "simd")]
-fn relu_d_simd(x: f32x8) -> f32x8 {
-    // temp fix
-    let a: Vec<f32> = x.to_array().iter_mut().map(|f| relu_d(*f)).collect();
-    return f32x8::from(&a[..]);
-
-    // think this is correct?, no was wrong...
-    // use wide::CmpGt;
-    // x.cmp_gt(f32x8::splat(0.0))
-}
 // ============================

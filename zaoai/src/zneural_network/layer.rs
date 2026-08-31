@@ -8,9 +8,6 @@ use wide::f32x8;
 
 use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
-#[cfg(not(feature = "simd"))]
-use crate::zneural_network::datapoint::DataPoint;
-#[cfg(feature = "simd")]
 use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::neuralnetwork::NeuralNetworkPingPong;
 use zaoai_types::ai_labels::LayerTypeCPU;

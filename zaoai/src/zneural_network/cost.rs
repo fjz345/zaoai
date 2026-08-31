@@ -3,6 +3,8 @@ use strum_macros::Display;
 #[cfg(feature = "simd")]
 use wide::f32x8;
 
+#[cfg(feature = "simd")]
+use crate::zneural_network::simd::*;
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -74,17 +76,6 @@ pub fn mse_single_d(
     output_activation - expected_activation
 }
 
-#[cfg(feature = "simd")]
-pub fn mse_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
-    let error = output_activation - expected_activation;
-    // 0.5 * error^2
-    f32x8::splat(0.5) * error * error
-}
-#[cfg(feature = "simd")]
-pub fn mse_d_simd(output_activation: f32x8, expected_activation: f32x8) -> f32x8 {
-    output_activation - expected_activation
-}
-
 pub fn mse(predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
     predicted
         .iter()
@@ -115,14 +106,6 @@ pub fn cross_entropy_loss_multiclass(
         })
         .sum()
 }
-#[cfg(feature = "simd")]
-pub fn cross_entropy_loss_multiclass_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
-    let epsilon = f32x8::splat(1e-12);
-    let one = f32x8::splat(1.0);
-
-    let clamped = predicted.min(one - epsilon).max(epsilon);
-    -expected * clamped.ln()
-}
 pub fn cross_entropy_loss_multiclass_d(
     predicted: &[LayerTypeCPU],
     expected: &[LayerTypeCPU],
@@ -133,12 +116,6 @@ pub fn cross_entropy_loss_multiclass_d(
         .map(|(p, y)| p - y)
         .sum()
 }
-#[cfg(feature = "simd")]
-pub fn cross_entropy_loss_multiclass_d_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
-    // Assumes inputs are after softmax
-    predicted - expected
-}
-
 pub fn cross_entropy_loss_binary(
     predicted: &[LayerTypeCPU],
     expected: &[LayerTypeCPU],
@@ -154,15 +131,6 @@ pub fn cross_entropy_loss_binary(
         })
         .sum()
 }
-#[cfg(feature = "simd")]
-pub fn cross_entropy_loss_binary_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
-    let epsilon = f32x8::splat(1e-12);
-    let one = f32x8::splat(1.0);
-
-    let clamped = predicted.min(one - epsilon).max(epsilon);
-
-    -(expected * clamped.ln() + (one - expected) * (one - clamped).ln())
-}
 pub fn cross_entropy_loss_binary_d(
     predicted: &[LayerTypeCPU],
     expected: &[LayerTypeCPU],
@@ -176,18 +144,5 @@ pub fn cross_entropy_loss_binary_d(
     }
 
     result
-}
-#[cfg(feature = "simd")]
-pub fn cross_entropy_loss_binary_d_simd(predicted: f32x8, expected: f32x8) -> f32x8 {
-    let epsilon = f32x8::splat(1e-12);
-    let one = f32x8::splat(1.0);
-
-    // Clamp predicted to [epsilon, 1 - epsilon]
-    let p = predicted.min(one - epsilon).max(epsilon);
-    let one_minus_p = one - p;
-    let one_minus_y = one - expected;
-
-    // Derivative: - y / p + (1 - y) / (1 - p)
-    -expected / p + one_minus_y / one_minus_p
 }
 // ============================
