@@ -573,24 +573,6 @@ impl NeuralNetwork {
         }
     }
 
-    // pub fn calculate_outputs(&self, inputs: &[f32]) -> Vec<f32> {
-    //     let mut current_inputs = inputs.to_vec();
-    //     for (_, layer) in self.layers.iter().enumerate() {
-    //         #[cfg(feature = "simd")]
-    //         {
-    //             current_inputs = layer.calculate_outputs_simd(&current_inputs);
-    //         }
-    //         #[cfg(not(feature = "simd"))]
-    //         {
-    //             current_inputs = layer.calculate_outputs(&current_inputs);
-    //         }
-    //     }
-
-    //     if self.is_softmax_output {
-    //         ActivationFunctionType::apply_softmax(&mut current_inputs);
-    //     }
-    //     current_inputs
-    // }
     pub fn calculate_outputs(&self, inputs: &[LayerTypeCPU], pingpong: &mut NeuralNetworkPingPong) {
         pingpong.current.clear();
         pingpong.current.extend_from_slice(inputs);

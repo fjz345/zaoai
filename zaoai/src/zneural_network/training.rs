@@ -439,7 +439,6 @@ pub fn test_nn<'a>(
 
         // TODO: Do not calculate_cost another time here
         let cost = nn.calculate_cost(test_data, pingpong);
-        // let test_results = TestResults::new(results, None, avg_cost);
         let test_results = TestResults::new(results, is_correct_fn, cost);
         nn.last_test_results = Some(test_results);
         Ok(&nn.last_test_results.as_ref().unwrap())
@@ -452,11 +451,11 @@ pub fn test_nn<'a>(
 #[derive(Clone, Display, PartialEq)]
 pub enum FloatDecay {
     Exponential {
-        rate: LayerTypeCPU, // decay_rate is now embedded
+        rate: LayerTypeCPU,
     },
     StepDecay {
         step_size: usize,
-        decay_factor: LayerTypeCPU, // e.g. 0.5 to halve every step_size
+        decay_factor: LayerTypeCPU, // 0.5 to halve every step_size
     },
     Linear {
         max_steps: usize,
@@ -494,7 +493,6 @@ impl FloatDecay {
                 if progress >= 1.0 {
                     *end_rate
                 } else {
-                    // Linearly interpolate between init_val and end_rate
                     init_val * (1.0 - progress) + end_rate * progress
                 }
             }
