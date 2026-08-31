@@ -122,7 +122,7 @@ pub struct NeuralNetwork {
     layer_learn_data: Vec<LayerLearnData>,
     version: u8,
     layer_activation_function: ActivationFunctionType,
-    cost_fn: CostFunction,
+    pub cost_fn: CostFunction,
 }
 
 pub type NNOutputs<T> = Vec<T>;
@@ -251,7 +251,7 @@ impl NeuralNetwork {
         let mut last_loss = 0.0 as LayerTypeCPU; // last batches cost
         let mut batch_data_outputs = Vec::with_capacity(batch_data.len());
         for (i, datapoint) in batch_data.iter().enumerate() {
-            self.learn_calculate_outputs(datapoint, pingpong);
+            self.learn_datapoint(datapoint, pingpong);
             // let loss =
             //     cross_entropy_loss_multiclass(&datapoint_outputs, &datapoint.expected_outputs);
             let cost = self.cost_function(&pingpong.next, &datapoint.expected_outputs);
@@ -484,17 +484,17 @@ impl NeuralNetwork {
         log::info!("Training...Complete! [@{} Epochs]", num_epochs);
     }
 
-    pub fn learn_calculate_outputs(
-        &mut self,
-        datapoint: &DataPoint,
-        pingpong: &mut NeuralNetworkPingPong,
-    ) {
-        self.forward(&datapoint.inputs, pingpong);
-        self.backpropagation(datapoint);
+    pub fn learn_datapoint(&mut self, datapoint: &DataPoint, pingpong: &mut NeuralNetworkPingPong) {
+        self.forward_learn(&datapoint.inputs, pingpong);
+        self.backpropagation_learn(datapoint);
         // Now results should be in pingpong.next
     }
 
-    fn forward(&mut self, inputs: &[LayerTypeCPU], pingpong: &mut NeuralNetworkPingPong) {
+    fn cost_function(&self, predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
+        self.cost_fn.call(predicted, expected)
+    }
+
+    fn forward_learn(&mut self, inputs: &[LayerTypeCPU], pingpong: &mut NeuralNetworkPingPong) {
         pingpong.current.clear();
         pingpong.current.extend_from_slice(inputs);
 
@@ -516,7 +516,7 @@ impl NeuralNetwork {
         std::mem::swap(&mut pingpong.current, &mut pingpong.next);
     }
 
-    fn backpropagation(&mut self, datapoint: &DataPoint) {
+    fn backpropagation_learn(&mut self, datapoint: &DataPoint) {
         let last = self.layers.len() - 1;
 
         // --- Output layer ---
@@ -530,7 +530,7 @@ impl NeuralNetwork {
                 &datapoint.expected_outputs,
                 self.cost_fn,
             );
-            Self::update_gradients(output_layer, learn_data_output);
+            output_layer.update_cost_gradients(learn_data_output);
         }
 
         // --- Hidden layers (reverse) ---
@@ -548,20 +548,10 @@ impl NeuralNetwork {
             );
 
             let mut_layer = &mut self.layers[i];
-            Self::update_gradients(mut_layer, learn_data_hidden);
+            mut_layer.update_cost_gradients(learn_data_hidden);
         }
     }
 
-    #[inline]
-    #[cfg(feature = "simd")]
-    fn update_gradients(layer: &mut Layer, learn_data: &mut LayerLearnData) {
-        layer.update_cost_gradients_simd(learn_data);
-    }
-    #[inline]
-    #[cfg(not(feature = "simd"))]
-    fn update_gradients(layer: &mut Layer, learn_data: &mut LayerLearnData) {
-        layer.update_cost_gradients(learn_data);
-    }
     fn apply_all_cost_gradients(&mut self, learn_rate: LayerTypeCPU) {
         for layer in self.layers.iter_mut() {
             layer.apply_cost_gradient(learn_rate);
@@ -571,119 +561,6 @@ impl NeuralNetwork {
         for layer in self.layers.iter_mut() {
             layer.clear_cost_gradient();
         }
-    }
-
-    pub fn calculate_outputs(&self, inputs: &[LayerTypeCPU], pingpong: &mut NeuralNetworkPingPong) {
-        pingpong.current.clear();
-        pingpong.current.extend_from_slice(inputs);
-
-        for layer in &self.layers {
-            pingpong.next.resize(layer.num_out_nodes, 0.0);
-
-            layer.calculate_outputs(&pingpong.current, &mut pingpong.next);
-
-            std::mem::swap(&mut pingpong.current, &mut pingpong.next);
-        }
-
-        // Simplicity, keep input at current, output at next
-        std::mem::swap(&mut pingpong.current, &mut pingpong.next);
-
-        if self.is_softmax_output {
-            ActivationFunctionType::apply_softmax(&mut pingpong.next);
-        }
-    }
-
-    fn cost_function(&self, predicted: &[LayerTypeCPU], expected: &[LayerTypeCPU]) -> LayerTypeCPU {
-        self.cost_fn.call(predicted, expected)
-    }
-    pub fn calculate_cost(
-        &self,
-        data: &[DataPoint],
-        pingpong: &mut NeuralNetworkPingPong,
-    ) -> LayerTypeCPU {
-        #[cfg(not(feature = "simd"))]
-        {
-            self.calculate_cost_scalar(data, pingpong)
-        }
-        #[cfg(feature = "simd")]
-        {
-            self.calculate_cost_simd(data, pingpong)
-        }
-    }
-
-    #[cfg(not(feature = "simd"))]
-    fn calculate_cost_scalar(
-        &self,
-        data: &[DataPoint],
-        pingpong: &mut NeuralNetworkPingPong,
-    ) -> LayerTypeCPU {
-        let total_cost: LayerTypeCPU = data
-            .iter()
-            .map(|dp| self.calculate_cost_datapoint(dp, pingpong))
-            .sum();
-
-        let l2_penalty: LayerTypeCPU = self
-            .layers
-            .iter()
-            .flat_map(|layer| layer.weights.iter())
-            .flat_map(|matrix| matrix.iter())
-            .map(|w| w.powi(2))
-            .sum();
-
-        (total_cost / (data.len() as LayerTypeCPU)) + (0.001 * l2_penalty)
-    }
-
-    #[cfg(not(feature = "simd"))]
-    fn calculate_cost_datapoint(
-        &self,
-        datapoint: &DataPoint,
-        pingpong: &mut NeuralNetworkPingPong,
-    ) -> LayerTypeCPU {
-        self.calculate_outputs(&datapoint.inputs, pingpong);
-        self.cost_function(&pingpong.next, &datapoint.expected_outputs)
-    }
-
-    #[cfg(feature = "simd")]
-    fn calculate_cost_simd(
-        &self,
-        data: &[DataPoint],
-        pingpong: &mut NeuralNetworkPingPong,
-    ) -> LayerTypeCPU {
-        let num_outputs = self.layers.last().unwrap().num_out_nodes;
-
-        let total_cost: LayerTypeCPU = data
-            .iter()
-            .map(|datapoint| {
-                self.calculate_outputs(&datapoint.inputs, pingpong);
-                let mut sum = f32x8::splat(0.0);
-                let mut i = 0;
-
-                while i + 8 <= num_outputs {
-                    let pred = f32x8::from(&pingpong.next[i..i + 8]);
-                    let expected = f32x8::from(&datapoint.expected_outputs[i..i + 8]);
-                    sum += self.cost_fn.call_simd(pred, expected);
-                    i += 8;
-                }
-
-                let mut cost = sum.reduce_add();
-                if i < num_outputs {
-                    cost += self
-                        .cost_fn
-                        .call(&pingpong.next[i..], &datapoint.expected_outputs[i..]);
-                }
-                cost
-            })
-            .sum();
-
-        let l2_penalty: LayerTypeCPU = self
-            .layers
-            .iter()
-            .flat_map(|layer| layer.weights.iter())
-            .flat_map(|matrix| matrix.iter())
-            .map(|w| w.powi(2))
-            .sum();
-
-        (total_cost / (data.len() as LayerTypeCPU)) + (0.001 * l2_penalty)
     }
 
     pub fn validate(&self) -> bool {

@@ -8,6 +8,11 @@ use wide::f32x8;
 
 use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
+#[cfg(not(feature = "simd"))]
+use crate::zneural_network::datapoint::DataPoint;
+#[cfg(feature = "simd")]
+use crate::zneural_network::datapoint::DataPoint;
+use crate::zneural_network::neuralnetwork::NeuralNetworkPingPong;
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -447,6 +452,14 @@ impl Layer {
         }
     }
 
+    #[inline]
+    pub fn update_cost_gradients(&mut self, learn_data: &mut LayerLearnData) {
+        #[cfg(feature = "simd")]
+        self.update_cost_gradients_simd(learn_data);
+        #[cfg(not(feature = "simd"))]
+        self.update_cost_gradients_scalar(learn_data);
+    }
+
     fn update_cost_gradient_for_node(
         weight_grad_row: &mut [LayerTypeCPU],
         bias_grad: &mut LayerTypeCPU,
@@ -488,7 +501,8 @@ impl Layer {
         *bias_grad += node_value;
     }
 
-    pub fn update_cost_gradients(&mut self, learn_data: &LayerLearnData) {
+    #[cfg(not(feature = "simd"))]
+    pub fn update_cost_gradients_scalar(&mut self, learn_data: &LayerLearnData) {
         let inputs = &learn_data.inputs;
         let num_in_nodes = self.num_in_nodes;
 
@@ -672,4 +686,122 @@ impl Layer {
             *new_val *= self.activation_type.activate_derivative(weighted_input);
         }
     }
+}
+
+// All layers
+pub fn forward(
+    layers: &Vec<Layer>,
+    inputs: &[LayerTypeCPU],
+    pingpong: &mut NeuralNetworkPingPong,
+    is_softmax_output: bool,
+) {
+    pingpong.current.clear();
+    pingpong.current.extend_from_slice(inputs);
+
+    for layer in layers {
+        pingpong.next.resize(layer.num_out_nodes, 0.0);
+        layer.calculate_outputs(&pingpong.current, &mut pingpong.next);
+        std::mem::swap(&mut pingpong.current, &mut pingpong.next);
+    }
+
+    // Simplicity, keep input at current, output at next
+    std::mem::swap(&mut pingpong.current, &mut pingpong.next);
+
+    if is_softmax_output {
+        ActivationFunctionType::apply_softmax(&mut pingpong.next);
+    }
+}
+
+pub fn calculate_cost(
+    layers: &Vec<Layer>,
+    data: &[DataPoint],
+    cost_fn: CostFunction,
+    pingpong: &mut NeuralNetworkPingPong,
+    is_softmax_output: bool,
+) -> LayerTypeCPU {
+    #[cfg(not(feature = "simd"))]
+    {
+        calculate_cost_scalar(layers, data, cost_fn, pingpong, is_softmax_output)
+    }
+    #[cfg(feature = "simd")]
+    {
+        calculate_cost_simd(layers, data, cost_fn, pingpong, is_softmax_output)
+    }
+}
+
+#[cfg(not(feature = "simd"))]
+fn calculate_cost_scalar(
+    layers: &Vec<Layer>,
+    data: &[DataPoint],
+    cost_fn: CostFunction,
+    pingpong: &mut NeuralNetworkPingPong,
+    is_softmax_output: bool,
+) -> LayerTypeCPU {
+    let total_cost: LayerTypeCPU = data
+        .iter()
+        .map(|dp| calculate_cost_datapoint(layers, dp, cost_fn, pingpong, is_softmax_output))
+        .sum();
+
+    let l2_penalty: LayerTypeCPU = layers
+        .iter()
+        .flat_map(|layer| layer.weights.iter())
+        .flat_map(|matrix| matrix.iter())
+        .map(|w| w.powi(2))
+        .sum();
+
+    (total_cost / (data.len() as LayerTypeCPU)) + (0.001 * l2_penalty)
+}
+
+#[cfg(not(feature = "simd"))]
+fn calculate_cost_datapoint(
+    layers: &Vec<Layer>,
+    datapoint: &DataPoint,
+    cost_fn: CostFunction,
+    pingpong: &mut NeuralNetworkPingPong,
+    is_softmax_output: bool,
+) -> LayerTypeCPU {
+    forward(layers, &datapoint.inputs, pingpong, is_softmax_output);
+    cost_fn.call(&pingpong.next, &datapoint.expected_outputs)
+}
+
+#[cfg(feature = "simd")]
+fn calculate_cost_simd(
+    layers: &Vec<Layer>,
+    data: &[DataPoint],
+    cost_fn: CostFunction,
+    pingpong: &mut NeuralNetworkPingPong,
+    is_softmax_output: bool,
+) -> LayerTypeCPU {
+    let num_outputs = layers.last().unwrap().num_out_nodes;
+
+    let total_cost: LayerTypeCPU = data
+        .iter()
+        .map(|datapoint| {
+            forward(layers, &datapoint.inputs, pingpong, is_softmax_output);
+            let mut sum = f32x8::splat(0.0);
+            let mut i = 0;
+
+            while i + 8 <= num_outputs {
+                let pred = f32x8::from(&pingpong.next[i..i + 8]);
+                let expected = f32x8::from(&datapoint.expected_outputs[i..i + 8]);
+                sum += cost_fn.call_simd(pred, expected);
+                i += 8;
+            }
+
+            let mut cost = sum.reduce_add();
+            if i < num_outputs {
+                cost += cost_fn.call(&pingpong.next[i..], &datapoint.expected_outputs[i..]);
+            }
+            cost
+        })
+        .sum();
+
+    let l2_penalty: LayerTypeCPU = layers
+        .iter()
+        .flat_map(|layer| layer.weights.iter())
+        .flat_map(|matrix| matrix.iter())
+        .map(|w| w.powi(2))
+        .sum();
+
+    (total_cost / (data.len() as LayerTypeCPU)) + (0.001 * l2_penalty)
 }

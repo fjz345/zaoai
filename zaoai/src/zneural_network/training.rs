@@ -14,6 +14,7 @@ use zaoai_types::ai_labels::LayerTypeCPU;
 use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
     is_correct::ConfusionEvaluator,
+    layer::calculate_cost,
     neuralnetwork::{NNOutputs, NeuralNetwork, NeuralNetworkPingPong},
     thread::TrainingThreadPayload,
 };
@@ -391,7 +392,13 @@ pub fn test_nn<'a>(
         let mut results = Vec::with_capacity(test_data.len());
         for i in 0..test_data.len() {
             let datapoint = &test_data[i];
-            let cost = nn.calculate_cost(std::slice::from_ref(&test_data[i]), pingpong);
+            let cost = calculate_cost(
+                &nn.layers,
+                std::slice::from_ref(&test_data[i]),
+                nn.cost_fn,
+                pingpong,
+                nn.is_softmax_output,
+            );
             if let Some(tx_test_metadata) = &tx_test_metadata {
                 let mut metadata_point = AIResultMetadata::new(
                     DatasetUsage::Test,
@@ -438,7 +445,13 @@ pub fn test_nn<'a>(
         }
 
         // TODO: Do not calculate_cost another time here
-        let cost = nn.calculate_cost(test_data, pingpong);
+        let cost = calculate_cost(
+            &nn.layers,
+            test_data,
+            nn.cost_fn,
+            pingpong,
+            nn.is_softmax_output,
+        );
         let test_results = TestResults::new(results, is_correct_fn, cost);
         nn.last_test_results = Some(test_results);
         Ok(&nn.last_test_results.as_ref().unwrap())
