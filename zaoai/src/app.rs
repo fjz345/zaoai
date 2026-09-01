@@ -9,7 +9,7 @@ use crate::{
         datapoint::{TrainingData, TrainingDataset},
         is_correct::ConfusionEvaluator,
         layer::{BiasInit, WeightInit},
-        neuralnetwork::load_neural_network,
+        neuralnetwork_cpu::load_neural_network,
     },
 };
 use eframe::{
@@ -31,7 +31,7 @@ use crate::{
     egui_ext::add_slider_sized,
     zneural_network::{
         datapoint::DataPoint,
-        neuralnetwork::{GraphStructure, NeuralNetworkCPU},
+        neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU},
         thread::{TrainingThreadController, TrainingThreadPayload},
         training::{TrainingSession, TrainingState},
     },
@@ -94,7 +94,7 @@ impl eframe::App for ZaoaiApp {
 
     #[cfg(not(feature = "linux-profile"))]
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        use crate::zneural_network::neuralnetwork::save_neural_network;
+        use crate::zneural_network::neuralnetwork_cpu::save_neural_network;
 
         const NUM_SAVING: usize = 3;
         log::info!("[0/{NUM_SAVING}] Save Initiated");

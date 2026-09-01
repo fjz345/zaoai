@@ -4,7 +4,7 @@ use crate::{
     app::{AppState, MenuWindowData}, egui_ext::{Interval, add_slider_sized}, mnist::get_mnist, zneural_network::{
         activation::ActivationFunctionType, cost::CostFunction, datapoint::{
             DataPoint, TrainingData, TrainingDataset, VirtualTrainingDataset, create_2x2_test_datapoints,
-        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn}
+        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn}
     },
 };
 use zaoai_types::ai_labels::LayerTypeCPU;

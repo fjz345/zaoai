@@ -15,7 +15,7 @@ use crate::zneural_network::{
     datapoint::{DataPoint, TrainingData},
     is_correct::ConfusionEvaluator,
     layer::calculate_cost,
-    neuralnetwork::{NNOutputs, NeuralNetworkCPU, NeuralNetworkPingPong},
+    neuralnetwork_cpu::{NNOutputs, NeuralNetworkCPU, NeuralNetworkPingPong},
     thread::TrainingThreadPayload,
 };
 

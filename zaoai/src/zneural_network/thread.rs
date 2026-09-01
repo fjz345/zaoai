@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::zneural_network::{
-    neuralnetwork::NeuralNetworkCPU,
+    neuralnetwork_cpu::NeuralNetworkCPU,
     training::{AIResultMetadata, TrainingSession},
 };
 

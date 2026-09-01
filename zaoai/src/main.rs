@@ -24,7 +24,7 @@ mod zneural_network;
 
 use crate::app::*;
 use crate::layer::*;
-use crate::neuralnetwork::*;
+use crate::neuralnetwork_cpu::*;
 use crate::zneural_network::*;
 
 use eframe::egui;

@@ -8,7 +8,7 @@ use strum_macros::Display;
 use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
 use crate::zneural_network::datapoint::DataPoint;
-use crate::zneural_network::neuralnetwork::NeuralNetworkPingPong;
+use crate::zneural_network::neuralnetwork_cpu::NeuralNetworkPingPong;
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 #[cfg(feature = "simd")]
