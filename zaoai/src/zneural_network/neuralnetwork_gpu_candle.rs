@@ -1,14 +1,10 @@
-use burn::prelude::Backend;
-use burn::tensor::activation::relu;
-use burn::tensor::{Distribution, Shape, Tensor};
+use candle_core::{DType, Device, Tensor};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender};
-
-use burn::tensor::TensorData;
 
 use crate::datapoint::DataPoint;
 use crate::neuralnetwork_cpu::GraphStructure;
@@ -41,76 +37,74 @@ pub struct SerializedNeuralNetwork {
 }
 
 #[derive(Clone)]
-pub struct LayerGPU<B: Backend> {
-    pub weights: Tensor<B, 2>,
-    pub biases: Tensor<B, 2>,
+pub struct LayerGPU {
+    pub weights: Tensor,
+    pub biases: Tensor,
     pub num_in_nodes: usize,
     pub num_out_nodes: usize,
 }
+impl LayerGPU {
+    pub fn new(in_nodes: usize, out_nodes: usize, device: &Device) -> candle_core::Result<Self> {
+        let weights = Tensor::randn(0f32, 1f32, (out_nodes, in_nodes), device)?;
+        let biases = Tensor::zeros((out_nodes, 1), DType::F32, device)?;
 
-impl<B: Backend> LayerGPU<B> {
-    pub fn new(in_nodes: usize, out_nodes: usize, device: &B::Device) -> Self {
-        let weights = Tensor::<B, 2>::random(
-            [out_nodes, in_nodes],
-            Distribution::Normal(0.0, 1.0),
-            device,
-        );
-        let biases = Tensor::<B, 2>::zeros([out_nodes, 1], device);
-
-        Self {
+        Ok(Self {
             weights,
             biases,
             num_in_nodes: in_nodes,
             num_out_nodes: out_nodes,
-        }
+        })
     }
 
-    pub fn forward_manual(&self, input: &Tensor<B, 2>) -> Tensor<B, 2> {
-        self.weights.clone().matmul(input.clone()) + self.biases.clone()
+    pub fn forward_manual(&self, input: &Tensor) -> candle_core::Result<Tensor> {
+        let z = self.weights.matmul(input)?;
+        let z = z.broadcast_add(&self.biases)?;
+        Ok(z)
     }
 
     pub fn backward_manual(
         &self,
-        input: &Tensor<B, 2>,
-        d_z: &Tensor<B, 2>,
-    ) -> (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>) {
-        let input_t = input.clone().transpose();
-        let d_weights = d_z.clone().matmul(input_t);
-        let d_biases = d_z.clone().sum_dim(1);
-        let weights_t = self.weights.clone().transpose();
-        let d_input = weights_t.matmul(d_z.clone());
+        input: &Tensor,
+        d_z: &Tensor,
+    ) -> candle_core::Result<(Tensor, Tensor, Tensor)> {
+        let input_t = input.t()?;
+        let d_weights = d_z.matmul(&input_t)?;
+        let d_biases = d_z.sum_keepdim(1)?;
+        let weights_t = self.weights.t()?;
+        let d_input = weights_t.matmul(d_z)?;
 
-        (d_weights, d_biases, d_input)
+        Ok((d_weights, d_biases, d_input))
     }
 }
 
-pub struct LayerCacheGPU<B: Backend> {
-    pub input: Tensor<B, 2>,
-    pub z: Tensor<B, 2>,
-    pub output: Tensor<B, 2>,
+pub struct LayerCacheGPU {
+    pub input: Tensor,
+    pub z: Tensor,
+    pub output: Tensor,
 }
 
+// #[derive(bincode::Encode, bincode::Decode)]
 #[derive(Clone)]
-pub struct NeuralNetworkGPU<B: Backend> {
+pub struct NeuralNetworkGPU {
     pub graph_structure: GraphStructure,
-    pub layers: Vec<LayerGPU<B>>,
+    pub layers: Vec<LayerGPU>,
     pub last_test_results: Option<TestResults>,
     pub is_softmax_output: bool,
-    pub device: B::Device,
+    pub device: Device,
     layer_activation_function: ActivationFunctionType,
     pub cost_fn: CostFunction,
     version: u8,
 }
 
-impl<B: Backend> NeuralNetworkGPU<B> {
+impl NeuralNetworkGPU {
     const VERSION: u8 = 2;
 
-    pub fn to_serializable(&self) -> SerializedNeuralNetwork {
+    pub fn to_serializable(&self) -> candle_core::Result<SerializedNeuralNetwork> {
         let mut serializable_layers = Vec::with_capacity(self.layers.len());
 
         for layer in &self.layers {
-            let weights_vec = layer.weights.clone().into_data().to_vec::<f32>().unwrap();
-            let biases_vec = layer.biases.clone().into_data().to_vec::<f32>().unwrap();
+            let weights_vec = layer.weights.flatten_all()?.to_vec1::<f32>()?;
+            let biases_vec = layer.biases.flatten_all()?.to_vec1::<f32>()?;
 
             serializable_layers.push(SerializedLayer {
                 weights: weights_vec,
@@ -120,7 +114,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             });
         }
 
-        SerializedNeuralNetwork {
+        Ok(SerializedNeuralNetwork {
             graph_structure: self.graph_structure.clone(),
             layers: serializable_layers,
             last_test_results: self.last_test_results.clone(),
@@ -128,24 +122,23 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             layer_activation_function: self.layer_activation_function.clone(),
             cost_fn: self.cost_fn.clone(),
             version: self.version,
-        }
+        })
     }
 
-    pub fn from_serializable(data: SerializedNeuralNetwork, device: &B::Device) -> Self {
+    pub fn from_serializable(
+        data: SerializedNeuralNetwork,
+        device: &Device,
+    ) -> candle_core::Result<Self> {
         let mut layers = Vec::with_capacity(data.layers.len());
 
         for layer_data in data.layers {
-            let weights = Tensor::<B, 2>::from_data(
-                TensorData::new(
-                    layer_data.weights,
-                    Shape::new([layer_data.num_out_nodes, layer_data.num_in_nodes]),
-                ),
+            let weights = Tensor::from_vec(
+                layer_data.weights,
+                (layer_data.num_out_nodes, layer_data.num_in_nodes),
                 device,
-            );
-            let biases = Tensor::<B, 2>::from_data(
-                TensorData::new(layer_data.biases, Shape::new([layer_data.num_out_nodes, 1])),
-                device,
-            );
+            )?;
+            let biases =
+                Tensor::from_vec(layer_data.biases, (layer_data.num_out_nodes, 1), device)?;
 
             layers.push(LayerGPU {
                 weights,
@@ -155,7 +148,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             });
         }
 
-        Self {
+        Ok(Self {
             graph_structure: data.graph_structure,
             layers,
             last_test_results: data.last_test_results,
@@ -164,7 +157,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             layer_activation_function: data.layer_activation_function,
             cost_fn: data.cost_fn,
             version: data.version,
-        }
+        })
     }
 
     pub fn new(
@@ -172,13 +165,13 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         layer_activation: ActivationFunctionType,
         cost_fn: CostFunction,
         _dropout_prob: Option<LayerTypeCPU>,
-        device: B::Device,
-    ) -> Self {
+        device: Device,
+    ) -> candle_core::Result<Self> {
         let mut layers = Vec::with_capacity(graph_structure.hidden_layers.len() + 1);
         let mut prev_out_size = graph_structure.input_nodes;
 
         for &nodes in &graph_structure.hidden_layers {
-            layers.push(LayerGPU::new(prev_out_size, nodes, &device));
+            layers.push(LayerGPU::new(prev_out_size, nodes, &device)?);
             prev_out_size = nodes;
         }
 
@@ -186,9 +179,9 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             prev_out_size,
             graph_structure.output_nodes,
             &device,
-        ));
+        )?);
 
-        Self {
+        Ok(Self {
             graph_structure,
             layers,
             last_test_results: None,
@@ -197,7 +190,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             layer_activation_function: layer_activation,
             cost_fn,
             version: Self::VERSION,
-        }
+        })
     }
 
     pub fn max_layer_nodes(&self) -> usize {
@@ -232,41 +225,34 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         std::mem::size_of::<LayerTypeCPU>()
     }
 
-    pub fn forward(&self, inputs: &[LayerTypeCPU]) -> Vec<f32> {
-        let inputs_f32: Vec<f32> = inputs.iter().map(|&x| x as f32).collect();
-        let mut current = Tensor::<B, 2>::from_data(
-            TensorData::new(inputs_f32, Shape::new([inputs.len(), 1])),
-            &self.device,
-        );
+    pub fn forward(&self, inputs: &[LayerTypeCPU]) -> candle_core::Result<Vec<LayerTypeCPU>> {
+        let mut current = Tensor::from_slice(inputs, (inputs.len(), 1), &self.device)?;
         let last_idx = self.layers.len() - 1;
 
         for (i, layer) in self.layers.iter().enumerate() {
-            current = layer.forward_manual(&current);
+            current = layer.forward_manual(&current)?;
             if i != last_idx {
-                current = relu(current);
+                current = current.relu()?;
             }
         }
 
-        current.into_data().to_vec::<f32>().unwrap()
+        let flattened = current.flatten_all()?;
+        let result: Vec<f32> = flattened.to_vec1()?;
+        Ok(result)
     }
 
-    fn forward_cache(&self, inputs: &[LayerTypeCPU]) -> (Vec<f32>, Vec<LayerCacheGPU<B>>) {
-        let inputs_f32: Vec<f32> = inputs.iter().map(|&x| x as f32).collect();
-        let mut current = Tensor::<B, 2>::from_data(
-            TensorData::new(inputs_f32, Shape::new([inputs.len(), 1])),
-            &self.device,
-        );
+    fn forward_cache(
+        &self,
+        inputs: &[LayerTypeCPU],
+    ) -> candle_core::Result<(Vec<LayerTypeCPU>, Vec<LayerCacheGPU>)> {
+        let mut current = Tensor::from_slice(inputs, (inputs.len(), 1), &self.device)?;
         let mut cache = Vec::with_capacity(self.layers.len());
         let last_idx = self.layers.len() - 1;
 
         for (i, layer) in self.layers.iter().enumerate() {
             let layer_input = current.clone();
-            let z = layer.forward_manual(&layer_input);
-            let output = if i != last_idx {
-                relu(z.clone())
-            } else {
-                z.clone()
-            };
+            let z = layer.forward_manual(&layer_input)?;
+            let output = if i != last_idx { z.relu()? } else { z.clone() };
 
             cache.push(LayerCacheGPU {
                 input: layer_input,
@@ -276,7 +262,8 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             current = output;
         }
 
-        (current.into_data().to_vec::<f32>().unwrap(), cache)
+        let final_output = current.flatten_all()?.to_vec1()?;
+        Ok((final_output, cache))
     }
 
     pub fn learn_batch(
@@ -293,19 +280,16 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         let mut last_loss = 0.0;
         let mut batch_data_outputs = Vec::with_capacity(batch_data.len());
 
-        let mut accum_dw: Vec<Tensor<B, 2>> = Vec::with_capacity(self.layers.len());
-        let mut accum_db: Vec<Tensor<B, 2>> = Vec::with_capacity(self.layers.len());
+        let mut accum_dw: Vec<Tensor> = Vec::with_capacity(self.layers.len());
+        let mut accum_db: Vec<Tensor> = Vec::with_capacity(self.layers.len());
 
         for layer in &self.layers {
-            accum_dw.push(Tensor::<B, 2>::zeros(layer.weights.shape(), &self.device));
-            accum_db.push(Tensor::<B, 2>::zeros(layer.biases.shape(), &self.device));
+            accum_dw.push(layer.weights.zeros_like().unwrap());
+            accum_db.push(layer.biases.zeros_like().unwrap());
         }
 
         for (i, datapoint) in batch_data.iter().enumerate() {
-            let (predicted_f32, cache) = self.forward_cache(&datapoint.inputs);
-            let predicted: Vec<LayerTypeCPU> =
-                predicted_f32.iter().map(|&x| x as LayerTypeCPU).collect();
-
+            let (predicted, cache) = self.forward_cache(&datapoint.inputs).unwrap();
             let cost = self.cost_fn.call(&predicted, &datapoint.expected_outputs);
             total_cost += cost;
             if i == batch_data.len() - 1 {
@@ -315,44 +299,46 @@ impl<B: Backend> NeuralNetworkGPU<B> {
 
             let last = self.layers.len() - 1;
 
-            let d_z_vec: Vec<f32> = predicted
-                .iter()
-                .zip(datapoint.expected_outputs.iter())
-                .map(|(p, e)| (*p - *e) as f32)
-                .collect();
-
-            let mut d_z = Tensor::<B, 2>::from_data(
-                TensorData::new(d_z_vec.clone(), Shape::new([d_z_vec.len(), 1])),
-                &self.device,
-            );
+            let mut d_z_vec = Vec::with_capacity(predicted.len());
+            for (p, e) in predicted.iter().zip(datapoint.expected_outputs.iter()) {
+                d_z_vec.push(p - e);
+            }
+            let mut d_z = Tensor::from_slice(&d_z_vec, (d_z_vec.len(), 1), &self.device).unwrap();
 
             for layer_idx in (0..=last).rev() {
                 let layer_cache = &cache[layer_idx];
                 let layer = &self.layers[layer_idx];
 
-                let (d_w, d_b, d_input) = layer.backward_manual(&layer_cache.input, &d_z);
+                let (d_w, d_b, d_input) = layer.backward_manual(&layer_cache.input, &d_z).unwrap();
 
-                accum_dw[layer_idx] = accum_dw[layer_idx].clone() + d_w;
-                accum_db[layer_idx] = accum_db[layer_idx].clone() + d_b;
+                accum_dw[layer_idx] = (accum_dw[layer_idx].clone() + d_w).unwrap();
+                accum_db[layer_idx] = (accum_db[layer_idx].clone() + d_b).unwrap();
 
                 if layer_idx > 0 {
                     let prev_cache = &cache[layer_idx - 1];
-                    let relu_grad = prev_cache.z.clone().greater_equal_elem(0.0).float();
-                    d_z = d_input * relu_grad;
+                    let relu_grad = prev_cache
+                        .z
+                        .ge(&prev_cache.z.zeros_like().unwrap())
+                        .unwrap()
+                        .to_dtype(DType::F32)
+                        .unwrap();
+                    d_z = d_input.broadcast_mul(&relu_grad).unwrap();
                 }
             }
         }
 
         let batch_len_f32 = batch_data.len() as f32;
         for (layer_idx, layer) in self.layers.iter_mut().enumerate() {
-            let mean_dw = accum_dw[layer_idx].clone() / batch_len_f32;
-            let mean_db = accum_db[layer_idx].clone() / batch_len_f32;
+            let mean_dw = (accum_dw[layer_idx].clone() / (batch_len_f32 as f64)).unwrap();
+            let mean_db = (accum_db[layer_idx].clone() / (batch_len_f32 as f64)).unwrap();
 
-            layer.weights = layer.weights.clone() - (mean_dw * (learn_rate as f32));
-            layer.biases = layer.biases.clone() - (mean_db * (learn_rate as f32));
+            layer.weights =
+                (layer.weights.clone() - (mean_dw * (learn_rate as f64)).unwrap()).unwrap();
+            layer.biases =
+                (layer.biases.clone() - (mean_db * (learn_rate as f64)).unwrap()).unwrap();
         }
 
-        *batch_data_cost = total_cost / (batch_len_f32);
+        *batch_data_cost = total_cost / batch_len_f32;
         *batch_data_loss = last_loss;
 
         batch_data_outputs
@@ -443,7 +429,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
                 }
             }
         }
-        new_metadata.cost = epoch_data_cost;
+        new_metadata.cost = epoch_data_cost as LayerTypeCPU;
     }
 
     pub fn learn<T: Fn() -> bool>(
@@ -471,13 +457,15 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         for e in 0..num_epochs {
             let mut test_nn_and_send_payload =
                 |tx: &Sender<TrainingThreadPayload>, data: &[DataPoint], payload_index: usize| {
-                    if let Ok(test_results) = test_nn_gpu(self, data, is_correct_fn, None, None) {
+                    if let Some(test_results) =
+                        test_nn_gpu(self, data, is_correct_fn, None, None).ok()
+                    {
                         let mut result_metadata = AIResultMetadata::from_accuracy(
                             test_results.accuracy.unwrap_or_default() as f64,
                             test_results.results.len(),
                         );
-                        result_metadata.cost = test_results.cost;
-                        result_metadata.last_loss = test_results.cost;
+                        result_metadata.cost = test_results.cost as LayerTypeCPU;
+                        result_metadata.last_loss = test_results.cost as LayerTypeCPU;
                         result_metadata.learn_rate = learn_rate;
 
                         let payload = TrainingThreadPayload {
@@ -555,9 +543,9 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             n.to_string()
         }
     }
+
     pub fn to_string(&self) -> String {
-        let last_test_result: Option<&TestResults> = self.last_test_results.as_ref();
-        let last_test_result_string = if let Some(res) = last_test_result {
+        let last_test_result_string = if let Some(res) = &self.last_test_results {
             format!("{}", res)
         } else {
             "".to_string()
@@ -578,16 +566,15 @@ Last Test Results: {}\n",
 
 const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
 
-pub fn save_neural_network<B: Backend, P: AsRef<Path>>(
-    nn: &NeuralNetworkGPU<B>,
-    path: P,
-) -> std::io::Result<()> {
+pub fn save_neural_network<P: AsRef<Path>>(nn: &NeuralNetworkGPU, path: P) -> std::io::Result<()> {
     let path = path.as_ref();
     if let Some(parent) = path.parent() {
         create_dir_all(parent)?;
     }
 
-    let serializable = nn.to_serializable();
+    let serializable = nn
+        .to_serializable()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
     let encoded: Vec<u8> = bincode::encode_to_vec(&serializable, BINCODE_CONFIG)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;

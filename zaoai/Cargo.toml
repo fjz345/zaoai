@@ -31,7 +31,9 @@ strum = "0.27.2"
 strum_macros = "0.27.2"
 anyhow = "1.0.98"
 color-backtrace = "0.7.4"
-candle-core = { version = "0.11.0", features = ["cuda"] }
+#candle-core = { version = "0.11.0", features = ["cuda"] }
+burn = { version = "0.21.0", features = ["wgpu"] }
+burn-wgpu = { version = "0.21.0" }
 
 [features]
 default = ["serde", "simd"]
@@ -53,3 +55,5 @@ debug = true
 [profile.dev]
 incremental = true
 lto = "off"
+
+

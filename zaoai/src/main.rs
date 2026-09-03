@@ -49,7 +49,7 @@ fn main() -> Result<()> {
     env::set_var(
         "RUST_LOG",
         "debug,
-        eframe::native::run=info, egui_winit=info, eframe::native=info",
+        eframe::native::run=info, egui_winit=info, eframe::native=info, tracing::span=info, winit::window=info, naga=info",
     );
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 

@@ -479,7 +479,33 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                         //         *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(vec![], ConfusionEvaluator::LargestLabel, 0.0));
                                         //     },
                                         // }
-                                        // GPU
+                                        // GPU - candle
+                                        // match test_nn_gpu_candle(
+                                        //     &ai_clone,
+                                        //     &training_data_clone.test_split(),
+                                        //     is_correct_fn,
+                                        //     maybe_tx,
+                                        //     Some(rx_abort),
+                                        // ) {
+                                        //     Ok(r) => {
+                                        //         log::trace!("Test Thread test_nn complete!");
+                                        //         let save_path = "testresults.results";
+                                        //         log::trace!("Saving results... {save_path}");
+                                        //         if let Err(e) = r.save_results(save_path) {
+                                        //             log::error!("Failed to save results to {save_path}: {e}");
+                                        //         }
+                                        //         *test_nn_done_clone.lock().unwrap() = Some(r.clone());
+                                        //     }
+                                        //     Err(e) => {
+                                        //         log::error!("{e}");
+                                        //         *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(
+                                        //             vec![],
+                                        //             ConfusionEvaluator::LargestLabel,
+                                        //             0.0,
+                                        //         ));
+                                        //     }
+                                        // }
+                                        // GPU - burn
                                         match test_nn_gpu(
                                             &ai_clone,
                                             &training_data_clone.test_split(),
@@ -498,11 +524,12 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                             }
                                             Err(e) => {
                                                 log::error!("{e}");
-                                                *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(
-                                                    vec![],
-                                                    ConfusionEvaluator::LargestLabel,
-                                                    0.0,
-                                                ));
+                                                *test_nn_done_clone.lock().unwrap() = Some(TestResults {
+                                                    cost: 0.0,
+                                                    accuracy: None,
+                                                    results: vec![],
+                                                    num_correct: 0,
+                                                });
                                             }
                                         }
                                     }));

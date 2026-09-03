@@ -13,7 +13,7 @@ use crate::{
         neuralnetwork_gpu::NeuralNetworkGPU,
     },
 };
-use candle_core::Device;
+// use candle_core::Device;
 use eframe::{
     egui::{self, InnerResponse, Slider},
     epaint::Rect,
@@ -39,7 +39,7 @@ use crate::{
     },
 };
 
-pub type NeuralNetworkType = NeuralNetworkGPU;
+pub type NeuralNetworkType = NeuralNetworkGPU<burn::backend::Wgpu>;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MenuWindowData {
@@ -278,6 +278,10 @@ impl eframe::App for ZaoaiApp {
                             }
                             self.training_session.set_state(TrainingState::Finish);
                         }
+                        if !training_in_progress {
+                            log::info!("TrainingState::Training no longer has training in progress, changing state to TrainingState::Finish");
+                            self.training_session.set_state(TrainingState::Finish);
+                        }
                     }
                     TrainingState::Finish => {
                         log::trace!("Training Finished! Waiting for result");
@@ -309,16 +313,16 @@ impl eframe::App for ZaoaiApp {
                                 },
                             }
                             if finish_time {
-                                let start = self
-                                    .training_thread
-                                    .start_time
-                                    .take()
-                                    .expect("Failed to get start_time");
-
-                                log::info!(
-                                    "Training complete, took {:.2} seconds",
-                                    start.elapsed().as_secs_f64()
-                                );
+                                let start_opt = self.training_thread.start_time.take();
+                                if let Some(start) = start_opt {
+                                    log::info!(
+                                        "Training complete, took {:.2} seconds",
+                                        start.elapsed().as_secs_f64()
+                                    );
+                                } else {
+                                    log::error!("Failed to get training start time, maybe training never started?");
+                                }
+                                self.training_session.set_state(TrainingState::Idle);
                             }
                         } else {
                             log::error!("Failed to get training thread neural network reciever");
@@ -346,7 +350,8 @@ impl Default for ZaoaiApp {
         let graph_structure = GraphStructure::new(&[2, 3, 2]);
         Self {
             state: AppState::Startup,
-            ai: None,
+            // ai: None,
+            ai: None::<NeuralNetworkGPU<burn::backend::Wgpu>>,
             window_data: MenuWindowData {
                 graph_structure_string: graph_structure.to_string(),
                 show_training_graph: true,
@@ -474,23 +479,36 @@ impl ZaoaiApp {
         //     self.window_data.ai_bias_init,
         // ));
 
-        let device_result = Device::new_cuda(0);
-        if let Err(e) = device_result {
-            log::error!("Failed to create CUDA device: {e}");
-            return;
-        };
-        let device = device_result.unwrap_or(Device::Cpu);
-        //GPU
-        self.ai = Some(
-            NeuralNetworkGPU::new(
-                nn_structure,
-                self.window_data.ai_activation_function,
-                self.window_data.ai_cost_fn,
-                Some(self.window_data.ai_dropout_prob),
-                device.clone(),
-            )
-            .expect("Failed to create NeuralNetworkGPU"),
-        );
+        // //GPU - candle
+        // let device_result = Device::new_cuda(0);
+        // if let Err(e) = device_result {
+        //     log::error!("Failed to create CUDA device: {e}");
+        //     return;
+        // };
+        // let device = device_result.unwrap_or(Device::Cpu);
+        // self.ai = Some(
+        //     NeuralNetworkGPU::new(
+        //         nn_structure,
+        //         self.window_data.ai_activation_function,
+        //         self.window_data.ai_cost_fn,
+        //         Some(self.window_data.ai_dropout_prob),
+        //         device.clone(),
+        //     )
+        //     .expect("Failed to create NeuralNetworkGPU"),
+        // );
+        // GPU - burn
+        use burn::backend::Wgpu;
+        use burn::prelude::Backend;
+        use burn_wgpu::WgpuDevice;
+
+        let device = WgpuDevice::default();
+        self.ai = Some(NeuralNetworkGPU::new(
+            nn_structure,
+            self.window_data.ai_activation_function,
+            self.window_data.ai_cost_fn,
+            Some(self.window_data.ai_dropout_prob),
+            device.clone(),
+        ));
         self.training_session.set_nn(self.ai.as_ref().unwrap());
         self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
         self.window_data.training_session_batch_size = self.training_session.get_batch_size();

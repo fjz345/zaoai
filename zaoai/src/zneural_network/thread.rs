@@ -91,6 +91,8 @@ impl TrainingThreadController {
             self.handle = Some(training_thread);
 
             return true;
+        } else {
+            log::error!("begin_training failed, no NN");
         }
 
         false
