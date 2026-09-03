@@ -4,7 +4,7 @@ pub mod datapoint;
 pub mod is_correct;
 pub mod layer;
 pub mod neuralnetwork_cpu;
-// pub mod neuralnetwork_gpu;
+pub mod neuralnetwork_gpu;
 #[cfg(feature = "simd")]
 pub mod simd;
 pub mod thread;

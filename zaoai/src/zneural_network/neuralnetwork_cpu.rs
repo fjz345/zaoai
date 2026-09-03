@@ -4,7 +4,7 @@ use crate::zneural_network::cost::CostFunction;
 use crate::zneural_network::is_correct::ConfusionEvaluator;
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{
-    test_nn, AIResultMetadata, DatasetUsage, FloatDecay, TestResults,
+    test_nn_cpu, AIResultMetadata, DatasetUsage, FloatDecay, TestResults,
 };
 
 use super::datapoint::DataPoint;
@@ -134,7 +134,7 @@ impl NeuralNetworkCPU {
         dropout_prob: Option<LayerTypeCPU>,
         weight_init: WeightInit,
         bias_init: BiasInit,
-    ) -> NeuralNetworkCPU {
+    ) -> Self {
         let mut layers: Vec<Layer> = Vec::new();
         let mut prev_out_size = graph_structure.input_nodes;
 
@@ -405,7 +405,7 @@ impl NeuralNetworkCPU {
             let mut test_nn_and_send_payload =
                 |tx: &Sender<TrainingThreadPayload>, data: &[DataPoint], payload_index: usize| {
                     if let Some(test_results) =
-                        test_nn(self, data, is_correct_fn, None, None, pingpong).ok()
+                        test_nn_cpu(self, data, is_correct_fn, None, None, pingpong).ok()
                     {
                         let mut result_metadata = AIResultMetadata::from_accuracy(
                             test_results.accuracy.unwrap_or_default() as f64,

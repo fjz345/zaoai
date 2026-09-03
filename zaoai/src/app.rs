@@ -10,8 +10,10 @@ use crate::{
         is_correct::ConfusionEvaluator,
         layer::{BiasInit, WeightInit},
         neuralnetwork_cpu::load_neural_network,
+        neuralnetwork_gpu::NeuralNetworkGPU,
     },
 };
+use candle_core::Device;
 use eframe::{
     egui::{self, InnerResponse, Slider},
     epaint::Rect,
@@ -36,6 +38,8 @@ use crate::{
         training::{TrainingSession, TrainingState},
     },
 };
+
+pub type NeuralNetworkType = NeuralNetworkGPU;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MenuWindowData {
@@ -70,7 +74,7 @@ pub struct ZaoaiApp {
     #[cfg_attr(feature = "serde", serde(skip))]
     state: AppState,
     #[cfg_attr(feature = "serde", serde(skip))]
-    ai: Option<NeuralNetworkCPU>,
+    ai: Option<NeuralNetworkType>,
     last_ai_filepath: Option<String>,
     window_data: MenuWindowData,
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -103,9 +107,9 @@ impl eframe::App for ZaoaiApp {
             const DEFAULT_NN_FILEPATH: &'static str = "NN/save.znn";
             let save_nn_filepath = DEFAULT_NN_FILEPATH;
             log::info!("[1/{NUM_SAVING}] Saving neural network: {save_nn_filepath}");
-            if let Err(e) = save_neural_network(nn, save_nn_filepath) {
-                log::error!("Failed to save neural network to {save_nn_filepath}: {e}");
-            }
+            // if let Err(e) = save_neural_network(nn, save_nn_filepath) {
+            //     log::error!("Failed to save neural network to {save_nn_filepath}: {e}");
+            // }
             self.last_ai_filepath = Some(save_nn_filepath.to_owned());
         } else {
             log::info!("[1/{NUM_SAVING}] Neural network not saved, not set");
@@ -460,14 +464,33 @@ impl ZaoaiApp {
 
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
         log::info!("setup_ai");
-        self.ai = Some(NeuralNetworkCPU::new(
-            nn_structure,
-            self.window_data.ai_activation_function,
-            self.window_data.ai_cost_fn,
-            Some(self.window_data.ai_dropout_prob),
-            self.window_data.ai_weight_init,
-            self.window_data.ai_bias_init,
-        ));
+        //CPU
+        // self.ai = Some(NeuralNetworkCPU::new(
+        //     nn_structure,
+        //     self.window_data.ai_activation_function,
+        //     self.window_data.ai_cost_fn,
+        //     Some(self.window_data.ai_dropout_prob),
+        //     self.window_data.ai_weight_init,
+        //     self.window_data.ai_bias_init,
+        // ));
+
+        let device_result = Device::new_cuda(0);
+        if let Err(e) = device_result {
+            log::error!("Failed to create CUDA device: {e}");
+            return;
+        };
+        let device = device_result.unwrap_or(Device::Cpu);
+        //GPU
+        self.ai = Some(
+            NeuralNetworkGPU::new(
+                nn_structure,
+                self.window_data.ai_activation_function,
+                self.window_data.ai_cost_fn,
+                Some(self.window_data.ai_dropout_prob),
+                device.clone(),
+            )
+            .expect("Failed to create NeuralNetworkGPU"),
+        );
         self.training_session.set_nn(self.ai.as_ref().unwrap());
         self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
         self.window_data.training_session_batch_size = self.training_session.get_batch_size();

@@ -1,10 +1,10 @@
 use std::{ ops::RangeInclusive, path::PathBuf, sync::{Arc, Mutex, mpsc::{self, Receiver, Sender}}, thread::JoinHandle};
 
 use crate::{
-    app::{AppState, MenuWindowData}, egui_ext::{Interval, add_slider_sized}, mnist::get_mnist, zneural_network::{
+    app::{AppState, MenuWindowData, NeuralNetworkType}, egui_ext::{Interval, add_slider_sized}, mnist::get_mnist, zneural_network::{
         activation::ActivationFunctionType, cost::CostFunction, datapoint::{
             DataPoint, TrainingData, TrainingDataset, VirtualTrainingDataset, create_2x2_test_datapoints,
-        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn}
+        }, is_correct::ConfusionEvaluator, layer::{ BiasInit, WeightInit}, neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn_cpu, test_nn_gpu}
     },
 };
 use zaoai_types::ai_labels::LayerTypeCPU;
@@ -348,7 +348,7 @@ impl WindowTrainingGraph {
 }
 
 pub struct WindowAiCtx<'a> {
-    pub ai: &'a mut Option<NeuralNetworkCPU>,
+    pub ai: &'a mut Option<NeuralNetworkType>,
     pub test_button_training_data: &'a Option<&'a TrainingData>,
     pub ai_is_corret_fn: &'a ConfusionEvaluator,
     pub payload_test_buffer: &'a mut Vec<TrainingThreadPayload>,
@@ -462,21 +462,48 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                     self.test_nn_handle = Some(std::thread::spawn(move || {
                                         log::trace!("Test Thread test_nn spawned!");
                                         let pingpong = &mut NeuralNetworkPingPong::new(ai_clone.max_layer_nodes());
-                                        match test_nn(&mut ai_clone, &training_data_clone.test_split(), is_correct_fn, maybe_tx, Some(rx_abort), pingpong)
-                                        {
+                                        // CPU
+                                        // match test_nn_cpu(&mut ai_clone, &training_data_clone.test_split(), is_correct_fn, maybe_tx, Some(rx_abort), pingpong)
+                                        // {
+                                        //     Ok(r) => {
+                                        //         log::trace!("Test Thread test_nn complete!");
+                                        //         let save_path = "testresults.results";
+                                        //         log::trace!("Saving results... {save_path}");
+                                        //         if let Err(e) = r.save_results(save_path)
+                                        //         {
+                                        //             log::error!("Failed to save results to {save_path}: {e}");
+                                        //         }
+                                        //         *test_nn_done_clone.lock().unwrap() = Some(r.clone());
+                                        //     },
+                                        //         Err(e) => {log::error!("{e}");
+                                        //         *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(vec![], ConfusionEvaluator::LargestLabel, 0.0));
+                                        //     },
+                                        // }
+                                        // GPU
+                                        match test_nn_gpu(
+                                            &ai_clone,
+                                            &training_data_clone.test_split(),
+                                            is_correct_fn,
+                                            maybe_tx,
+                                            Some(rx_abort),
+                                        ) {
                                             Ok(r) => {
                                                 log::trace!("Test Thread test_nn complete!");
                                                 let save_path = "testresults.results";
                                                 log::trace!("Saving results... {save_path}");
-                                                if let Err(e) = r.save_results(save_path)
-                                                {
+                                                if let Err(e) = r.save_results(save_path) {
                                                     log::error!("Failed to save results to {save_path}: {e}");
                                                 }
                                                 *test_nn_done_clone.lock().unwrap() = Some(r.clone());
-                                            },
-                                                Err(e) => {log::error!("{e}");
-                                                *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(vec![], ConfusionEvaluator::LargestLabel, 0.0));
-                                            },
+                                            }
+                                            Err(e) => {
+                                                log::error!("{e}");
+                                                *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(
+                                                    vec![],
+                                                    ConfusionEvaluator::LargestLabel,
+                                                    0.0,
+                                                ));
+                                            }
                                         }
                                     }));
                                     

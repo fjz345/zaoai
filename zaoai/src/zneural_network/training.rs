@@ -11,13 +11,109 @@ use serde::{Deserialize, Serialize};
 use strum_macros::Display;
 use zaoai_types::ai_labels::LayerTypeCPU;
 
-use crate::zneural_network::{
-    datapoint::{DataPoint, TrainingData},
-    is_correct::ConfusionEvaluator,
-    layer::calculate_cost,
-    neuralnetwork_cpu::{NNOutputs, NeuralNetworkCPU, NeuralNetworkPingPong},
-    thread::TrainingThreadPayload,
+use crate::{
+    app::NeuralNetworkType,
+    zneural_network::{
+        datapoint::{DataPoint, TrainingData},
+        is_correct::{ConfusionCategory, ConfusionEvaluator},
+        layer::calculate_cost,
+        neuralnetwork_cpu::{NNOutputs, NeuralNetworkCPU, NeuralNetworkPingPong},
+        neuralnetwork_gpu::NeuralNetworkGPU,
+        thread::TrainingThreadPayload,
+    },
 };
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Display, PartialEq)]
+pub enum FloatDecay {
+    Exponential {
+        rate: LayerTypeCPU,
+    },
+    StepDecay {
+        step_size: usize,
+        decay_factor: LayerTypeCPU, // 0.5 to halve every step_size
+    },
+    Linear {
+        max_steps: usize,
+        end_rate: LayerTypeCPU,
+    },
+    Cosine {
+        max_steps: usize,
+        min_val: LayerTypeCPU,
+    },
+}
+
+impl Default for FloatDecay {
+    fn default() -> Self {
+        Self::Exponential { rate: 0.05 }
+    }
+}
+
+impl FloatDecay {
+    pub fn decay(&self, init_val: LayerTypeCPU, step: usize) -> LayerTypeCPU {
+        match self {
+            Self::Exponential { rate } => init_val * (-rate * step as LayerTypeCPU).exp(),
+            Self::StepDecay {
+                step_size,
+                decay_factor,
+            } => {
+                let inv_decay_factor = 1.0 - decay_factor.clamp(0.0, 1.0);
+                let exponent = (step / *step_size) as LayerTypeCPU;
+                init_val * inv_decay_factor.powf(exponent)
+            }
+            Self::Linear {
+                max_steps,
+                end_rate,
+            } => {
+                let progress = step as LayerTypeCPU / *max_steps as LayerTypeCPU;
+                if progress >= 1.0 {
+                    *end_rate
+                } else {
+                    init_val * (1.0 - progress) + end_rate * progress
+                }
+            }
+            Self::Cosine { max_steps, min_val } => {
+                let progress = step as LayerTypeCPU / *max_steps as LayerTypeCPU;
+                if progress >= 1.0 {
+                    *min_val
+                } else {
+                    min_val
+                        + 0.5
+                            * (init_val - min_val)
+                            * (1.0 + (std::f64::consts::PI as LayerTypeCPU * progress).cos())
+                }
+            }
+        }
+    }
+
+    pub fn set_max_steps(&mut self, in_max_steps: usize) {
+        match self {
+            Self::Exponential { .. } | Self::StepDecay { .. } => {}
+            Self::Linear { max_steps, .. } | Self::Cosine { max_steps, .. } => {
+                *max_steps = in_max_steps
+            }
+        }
+    }
+
+    pub fn set_decay_rate(&mut self, rate: LayerTypeCPU) {
+        match self {
+            Self::Exponential { rate: r } => *r = rate,
+            Self::StepDecay { decay_factor, .. } => *decay_factor = rate,
+            Self::Linear { end_rate, .. } => *end_rate = rate,
+            Self::Cosine { min_val, .. } => *min_val = rate,
+        }
+    }
+
+    pub fn uses_decay_rate(&self) -> bool {
+        matches!(
+            self,
+            Self::Exponential { .. }
+                | Self::StepDecay { .. }
+                | Self::Linear { .. }
+                | Self::Cosine { .. }
+        )
+    }
+}
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Default)]
@@ -162,7 +258,8 @@ impl AIResultMetadata {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone)]
 pub struct TrainingSession {
-    pub nn: Option<NeuralNetworkCPU>,
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub nn: Option<NeuralNetworkType>,
     #[cfg_attr(feature = "serde", serde(skip))]
     pub state: TrainingState,
     pub num_epochs: usize,
@@ -177,7 +274,7 @@ pub struct TrainingSession {
 
 impl TrainingSession {
     pub fn new(
-        nn: Option<&NeuralNetworkCPU>,
+        nn: Option<&NeuralNetworkType>,
         training_data: TrainingData,
         num_epochs: usize,
         batch_size: usize,
@@ -201,7 +298,7 @@ impl TrainingSession {
         }
     }
 
-    pub fn set_nn(&mut self, nn: &NeuralNetworkCPU) {
+    pub fn set_nn(&mut self, nn: &NeuralNetworkType) {
         self.nn = Some(nn.clone());
     }
     pub fn set_state(&mut self, new_state: TrainingState) {
@@ -330,7 +427,7 @@ pub enum TrainingState {
     // Abort,
 }
 
-pub fn test_nn<'a>(
+pub fn test_nn_cpu<'a>(
     nn: &'a mut NeuralNetworkCPU,
     test_data: &[DataPoint],
     is_correct_fn: ConfusionEvaluator,
@@ -416,95 +513,59 @@ pub fn test_nn<'a>(
         anyhow::bail!("Failed to test_nn")
     }
 }
+pub fn test_nn_gpu(
+    nn: &NeuralNetworkGPU,
+    data: &[DataPoint],
+    is_correct_fn: ConfusionEvaluator,
+    _tx_metadata: Option<Sender<TrainingThreadPayload>>,
+    _rx_abort: Option<Receiver<()>>,
+) -> candle_core::Result<TestResults> {
+    let mut total_cost = 0.0;
+    let mut true_positives = 0;
+    let mut true_negatives = 0;
+    let mut false_positives = 0;
+    let mut false_negatives = 0;
 
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Clone, Display, PartialEq)]
-pub enum FloatDecay {
-    Exponential {
-        rate: LayerTypeCPU,
-    },
-    StepDecay {
-        step_size: usize,
-        decay_factor: LayerTypeCPU, // 0.5 to halve every step_size
-    },
-    Linear {
-        max_steps: usize,
-        end_rate: LayerTypeCPU,
-    },
-    Cosine {
-        max_steps: usize,
-        min_val: LayerTypeCPU,
-    },
-}
+    let mut results = Vec::with_capacity(data.len());
 
-impl Default for FloatDecay {
-    fn default() -> Self {
-        Self::Exponential { rate: 0.05 }
-    }
-}
+    for data_point in data {
+        let predicted = nn.forward(&data_point.inputs)?;
+        let cost = nn.cost_fn.call(&predicted, &data_point.expected_outputs);
+        total_cost += cost as f64;
 
-impl FloatDecay {
-    pub fn decay(&self, init_val: LayerTypeCPU, step: usize) -> LayerTypeCPU {
-        match self {
-            Self::Exponential { rate } => init_val * (-rate * step as LayerTypeCPU).exp(),
-            Self::StepDecay {
-                step_size,
-                decay_factor,
-            } => {
-                let inv_decay_factor = 1.0 - decay_factor.clamp(0.0, 1.0);
-                let exponent = (step / *step_size) as LayerTypeCPU;
-                init_val * inv_decay_factor.powf(exponent)
-            }
-            Self::Linear {
-                max_steps,
-                end_rate,
-            } => {
-                let progress = step as LayerTypeCPU / *max_steps as LayerTypeCPU;
-                if progress >= 1.0 {
-                    *end_rate
-                } else {
-                    init_val * (1.0 - progress) + end_rate * progress
-                }
-            }
-            Self::Cosine { max_steps, min_val } => {
-                let progress = step as LayerTypeCPU / *max_steps as LayerTypeCPU;
-                if progress >= 1.0 {
-                    *min_val
-                } else {
-                    min_val
-                        + 0.5
-                            * (init_val - min_val)
-                            * (1.0 + (std::f64::consts::PI as LayerTypeCPU * progress).cos())
-                }
-            }
+        match is_correct_fn.evaluate(&predicted, &data_point.expected_outputs) {
+            ConfusionCategory::TruePositive => true_positives += 1,
+            ConfusionCategory::TrueNegative => true_negatives += 1,
+            ConfusionCategory::FalsePositive => false_positives += 1,
+            ConfusionCategory::FalseNegative => false_negatives += 1,
         }
+
+        results.push(predicted);
     }
 
-    pub fn set_max_steps(&mut self, in_max_steps: usize) {
-        match self {
-            Self::Exponential { .. } | Self::StepDecay { .. } => {}
-            Self::Linear { max_steps, .. } | Self::Cosine { max_steps, .. } => {
-                *max_steps = in_max_steps
-            }
-        }
-    }
+    let total = data.len();
+    let total_correct = true_positives + true_negatives;
 
-    pub fn set_decay_rate(&mut self, rate: LayerTypeCPU) {
-        match self {
-            Self::Exponential { rate: r } => *r = rate,
-            Self::StepDecay { decay_factor, .. } => *decay_factor = rate,
-            Self::Linear { end_rate, .. } => *end_rate = rate,
-            Self::Cosine { min_val, .. } => *min_val = rate,
-        }
-    }
+    let accuracy = if total > 0 {
+        Some(total_correct as f64 / total as f64)
+    } else {
+        None
+    };
 
-    pub fn uses_decay_rate(&self) -> bool {
-        matches!(
-            self,
-            Self::Exponential { .. }
-                | Self::StepDecay { .. }
-                | Self::Linear { .. }
-                | Self::Cosine { .. }
-        )
-    }
+    let avg_cost = if total > 0 {
+        total_cost / total as f64
+    } else {
+        0.0
+    };
+
+    Ok(TestResults {
+        cost: avg_cost as LayerTypeCPU,
+        accuracy: accuracy.map(|a| a as LayerTypeCPU),
+        results: results
+            .into_iter()
+            .zip(data.iter().cloned())
+            .map(|(outputs, datapoint)| (datapoint, outputs))
+            .collect(),
+        num_correct: total_correct as i32,
+    })
 }
