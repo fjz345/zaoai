@@ -14,11 +14,11 @@ use zaoai_types::ai_labels::LayerTypeCPU;
 use crate::{
     app::NeuralNetworkType,
     zneural_network::{
+        cpu::layer::calculate_cost,
+        cpu::neuralnetwork_cpu::{NNOutputs, NeuralNetworkCPU, NeuralNetworkPingPong},
         datapoint::{DataPoint, TrainingData},
+        gpu::neuralnetwork_gpu::NeuralNetworkGPU,
         is_correct::{ConfusionCategory, ConfusionEvaluator},
-        layer::calculate_cost,
-        neuralnetwork_cpu::{NNOutputs, NeuralNetworkCPU, NeuralNetworkPingPong},
-        neuralnetwork_gpu::NeuralNetworkGPU,
         thread::TrainingThreadPayload,
     },
 };

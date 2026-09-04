@@ -1,11 +1,9 @@
 pub mod activation;
 pub mod cost;
+pub mod cpu;
 pub mod datapoint;
+pub mod gpu;
 pub mod is_correct;
-pub mod layer;
-pub mod neuralnetwork_cpu;
-pub mod neuralnetwork_gpu;
-#[cfg(feature = "simd")]
-pub mod simd;
 pub mod thread;
 pub mod training;
+pub mod weight_bias;

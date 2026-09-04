@@ -4,7 +4,7 @@ use strum_macros::Display;
 use wide::f32x8;
 
 #[cfg(feature = "simd")]
-use crate::zneural_network::simd::*;
+use crate::zneural_network::cpu::simd::*;
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

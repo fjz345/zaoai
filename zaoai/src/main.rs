@@ -23,8 +23,8 @@ mod mnist;
 mod zneural_network;
 
 use crate::app::*;
-use crate::layer::*;
-use crate::neuralnetwork_cpu::*;
+use crate::cpu::layer::*;
+use crate::cpu::neuralnetwork_cpu::*;
 use crate::zneural_network::*;
 
 use eframe::egui;

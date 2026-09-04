@@ -1,13 +1,14 @@
-use crate::layer::*;
 use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
+use crate::zneural_network::cpu::layer::{Layer, LayerLearnData};
+use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::is_correct::ConfusionEvaluator;
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{
     test_nn_cpu, AIResultMetadata, DatasetUsage, FloatDecay, TestResults,
 };
 
-use super::datapoint::DataPoint;
+use crate::weight_bias::{BiasInit, WeightInit};
 use rand::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -363,16 +364,16 @@ impl NeuralNetworkCPU {
 
             let confusion_cat = is_correct_fn.evaluate(datapoint_output, &data.expected_outputs);
             match confusion_cat {
-                super::is_correct::ConfusionCategory::TruePositive => {
+                crate::is_correct::ConfusionCategory::TruePositive => {
                     new_metadata.true_positives += 1;
                 }
-                super::is_correct::ConfusionCategory::TrueNegative => {
+                crate::is_correct::ConfusionCategory::TrueNegative => {
                     new_metadata.true_negatives += 1
                 }
-                super::is_correct::ConfusionCategory::FalsePositive => {
+                crate::is_correct::ConfusionCategory::FalsePositive => {
                     new_metadata.false_positives += 1
                 }
-                super::is_correct::ConfusionCategory::FalseNegative => {
+                crate::is_correct::ConfusionCategory::FalseNegative => {
                     new_metadata.false_negatives += 1
                 }
             }

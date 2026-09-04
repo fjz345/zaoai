@@ -1,16 +1,16 @@
 // hide console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use crate::weight_bias::{BiasInit, WeightInit};
 use crate::{
     app_windows::{WindowAiSetupPresets, WindowAiSetupPresetsCtx},
     zneural_network::{
         activation::ActivationFunctionType,
         cost::CostFunction,
+        cpu::neuralnetwork_cpu::load_neural_network,
         datapoint::{TrainingData, TrainingDataset},
+        gpu::neuralnetwork_gpu::NeuralNetworkGPU,
         is_correct::ConfusionEvaluator,
-        layer::{BiasInit, WeightInit},
-        neuralnetwork_cpu::load_neural_network,
-        neuralnetwork_gpu::NeuralNetworkGPU,
     },
 };
 // use candle_core::Device;
@@ -32,8 +32,8 @@ use crate::{
     },
     egui_ext::add_slider_sized,
     zneural_network::{
+        cpu::neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU},
         datapoint::DataPoint,
-        neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU},
         thread::{TrainingThreadController, TrainingThreadPayload},
         training::{TrainingSession, TrainingState},
     },
@@ -98,7 +98,7 @@ impl eframe::App for ZaoaiApp {
 
     #[cfg(not(feature = "linux-profile"))]
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        use crate::zneural_network::neuralnetwork_cpu::save_neural_network;
+        use crate::zneural_network::cpu::neuralnetwork_cpu::save_neural_network;
 
         const NUM_SAVING: usize = 3;
         log::info!("[0/{NUM_SAVING}] Save Initiated");

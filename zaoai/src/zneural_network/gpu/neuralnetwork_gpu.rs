@@ -6,17 +6,18 @@ use burn::tensor::{Distribution, Shape, Tensor};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::weight_bias::{BiasInit, WeightInit};
+use crate::zneural_network::cpu::neuralnetwork_cpu::NeuralNetworkPingPong;
 use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::path::Path;
 use std::sync::mpsc::Sender;
 
+use crate::cpu::neuralnetwork_cpu::GraphStructure;
 use crate::datapoint::DataPoint;
-use crate::neuralnetwork_cpu::GraphStructure;
 use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
 use crate::zneural_network::is_correct::{ConfusionCategory, ConfusionEvaluator};
-use crate::zneural_network::layer::{BiasInit, WeightInit};
 use crate::zneural_network::thread::TrainingThreadPayload;
 use crate::zneural_network::training::{
     test_nn_gpu, AIResultMetadata, DatasetUsage, FloatDecay, TestResults,
@@ -593,7 +594,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         learn_rate: LayerTypeCPU,
         batch_data_cost: &mut LayerTypeCPU,
         batch_data_loss: &mut LayerTypeCPU,
-        _pingpong: &mut crate::neuralnetwork_cpu::NeuralNetworkPingPong,
+        _pingpong: &mut NeuralNetworkPingPong,
     ) -> Vec<Vec<LayerTypeCPU>> {
         assert!(!batch_data.is_empty());
 
@@ -780,7 +781,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         learn_rate: LayerTypeCPU,
         is_correct_fn: ConfusionEvaluator,
         mut epoch_metadata: Option<&mut AIResultMetadata>,
-        pingpong: &mut crate::neuralnetwork_cpu::NeuralNetworkPingPong,
+        pingpong: &mut NeuralNetworkPingPong,
     ) {
         assert!(!training_data.is_empty());
         assert!(batch_size > 0);
@@ -898,8 +899,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
 
         assert!(batch_size > 0);
 
-        let pingpong =
-            &mut crate::neuralnetwork_cpu::NeuralNetworkPingPong::new(self.max_layer_nodes());
+        let pingpong = &mut NeuralNetworkPingPong::new(self.max_layer_nodes());
 
         for e in 0..num_epochs {
             let mut test_nn_and_send_payload =

@@ -1,14 +1,13 @@
 // ============================
 // Activation Functions
 // ============================
-
 #[cfg(feature = "simd")]
-use crate::simd::*;
+use crate::zneural_network::cpu::simd::*;
+#[cfg(feature = "simd")]
+use wide::f32x8;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "simd")]
-use wide::f32x8;
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
