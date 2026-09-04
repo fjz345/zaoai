@@ -63,17 +63,7 @@ impl<B: Backend> LayerGPU<B> {
         assert!(in_nodes > 0, "NumInNodes must be > 0");
         assert!(out_nodes > 0, "NumOutNodes must be > 0");
 
-        /*
-         * IMPORTANT:
-         *
-         * Do not use one hard-coded initialization here.
-         *
-         * The CPU implementation gets the initialization strategy from
-         * the UI and applies it to every layer. The GPU implementation
-         * does the same.
-         */
         let weights = Self::create_weights(in_nodes, out_nodes, weight_init, device);
-
         let biases = Self::create_biases(out_nodes, bias_init, device);
 
         Self {
@@ -91,109 +81,52 @@ impl<B: Backend> LayerGPU<B> {
         weight_init: WeightInit,
         device: &B::Device,
     ) -> Tensor<B, 2> {
-        /*
-         * Weight initialization follows the same mathematical choices
-         * exposed by the CPU/UI:
-         *
-         * Zero
-         * Uniform [0, 1]
-         * Normal(0, 1)
-         * Xavier Uniform
-         * Xavier Normal
-         * He Uniform
-         * He Normal
-         * LeCun
-         *
-         * Tensor shape is [input_nodes, output_nodes], matching the
-         * GPU matmul:
-         *
-         *     [batch, input] x [input, output]
-         */
         match weight_init {
             WeightInit::Zero => Tensor::<B, 2>::zeros([in_nodes, out_nodes], device),
-
             WeightInit::Uniform => Tensor::<B, 2>::random(
                 [in_nodes, out_nodes],
                 Distribution::Uniform(0.0, 1.0),
                 device,
             ),
-
             WeightInit::NormalDist => Tensor::<B, 2>::random(
                 [in_nodes, out_nodes],
                 Distribution::Normal(0.0, 1.0),
                 device,
             ),
-
             WeightInit::XavierUniform => {
-                /*
-                 * Xavier/Glorot:
-                 *
-                 * limit = sqrt(6 / (fan_in + fan_out))
-                 *
-                 * Uniform[-limit, limit]
-                 */
                 let limit = (6.0f32 / (in_nodes + out_nodes) as f32).sqrt();
-
                 Tensor::<B, 2>::random(
                     [in_nodes, out_nodes],
                     Distribution::Uniform((-limit).into(), limit.into()),
                     device,
                 )
             }
-
             WeightInit::XavierNormal => {
-                /*
-                 * Xavier normal:
-                 *
-                 * stddev = sqrt(2 / (fan_in + fan_out))
-                 */
                 let stddev = (2.0f32 / (in_nodes + out_nodes) as f32).sqrt();
-
                 Tensor::<B, 2>::random(
                     [in_nodes, out_nodes],
                     Distribution::Normal(0.0, stddev.into()),
                     device,
                 )
             }
-
             WeightInit::HeUniform => {
-                /*
-                 * He uniform:
-                 *
-                 * limit = sqrt(6 / fan_in)
-                 */
                 let limit = (6.0f32 / in_nodes as f32).sqrt();
-
                 Tensor::<B, 2>::random(
                     [in_nodes, out_nodes],
                     Distribution::Uniform((-limit).into(), limit.into()),
                     device,
                 )
             }
-
             WeightInit::HeNormal => {
-                /*
-                 * He normal:
-                 *
-                 * stddev = sqrt(2 / fan_in)
-                 */
                 let stddev = (2.0f32 / in_nodes as f32).sqrt();
-
                 Tensor::<B, 2>::random(
                     [in_nodes, out_nodes],
                     Distribution::Normal(0.0, stddev.into()),
                     device,
                 )
             }
-
             WeightInit::LeCun => {
-                /*
-                 * LeCun normal:
-                 *
-                 * stddev = 1 / sqrt(fan_in)
-                 */
                 let stddev = (1.0f32 / in_nodes as f32).sqrt();
-
                 Tensor::<B, 2>::random(
                     [in_nodes, out_nodes],
                     Distribution::Normal(0.0, stddev.into()),
@@ -206,7 +139,6 @@ impl<B: Backend> LayerGPU<B> {
     fn create_biases(out_nodes: usize, bias_init: BiasInit, device: &B::Device) -> Tensor<B, 2> {
         match bias_init {
             BiasInit::Zero => Tensor::<B, 2>::zeros([1, out_nodes], device),
-
             BiasInit::ZeroPointZeroOne => Tensor::<B, 2>::full([1, out_nodes], 0.01, device),
         }
     }
@@ -217,18 +149,10 @@ impl<B: Backend> LayerGPU<B> {
 
     pub fn forward(&self, input: &Tensor<B, 2>) -> Tensor<B, 2> {
         let z = self.forward_linear(input);
-
         Self::activation(z, &self.activation_type)
     }
 
     fn activation(z: Tensor<B, 2>, activation_type: &ActivationFunctionType) -> Tensor<B, 2> {
-        /*
-         * We intentionally use the Display representation here instead
-         * of matching enum variants directly.
-         *
-         * That keeps this file compatible with the exact enum variants
-         * defined elsewhere in the project.
-         */
         let name = format!("{}", activation_type).to_lowercase();
 
         if name == "relu" {
@@ -237,15 +161,7 @@ impl<B: Backend> LayerGPU<B> {
             sigmoid(z)
         } else if name == "tanh" {
             tanh(z)
-        } else if name == "linear" || name == "identity" || name == "none" {
-            z
         } else {
-            /*
-             * The CPU code may contain additional activation functions.
-             *
-             * Falling back to the raw value is preferable to silently
-             * changing the network architecture.
-             */
             z
         }
     }
@@ -257,64 +173,27 @@ impl<B: Backend> LayerGPU<B> {
         let name = format!("{}", activation_type).to_lowercase();
 
         if name == "relu" {
-            /*
-             * ReLU'(x):
-             *
-             *     1 if x > 0
-             *     0 otherwise
-             *
-             * Use > rather than >=.
-             */
             z.clone().greater_elem(0.0).float()
         } else if name == "sigmoid" {
-            /*
-             * sigmoid'(x) = sigmoid(x) * (1 - sigmoid(x))
-             */
             let s = sigmoid(z.clone());
-
             s.clone() * (1.0 - s)
         } else if name == "tanh" {
-            /*
-             * tanh'(x) = 1 - tanh(x)^2
-             */
             let t = tanh(z.clone());
-
             1.0 - t.clone() * t
         } else {
-            /*
-             * Linear/identity activation derivative.
-             */
             Tensor::<B, 2>::ones(z.shape(), &z.device())
         }
     }
 
-    /*
-     * Backpropagation for:
-     *
-     *     Z = XW + b
-     *
-     * Given dZ:
-     *
-     *     dW = X^T dZ
-     *     db = sum(dZ, axis=0)
-     *     dX = dZ W^T
-     */
     pub fn backward_linear(
         &self,
         input: &Tensor<B, 2>,
         d_z: &Tensor<B, 2>,
     ) -> (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>) {
         let input_t = input.clone().transpose();
-
         let d_weights = input_t.matmul(d_z.clone());
-
         let d_biases = d_z.clone().sum_dim(0);
 
-        /*
-         * Calculate d_input using the OLD weights.
-         *
-         * The caller updates weights only after this function returns.
-         */
         let d_input = d_z.clone().matmul(self.weights.clone().transpose());
 
         (d_weights, d_biases, d_input)
@@ -347,7 +226,6 @@ impl<B: Backend> NeuralNetworkGPU<B> {
 
         for layer in &self.layers {
             let weights_vec = layer.weights.clone().into_data().to_vec::<f32>().unwrap();
-
             let biases_vec = layer.biases.clone().into_data().to_vec::<f32>().unwrap();
 
             serializable_layers.push(SerializedLayer {
@@ -417,14 +295,8 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         device: B::Device,
     ) -> Self {
         let mut layers = Vec::with_capacity(graph_structure.hidden_layers.len() + 1);
-
         let mut prev_out_size = graph_structure.input_nodes;
 
-        /*
-         * Input nodes are not layers.
-         *
-         * Create hidden layers.
-         */
         for &nodes in &graph_structure.hidden_layers {
             layers.push(LayerGPU::new(
                 prev_out_size,
@@ -434,26 +306,9 @@ impl<B: Backend> NeuralNetworkGPU<B> {
                 bias_init,
                 &device,
             ));
-
             prev_out_size = nodes;
         }
 
-        /*
-         * Create output layer.
-         *
-         * This mirrors the CPU implementation:
-         *
-         * Layer::new(
-         *     prev_out_size,
-         *     output_nodes,
-         *     layer_activation,
-         *     None,
-         *     weight_init,
-         *     bias_init,
-         * );
-         *
-         * Dropout is intentionally not used on the output layer.
-         */
         layers.push(LayerGPU::new(
             prev_out_size,
             graph_structure.output_nodes,
@@ -463,13 +318,6 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             &device,
         ));
 
-        /*
-         * Keep this argument in the constructor because it is part of
-         * the same public configuration path as the CPU network.
-         *
-         * Dropout is not currently implemented in this manual GPU
-         * training path.
-         */
         let _ = dropout_prob;
 
         Self {
@@ -500,17 +348,14 @@ impl<B: Backend> NeuralNetworkGPU<B> {
 
     pub fn get_parameters_num(&self) -> usize {
         let mut total_params = 0;
-
         let mut prev_nodes = self.graph_structure.input_nodes;
 
         for &nodes in &self.graph_structure.hidden_layers {
             total_params += (prev_nodes * nodes) + nodes;
-
             prev_nodes = nodes;
         }
 
         let out_nodes = self.graph_structure.output_nodes;
-
         total_params += (prev_nodes * out_nodes) + out_nodes;
 
         total_params
@@ -543,11 +388,6 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             current = layer.forward(&current);
         }
 
-        /*
-         * Softmax output is intentionally applied only at the end.
-         *
-         * The network's internal layers use the configured activation.
-         */
         if self.is_softmax_output {
             current = softmax(current);
         }
@@ -560,14 +400,11 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         inputs: &Tensor<B, 2>,
     ) -> (Tensor<B, 2>, Vec<LayerCacheGPU<B>>) {
         let mut current = inputs.clone();
-
         let mut cache = Vec::with_capacity(self.layers.len());
 
         for layer in &self.layers {
             let layer_input = current.clone();
-
             let z = layer.forward_linear(&layer_input);
-
             let output = LayerGPU::<B>::activation(z.clone(), &layer.activation_type);
 
             cache.push(LayerCacheGPU {
@@ -595,7 +432,6 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         _pingpong: &mut NeuralNetworkPingPong,
     ) -> Vec<Vec<LayerTypeCPU>> {
         assert!(!batch_data.is_empty());
-
         assert!(
             learn_rate > 0.0,
             "Learning rate must be > 0, got {}",
@@ -603,13 +439,10 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         );
 
         let batch_size = batch_data.len();
-
         let in_nodes = self.graph_structure.input_nodes;
-
         let out_nodes = self.graph_structure.output_nodes;
 
         let mut flat_inputs = Vec::with_capacity(batch_size * in_nodes);
-
         let mut flat_expected = Vec::with_capacity(batch_size * out_nodes);
 
         for dp in batch_data {
@@ -630,7 +463,6 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             );
 
             flat_inputs.extend(dp.inputs.iter().map(|&x| x as f32));
-
             flat_expected.extend(dp.expected_outputs.iter().map(|&x| x as f32));
         }
 
@@ -644,62 +476,15 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             &self.device,
         );
 
-        /*
-         * Forward pass.
-         */
         let (predicted_tensor, cache) = self.forward_cache_batched(&input_tensor);
-
-        /*
-         * MSE derivative:
-         *
-         *     d/dprediction MSE
-         *       = prediction - expected
-         *
-         * This matches the original GPU implementation and is correct
-         * when CostFunction::Mse is being used.
-         */
         let mut d_a = predicted_tensor.clone() - expected_tensor;
-
-        /*
-         * Average gradient over batch.
-         */
         let lr = learn_rate as f32 / batch_size as f32;
 
-        /*
-         * Backward pass.
-         *
-         * We must walk from the output layer toward the input layer.
-         */
         for layer_idx in (0..self.layers.len()).rev() {
             let layer_cache = &cache[layer_idx];
-
             let layer = &self.layers[layer_idx];
 
-            /*
-             * If softmax is enabled, the simple
-             *
-             *     prediction - target
-             *
-             * derivative is only correct for the usual
-             * softmax + cross entropy combination.
-             *
-             * For the current MSE setup, softmax needs the full
-             * Jacobian. Rather than silently pretending the derivative
-             * is correct, the normal path remains the MSE path.
-             *
-             * Most importantly, with softmax disabled (your current UI
-             * configuration), this is exactly the ordinary activation
-             * derivative path.
-             */
             let d_z = if layer_idx == self.layers.len() - 1 && self.is_softmax_output {
-                /*
-                 * For the common classification case, if the
-                 * network is configured for softmax output and MSE,
-                 * calculate the element-wise approximation here.
-                 *
-                 * Cross-entropy should preferably be used with
-                 * softmax for the exact simplified derivative.
-                 */
                 d_a.clone()
                     * LayerGPU::<B>::activation_derivative(&layer_cache.z, &layer.activation_type)
             } else {
@@ -707,45 +492,24 @@ impl<B: Backend> NeuralNetworkGPU<B> {
                     * LayerGPU::<B>::activation_derivative(&layer_cache.z, &layer.activation_type)
             };
 
-            /*
-             * Calculate all gradients BEFORE modifying the layer.
-             *
-             * This ensures d_input uses the old weights.
-             */
             let (d_weights, d_biases, d_input) = layer.backward_linear(&layer_cache.input, &d_z);
 
-            /*
-             * Gradient descent.
-             */
             let new_weights = layer.weights.clone() - (d_weights * lr);
-
             let new_biases = layer.biases.clone() - (d_biases * lr);
 
             self.layers[layer_idx].weights = new_weights;
-
             self.layers[layer_idx].biases = new_biases;
 
-            /*
-             * d_input becomes dA for the previous layer.
-             */
             d_a = d_input;
         }
 
-        /*
-         * Convert predictions back to CPU values for the existing
-         * CostFunction / metadata implementation.
-         */
         let predicted_vec = predicted_tensor.into_data().to_vec::<f32>().unwrap();
-
         let mut batch_data_outputs = Vec::with_capacity(batch_size);
-
         let mut total_cost = 0.0;
-
         let mut last_loss = 0.0;
 
         for (i, dp) in batch_data.iter().enumerate() {
             let start = i * out_nodes;
-
             let end = start + out_nodes;
 
             let pred: Vec<LayerTypeCPU> = predicted_vec[start..end]
@@ -765,7 +529,6 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         }
 
         *batch_data_cost = total_cost / batch_size as LayerTypeCPU;
-
         *batch_data_loss = last_loss;
 
         batch_data_outputs
@@ -785,13 +548,11 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         assert!(batch_size > 0);
 
         let mut cur_index = 0;
-
         let len = training_data.len();
 
         let mut process_batch =
             |data: &[DataPoint], _batch_num: usize, _total_batches: usize, _cur_index: usize| {
                 let mut batch_data_cost = 0.0;
-
                 let mut batch_data_loss = 0.0;
 
                 let batch_data_outputs = self.learn_batch(
@@ -823,20 +584,16 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             };
 
         let num_batches = len / batch_size;
-
         let last_batch_size = len % batch_size;
 
         for i in 0..num_batches {
             let batch = &training_data[cur_index..cur_index + batch_size];
-
             process_batch(batch, i, num_batches, cur_index);
-
             cur_index += batch_size;
         }
 
         if last_batch_size > 0 {
             let batch = &training_data[cur_index..];
-
             process_batch(batch, num_batches, num_batches, cur_index);
         }
     }
@@ -851,25 +608,13 @@ impl<B: Backend> NeuralNetworkGPU<B> {
     ) {
         for (i, data) in epoch_data.iter().enumerate() {
             let datapoint_output = &epoch_data_outputs[i];
-
             let confusion_cat = is_correct_fn.evaluate(datapoint_output, &data.expected_outputs);
 
             match confusion_cat {
-                ConfusionCategory::TruePositive => {
-                    new_metadata.true_positives += 1;
-                }
-
-                ConfusionCategory::TrueNegative => {
-                    new_metadata.true_negatives += 1;
-                }
-
-                ConfusionCategory::FalsePositive => {
-                    new_metadata.false_positives += 1;
-                }
-
-                ConfusionCategory::FalseNegative => {
-                    new_metadata.false_negatives += 1;
-                }
+                ConfusionCategory::TruePositive => new_metadata.true_positives += 1,
+                ConfusionCategory::TrueNegative => new_metadata.true_negatives += 1,
+                ConfusionCategory::FalsePositive => new_metadata.false_positives += 1,
+                ConfusionCategory::FalseNegative => new_metadata.false_negatives += 1,
             }
         }
 
@@ -892,9 +637,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         validation_each_epoch: usize,
     ) {
         assert!(learn_rate > 0.0);
-
         assert!(!training_data.is_empty());
-
         assert!(batch_size > 0);
 
         let pingpong = &mut NeuralNetworkPingPong::new(self.max_layer_nodes());
@@ -909,9 +652,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
                         );
 
                         result_metadata.cost = test_results.cost;
-
                         result_metadata.last_loss = test_results.cost;
-
                         result_metadata.learn_rate = learn_rate;
 
                         let payload = TrainingThreadPayload {
@@ -929,18 +670,12 @@ impl<B: Backend> NeuralNetworkGPU<B> {
                     }
                 };
 
-            /*
-             * Initial training result.
-             */
             if e == 0 {
                 if let Some(tx_testing_metadata) = tx_training_metadata {
                     test_nn_and_send_payload(tx_testing_metadata, training_data, e);
                 }
             }
 
-            /*
-             * Validation.
-             */
             if validation_each_epoch != 0 && e % validation_each_epoch == 0 {
                 if let Some(tx_validation_metadata) = tx_validation_metadata {
                     test_nn_and_send_payload(tx_validation_metadata, validation_data, e);
@@ -1023,110 +758,95 @@ Last Test Results: {}\n",
     }
 }
 
-/*
- * Softmax implementation.
- *
- * Numerically stable:
- *
- *     softmax(x_i) = exp(x_i - max(x)) / sum(exp(x - max(x)))
- *
- * This is performed independently for every row in the batch.
- */
 fn softmax<B: Backend>(input: Tensor<B, 2>) -> Tensor<B, 2> {
     let max_values = input.clone().max_dim(1);
-
-    let shifted = input - max_values;
-
-    let exp = shifted.exp();
-
+    let shift = input - max_values;
+    let exp = shift.exp();
     let sum = exp.clone().sum_dim(1);
-
     exp / sum
-}
-
-const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard();
-
-pub fn save_neural_network<B: Backend, P: AsRef<Path>>(
-    nn: &NeuralNetworkGPU<B>,
-    path: P,
-) -> std::io::Result<()> {
-    let path = path.as_ref();
-
-    if let Some(parent) = path.parent() {
-        create_dir_all(parent)?;
-    }
-
-    let serializable = nn.to_serializable();
-
-    let encoded: Vec<u8> = bincode::encode_to_vec(&serializable, BINCODE_CONFIG)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-    let mut file = File::create(path)?;
-
-    file.write_all(&encoded)?;
-
-    Ok(())
 }
 
 pub fn test_nn_gpu<B: Backend>(
     nn: &NeuralNetworkGPU<B>,
     data: &[DataPoint],
     is_correct_fn: ConfusionEvaluator,
-    _tx_metadata: Option<Sender<TrainingThreadPayload>>,
+    _tx: Option<Sender<TrainingThreadPayload>>,
     rx_abort: Option<Receiver<()>>,
 ) -> Result<TestResults, String> {
-    let mut total_cost = 0.0;
-    let mut true_positives = 0;
-    let mut true_negatives = 0;
-    let mut false_positives = 0;
-    let mut false_negatives = 0;
+    if data.is_empty() {
+        return Err("Test data is empty".into());
+    }
 
+    let mut total_cost = 0.0;
+    let mut correct = 0;
     let mut results = Vec::with_capacity(data.len());
 
-    for data_point in data {
+    let batch_size = 256;
+    let in_nodes = nn.graph_structure.input_nodes;
+    let out_nodes = nn.graph_structure.output_nodes;
+
+    for chunk in data.chunks(batch_size) {
         if let Some(rx) = &rx_abort {
             if rx.try_recv().is_ok() {
-                return Err("Aborted".to_string());
+                return Err("Testing aborted by user".into());
             }
         }
 
-        let predicted = nn.forward(&data_point.inputs);
-        let cost = nn.cost_fn.call(&predicted, &data_point.expected_outputs);
-        total_cost += cost as f64;
+        let current_batch_size = chunk.len();
+        let mut flat_inputs = Vec::with_capacity(current_batch_size * in_nodes);
 
-        match is_correct_fn.evaluate(&predicted, &data_point.expected_outputs) {
-            ConfusionCategory::TruePositive => true_positives += 1,
-            ConfusionCategory::TrueNegative => true_negatives += 1,
-            ConfusionCategory::FalsePositive => false_positives += 1,
-            ConfusionCategory::FalseNegative => false_negatives += 1,
+        for dp in chunk {
+            flat_inputs.extend(dp.inputs.iter().map(|&x| x as f32));
         }
 
-        results.push(predicted);
+        let input_tensor = Tensor::<B, 2>::from_data(
+            TensorData::new(flat_inputs, Shape::new([current_batch_size, in_nodes])),
+            &nn.device,
+        );
+
+        let mut current = input_tensor;
+
+        for layer in &nn.layers {
+            current = layer.forward(&current);
+        }
+
+        if nn.is_softmax_output {
+            current = softmax(current);
+        }
+
+        let predicted_vec = current.into_data().to_vec::<f32>().unwrap();
+
+        for (i, dp) in chunk.iter().enumerate() {
+            let start = i * out_nodes;
+            let end = start + out_nodes;
+
+            let pred: Vec<LayerTypeCPU> = predicted_vec[start..end]
+                .iter()
+                .map(|&x| x as LayerTypeCPU)
+                .collect();
+
+            let cost = nn.cost_fn.call(&pred, &dp.expected_outputs);
+            total_cost += cost as f32;
+
+            let eval = is_correct_fn.evaluate(&pred, &dp.expected_outputs);
+            if matches!(
+                eval,
+                ConfusionCategory::TruePositive | ConfusionCategory::TrueNegative
+            ) {
+                correct += 1;
+            }
+
+            results.push((dp.clone(), pred));
+        }
     }
 
-    let total = data.len();
-    let total_correct = true_positives + true_negatives;
-
-    let accuracy = if total > 0 {
-        Some(total_correct as f64 / total as f64)
-    } else {
-        None
-    };
-
-    let avg_cost = if total > 0 {
-        total_cost / total as f64
-    } else {
-        0.0
-    };
+    let accuracy = (correct as f32 / data.len() as f32) * 100.0;
+    let avg_cost = total_cost / data.len() as f32;
 
     Ok(TestResults {
-        cost: avg_cost as LayerTypeCPU,
-        accuracy: accuracy.map(|a| a as LayerTypeCPU),
-        results: results
-            .into_iter()
-            .zip(data.iter().cloned())
-            .map(|(outputs, datapoint)| (datapoint, outputs))
-            .collect(),
-        num_correct: total_correct as i32,
+        cost: avg_cost,
+        accuracy: Some(accuracy),
+        num_correct: correct,
+        results,
     })
 }

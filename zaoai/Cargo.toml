@@ -36,7 +36,7 @@ burn = { version = "0.21.0", features = ["wgpu"], optional = true }
 burn-wgpu = { version = "0.21.0", optional = true }
 
 [features]
-default = ["serde", "cpu", "simd"]
+default = ["serde", "cpu", "simd", "gpu"]
 cpu = []
 simd = []
 gpu = ["dep:burn", "dep:burn-wgpu"]
