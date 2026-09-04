@@ -16,21 +16,7 @@ pub enum ActivationFunctionType {
 }
 
 impl ActivationFunctionType {
-    pub fn apply_softmax_scalar(layer_values: &[LayerTypeCPU]) -> Vec<LayerTypeCPU> {
-        let max_val = layer_values
-            .iter()
-            .cloned()
-            .fold(LayerTypeCPU::NEG_INFINITY, LayerTypeCPU::max);
-        let sum: LayerTypeCPU = layer_values
-            .iter()
-            .map(|&v| (v - max_val).exp() as LayerTypeCPU)
-            .sum();
-
-        layer_values
-            .iter()
-            .map(|&v| ((v - max_val).exp() as LayerTypeCPU / sum) as LayerTypeCPU)
-            .collect()
-    }
+    // Used by simd
     pub fn activate_scalar(&self, x: LayerTypeCPU) -> LayerTypeCPU {
         match self {
             ActivationFunctionType::ReLU => relu(x),
@@ -40,6 +26,7 @@ impl ActivationFunctionType {
             }
         }
     }
+    // Used by simd
     pub fn activate_derivative_scalar(&self, x: LayerTypeCPU) -> LayerTypeCPU {
         match self {
             ActivationFunctionType::ReLU => relu_d(x),

@@ -11,6 +11,24 @@ use crate::zneural_network::{
     datapoint::DataPoint,
 };
 
+impl ActivationFunctionType {
+    pub fn apply_softmax_scalar(layer_values: &[LayerTypeCPU]) -> Vec<LayerTypeCPU> {
+        let max_val = layer_values
+            .iter()
+            .cloned()
+            .fold(LayerTypeCPU::NEG_INFINITY, LayerTypeCPU::max);
+        let sum: LayerTypeCPU = layer_values
+            .iter()
+            .map(|&v| (v - max_val).exp() as LayerTypeCPU)
+            .sum();
+
+        layer_values
+            .iter()
+            .map(|&v| ((v - max_val).exp() as LayerTypeCPU / sum) as LayerTypeCPU)
+            .collect()
+    }
+}
+
 impl Layer {
     pub fn apply_activation_scalar(
         weighted_inputs: &mut [LayerTypeCPU],
