@@ -1,12 +1,10 @@
 use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
-use crate::zneural_network::cpu::layer::{Layer, LayerLearnData};
+use crate::zneural_network::cpu::layer::{calculate_cost, Layer, LayerLearnData};
 use crate::zneural_network::datapoint::DataPoint;
 use crate::zneural_network::is_correct::ConfusionEvaluator;
 use crate::zneural_network::thread::TrainingThreadPayload;
-use crate::zneural_network::training::{
-    test_nn_cpu, AIResultMetadata, DatasetUsage, FloatDecay, TestResults,
-};
+use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, FloatDecay, TestResults};
 
 use crate::weight_bias::{BiasInit, WeightInit};
 use rand::prelude::*;
@@ -15,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::Path;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Receiver, Sender};
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 impl LayerLearnData {
@@ -672,4 +670,91 @@ pub fn load_neural_network(path: &str) -> std::io::Result<NeuralNetworkCPU> {
 
     assert_eq!(len, buffer.len()); // read all bytes
     Ok(decoded)
+}
+
+pub fn test_nn_cpu<'a>(
+    nn: &'a mut NeuralNetworkCPU,
+    test_data: &[DataPoint],
+    is_correct_fn: ConfusionEvaluator,
+    tx_test_metadata: Option<Sender<TrainingThreadPayload>>,
+    tx_abort: Option<Receiver<()>>,
+    pingpong: &mut NeuralNetworkPingPong,
+) -> Result<&'a TestResults, anyhow::Error> {
+    if test_data.len() >= 1
+        && test_data.first().unwrap().inputs.len() == nn.graph_structure.input_nodes
+        && test_data.first().unwrap().expected_outputs.len() == nn.graph_structure.output_nodes
+    {
+        log::info!("Start test_nn");
+
+        let mut metadata = AIResultMetadata::new(DatasetUsage::Test, 0.0, 0.0, 0.0);
+
+        let mut results = Vec::with_capacity(test_data.len());
+        for i in 0..test_data.len() {
+            let datapoint = &test_data[i];
+            let cost = calculate_cost(
+                &nn.layers,
+                std::slice::from_ref(&test_data[i]),
+                nn.cost_fn,
+                pingpong,
+                nn.is_softmax_output,
+            );
+            if let Some(tx_test_metadata) = &tx_test_metadata {
+                let mut metadata_point = AIResultMetadata::new(
+                    DatasetUsage::Test,
+                    cost as LayerTypeCPU,
+                    cost as LayerTypeCPU,
+                    0.0,
+                );
+
+                let confusion = is_correct_fn.evaluate(&pingpong.next, &datapoint.expected_outputs);
+                match confusion {
+                    crate::zneural_network::is_correct::ConfusionCategory::TruePositive => {
+                        metadata_point.true_positives += 1
+                    }
+                    crate::zneural_network::is_correct::ConfusionCategory::TrueNegative => {
+                        metadata_point.true_negatives += 1
+                    }
+                    crate::zneural_network::is_correct::ConfusionCategory::FalsePositive => {
+                        metadata_point.false_positives += 1
+                    }
+                    crate::zneural_network::is_correct::ConfusionCategory::FalseNegative => {
+                        metadata_point.false_negatives += 1
+                    }
+                }
+
+                metadata.merge(&metadata_point);
+
+                tx_test_metadata
+                    .send(TrainingThreadPayload {
+                        payload_index: i,
+                        payload_max_index: test_data.len(),
+                        training_metadata: metadata.clone(),
+                    })
+                    .unwrap();
+
+                if let Some(abort) = &tx_abort {
+                    if abort.try_recv().is_ok() {
+                        log::info!("Abort Recieved, stopping test_nn...");
+                        anyhow::bail!("Aborted")
+                    }
+                }
+            }
+
+            results.push((test_data[i].clone(), pingpong.next.clone()));
+        }
+
+        // TODO: Do not calculate_cost another time here
+        let cost = calculate_cost(
+            &nn.layers,
+            test_data,
+            nn.cost_fn,
+            pingpong,
+            nn.is_softmax_output,
+        );
+        let test_results = TestResults::new(results, is_correct_fn, cost);
+        nn.last_test_results = Some(test_results);
+        Ok(&nn.last_test_results.as_ref().unwrap())
+    } else {
+        anyhow::bail!("Failed to test_nn")
+    }
 }

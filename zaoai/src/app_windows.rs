@@ -4,14 +4,14 @@ use crate::{
     app::{AppState, MenuWindowData, NeuralNetworkType}, egui_ext::{Interval, add_slider_sized}, mnist::get_mnist, zneural_network::{
         activation::ActivationFunctionType, cost::CostFunction, datapoint::{
             DataPoint, TrainingData, TrainingDataset, VirtualTrainingDataset, create_2x2_test_datapoints,
-        }, is_correct::ConfusionEvaluator, cpu::neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState, test_nn_cpu, test_nn_gpu}
+        }, is_correct::ConfusionEvaluator, cpu::neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState} 
     },
 };
 use zaoai_types::ai_labels::LayerTypeCPU;
 use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Sense, Slider, SliderClamping};
 use egui_plot::{Corner, Legend, PlotResponse};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
-use crate::weight_bias::{BiasInit, WeightInit};
+use crate::{weight_bias::{BiasInit, WeightInit}, zneural_network::gpu::neuralnetwork_gpu::test_nn_gpu};
 
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabelsLoader},

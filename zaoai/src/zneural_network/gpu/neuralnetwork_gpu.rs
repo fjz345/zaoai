@@ -11,7 +11,7 @@ use crate::zneural_network::cpu::neuralnetwork_cpu::NeuralNetworkPingPong;
 use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::path::Path;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{Receiver, Sender};
 
 use crate::cpu::neuralnetwork_cpu::GraphStructure;
 use crate::datapoint::DataPoint;
@@ -19,9 +19,7 @@ use crate::zneural_network::activation::ActivationFunctionType;
 use crate::zneural_network::cost::CostFunction;
 use crate::zneural_network::is_correct::{ConfusionCategory, ConfusionEvaluator};
 use crate::zneural_network::thread::TrainingThreadPayload;
-use crate::zneural_network::training::{
-    test_nn_gpu, AIResultMetadata, DatasetUsage, FloatDecay, TestResults,
-};
+use crate::zneural_network::training::{AIResultMetadata, DatasetUsage, FloatDecay, TestResults};
 
 use zaoai_types::ai_labels::LayerTypeCPU;
 
@@ -1068,4 +1066,67 @@ pub fn save_neural_network<B: Backend, P: AsRef<Path>>(
     file.write_all(&encoded)?;
 
     Ok(())
+}
+
+pub fn test_nn_gpu<B: Backend>(
+    nn: &NeuralNetworkGPU<B>,
+    data: &[DataPoint],
+    is_correct_fn: ConfusionEvaluator,
+    _tx_metadata: Option<Sender<TrainingThreadPayload>>,
+    rx_abort: Option<Receiver<()>>,
+) -> Result<TestResults, String> {
+    let mut total_cost = 0.0;
+    let mut true_positives = 0;
+    let mut true_negatives = 0;
+    let mut false_positives = 0;
+    let mut false_negatives = 0;
+
+    let mut results = Vec::with_capacity(data.len());
+
+    for data_point in data {
+        if let Some(rx) = &rx_abort {
+            if rx.try_recv().is_ok() {
+                return Err("Aborted".to_string());
+            }
+        }
+
+        let predicted = nn.forward(&data_point.inputs);
+        let cost = nn.cost_fn.call(&predicted, &data_point.expected_outputs);
+        total_cost += cost as f64;
+
+        match is_correct_fn.evaluate(&predicted, &data_point.expected_outputs) {
+            ConfusionCategory::TruePositive => true_positives += 1,
+            ConfusionCategory::TrueNegative => true_negatives += 1,
+            ConfusionCategory::FalsePositive => false_positives += 1,
+            ConfusionCategory::FalseNegative => false_negatives += 1,
+        }
+
+        results.push(predicted);
+    }
+
+    let total = data.len();
+    let total_correct = true_positives + true_negatives;
+
+    let accuracy = if total > 0 {
+        Some(total_correct as f64 / total as f64)
+    } else {
+        None
+    };
+
+    let avg_cost = if total > 0 {
+        total_cost / total as f64
+    } else {
+        0.0
+    };
+
+    Ok(TestResults {
+        cost: avg_cost as LayerTypeCPU,
+        accuracy: accuracy.map(|a| a as LayerTypeCPU),
+        results: results
+            .into_iter()
+            .zip(data.iter().cloned())
+            .map(|(outputs, datapoint)| (datapoint, outputs))
+            .collect(),
+        num_correct: total_correct as i32,
+    })
 }
