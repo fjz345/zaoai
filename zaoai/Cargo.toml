@@ -32,12 +32,13 @@ strum_macros = "0.27.2"
 anyhow = "1.0.98"
 color-backtrace = "0.7.4"
 #candle-core = { version = "0.11.0", features = ["cuda"] }
-burn = { version = "0.21.0", features = ["wgpu"] }
-burn-wgpu = { version = "0.21.0" }
+burn = { version = "0.21.0", features = ["wgpu"], optional = true }
+burn-wgpu = { version = "0.21.0", optional = true }
 
 [features]
-default = ["serde", "simd"]
+default = ["serde", "simd", "gpu"]
 simd = []
+gpu = ["dep:burn", "dep:burn-wgpu"]
 serde = ["dep:serde", "dep:serde_derive", "dep:serde_json", "dep:humantime-serde"]
 accesskit = []
 linux-profile = ["dep:pprof"]
