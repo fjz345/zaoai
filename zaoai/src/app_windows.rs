@@ -11,7 +11,10 @@ use zaoai_types::ai_labels::LayerTypeCPU;
 use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Sense, Slider, SliderClamping};
 use egui_plot::{Corner, Legend, PlotResponse};
 use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
-use crate::{weight_bias::{BiasInit, WeightInit}, zneural_network::gpu::neuralnetwork_gpu::test_nn_gpu};
+use crate::{weight_bias::{BiasInit, WeightInit}};
+
+#[cfg(feature = "gpu")]
+use crate::zneural_network::gpu::neuralnetwork_gpu::test_nn_gpu;
 
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabelsLoader},
@@ -464,73 +467,84 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                         log::trace!("Test Thread test_nn spawned!");
                                         let pingpong = &mut NeuralNetworkPingPong::new(ai_clone.max_layer_nodes());
                                         // CPU
-                                        // match test_nn_cpu(&mut ai_clone, &training_data_clone.test_split(), is_correct_fn, maybe_tx, Some(rx_abort), pingpong)
-                                        // {
-                                        //     Ok(r) => {
-                                        //         log::trace!("Test Thread test_nn complete!");
-                                        //         let save_path = "testresults.results";
-                                        //         log::trace!("Saving results... {save_path}");
-                                        //         if let Err(e) = r.save_results(save_path)
-                                        //         {
-                                        //             log::error!("Failed to save results to {save_path}: {e}");
-                                        //         }
-                                        //         *test_nn_done_clone.lock().unwrap() = Some(r.clone());
-                                        //     },
-                                        //         Err(e) => {log::error!("{e}");
-                                        //         *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(vec![], ConfusionEvaluator::LargestLabel, 0.0));
-                                        //     },
-                                        // }
+                                        #[cfg(feature = "cpu")]
+                                        #[cfg(not(feature = "gpu"))]
+                                        {
+                                            use crate::zneural_network::cpu::neuralnetwork_cpu::test_nn_cpu;
+                                            match test_nn_cpu(&mut ai_clone, &training_data_clone.test_split(), is_correct_fn, maybe_tx, Some(rx_abort), pingpong)
+                                            {
+                                                Ok(r) => {
+                                                    log::trace!("Test Thread test_nn complete!");
+                                                    let save_path = "testresults.results";
+                                                    log::trace!("Saving results... {save_path}");
+                                                    if let Err(e) = r.save_results(save_path)
+                                                    {
+                                                        log::error!("Failed to save results to {save_path}: {e}");
+                                                    }
+                                                    *test_nn_done_clone.lock().unwrap() = Some(r.clone());
+                                                },
+                                                    Err(e) => {log::error!("{e}");
+                                                    *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(vec![], ConfusionEvaluator::LargestLabel, 0.0));
+                                                },
+                                            }
+                                        }
                                         // GPU - candle
-                                        // match test_nn_gpu_candle(
-                                        //     &ai_clone,
-                                        //     &training_data_clone.test_split(),
-                                        //     is_correct_fn,
-                                        //     maybe_tx,
-                                        //     Some(rx_abort),
-                                        // ) {
-                                        //     Ok(r) => {
-                                        //         log::trace!("Test Thread test_nn complete!");
-                                        //         let save_path = "testresults.results";
-                                        //         log::trace!("Saving results... {save_path}");
-                                        //         if let Err(e) = r.save_results(save_path) {
-                                        //             log::error!("Failed to save results to {save_path}: {e}");
-                                        //         }
-                                        //         *test_nn_done_clone.lock().unwrap() = Some(r.clone());
-                                        //     }
-                                        //     Err(e) => {
-                                        //         log::error!("{e}");
-                                        //         *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(
-                                        //             vec![],
-                                        //             ConfusionEvaluator::LargestLabel,
-                                        //             0.0,
-                                        //         ));
-                                        //     }
+                                        // #[cfg(feature = "gpu")]
+                                        // {
+                                            // match test_nn_gpu_candle(
+                                            //     &ai_clone,
+                                            //     &training_data_clone.test_split(),
+                                            //     is_correct_fn,
+                                            //     maybe_tx,
+                                            //     Some(rx_abort),
+                                            // ) {
+                                            //     Ok(r) => {
+                                            //         log::trace!("Test Thread test_nn complete!");
+                                            //         let save_path = "testresults.results";
+                                            //         log::trace!("Saving results... {save_path}");
+                                            //         if let Err(e) = r.save_results(save_path) {
+                                            //             log::error!("Failed to save results to {save_path}: {e}");
+                                            //         }
+                                            //         *test_nn_done_clone.lock().unwrap() = Some(r.clone());
+                                            //     }
+                                            //     Err(e) => {
+                                            //         log::error!("{e}");
+                                            //         *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(
+                                            //             vec![],
+                                            //             ConfusionEvaluator::LargestLabel,
+                                            //             0.0,
+                                            //         ));
+                                            //     }
+                                            // }
                                         // }
                                         // GPU - burn
-                                        match test_nn_gpu(
-                                            &ai_clone,
-                                            &training_data_clone.test_split(),
-                                            is_correct_fn,
-                                            maybe_tx,
-                                            Some(rx_abort),
-                                        ) {
-                                            Ok(r) => {
-                                                log::trace!("Test Thread test_nn complete!");
-                                                let save_path = "testresults.results";
-                                                log::trace!("Saving results... {save_path}");
-                                                if let Err(e) = r.save_results(save_path) {
-                                                    log::error!("Failed to save results to {save_path}: {e}");
+                                        #[cfg(feature = "gpu")]
+                                        {
+                                            match test_nn_gpu(
+                                                &ai_clone,
+                                                &training_data_clone.test_split(),
+                                                is_correct_fn,
+                                                maybe_tx,
+                                                Some(rx_abort),
+                                            ) {
+                                                Ok(r) => {
+                                                    log::trace!("Test Thread test_nn complete!");
+                                                    let save_path = "testresults.results";
+                                                    log::trace!("Saving results... {save_path}");
+                                                    if let Err(e) = r.save_results(save_path) {
+                                                        log::error!("Failed to save results to {save_path}: {e}");
+                                                    }
+                                                    *test_nn_done_clone.lock().unwrap() = Some(r.clone());
                                                 }
-                                                *test_nn_done_clone.lock().unwrap() = Some(r.clone());
-                                            }
-                                            Err(e) => {
-                                                log::error!("{e}");
-                                                *test_nn_done_clone.lock().unwrap() = Some(TestResults {
-                                                    cost: 0.0,
-                                                    accuracy: None,
-                                                    results: vec![],
-                                                    num_correct: 0,
-                                                });
+                                                Err(e) => {
+                                                    log::error!("{e}");
+                                                    *test_nn_done_clone.lock().unwrap() = Some(TestResults {
+                                                        cost: 0.0,
+                                                        accuracy: None,
+                                                        results: vec![],
+                                                        num_correct: 0,
+                                                    });
+                                                }
                                             }
                                         }
                                     }));

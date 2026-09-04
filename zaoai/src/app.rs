@@ -9,10 +9,13 @@ use crate::{
         cost::CostFunction,
         cpu::neuralnetwork_cpu::load_neural_network,
         datapoint::{TrainingData, TrainingDataset},
-        gpu::neuralnetwork_gpu::NeuralNetworkGPU,
         is_correct::ConfusionEvaluator,
     },
 };
+
+#[cfg(feature = "gpu")]
+use crate::gpu::neuralnetwork_gpu::NeuralNetworkGPU;
+
 // use candle_core::Device;
 use eframe::{
     egui::{self, InnerResponse, Slider},
@@ -39,7 +42,11 @@ use crate::{
     },
 };
 
+#[cfg(feature = "gpu")]
 pub type NeuralNetworkType = NeuralNetworkGPU<burn::backend::Wgpu>;
+#[cfg(feature = "cpu")]
+#[cfg(not(feature = "gpu"))]
+pub type NeuralNetworkType = NeuralNetworkCPU;
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MenuWindowData {
@@ -351,7 +358,11 @@ impl Default for ZaoaiApp {
         Self {
             state: AppState::Startup,
             // ai: None,
+            #[cfg(feature = "gpu")]
             ai: None::<NeuralNetworkGPU<burn::backend::Wgpu>>,
+            #[cfg(feature = "cpu")]
+            #[cfg(not(feature = "gpu"))]
+            ai: None::<NeuralNetworkCPU>,
             window_data: MenuWindowData {
                 graph_structure_string: graph_structure.to_string(),
                 show_training_graph: true,
@@ -470,16 +481,22 @@ impl ZaoaiApp {
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
         log::info!("setup_ai");
         //CPU
-        // self.ai = Some(NeuralNetworkCPU::new(
-        //     nn_structure,
-        //     self.window_data.ai_activation_function,
-        //     self.window_data.ai_cost_fn,
-        //     Some(self.window_data.ai_dropout_prob),
-        //     self.window_data.ai_weight_init,
-        //     self.window_data.ai_bias_init,
-        // ));
+        #[cfg(feature = "cpu")]
+        #[cfg(not(feature = "gpu"))]
+        {
+            self.ai = Some(NeuralNetworkCPU::new(
+                nn_structure,
+                self.window_data.ai_activation_function,
+                self.window_data.ai_cost_fn,
+                Some(self.window_data.ai_dropout_prob),
+                self.window_data.ai_weight_init,
+                self.window_data.ai_bias_init,
+            ));
+        }
 
         // //GPU - candle
+        // #[cfg(feature = "gpu")]
+        // {
         // let device_result = Device::new_cuda(0);
         // if let Err(e) = device_result {
         //     log::error!("Failed to create CUDA device: {e}");
@@ -496,25 +513,30 @@ impl ZaoaiApp {
         //     )
         //     .expect("Failed to create NeuralNetworkGPU"),
         // );
-        // GPU - burn
-        use burn::backend::Wgpu;
-        use burn::prelude::Backend;
-        use burn_wgpu::WgpuDevice;
+        // }
 
-        let device = WgpuDevice::default();
-        self.ai = Some(NeuralNetworkGPU::new(
-            nn_structure,
-            self.window_data.ai_activation_function,
-            self.window_data.ai_cost_fn,
-            Some(self.window_data.ai_dropout_prob),
-            self.window_data.ai_weight_init,
-            self.window_data.ai_bias_init,
-            device.clone(),
-        ));
-        self.training_session.set_nn(self.ai.as_ref().unwrap());
-        self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
-        self.window_data.training_session_batch_size = self.training_session.get_batch_size();
-        self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
+        // GPU - burn
+        #[cfg(feature = "gpu")]
+        {
+            use burn::backend::Wgpu;
+            use burn::prelude::Backend;
+            use burn_wgpu::WgpuDevice;
+
+            let device = WgpuDevice::default();
+            self.ai = Some(NeuralNetworkGPU::new(
+                nn_structure,
+                self.window_data.ai_activation_function,
+                self.window_data.ai_cost_fn,
+                Some(self.window_data.ai_dropout_prob),
+                self.window_data.ai_weight_init,
+                self.window_data.ai_bias_init,
+                device.clone(),
+            ));
+            self.training_session.set_nn(self.ai.as_ref().unwrap());
+            self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
+            self.window_data.training_session_batch_size = self.training_session.get_batch_size();
+            self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
+        }
     }
 
     fn draw_ui(

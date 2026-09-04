@@ -17,11 +17,13 @@ use crate::{
         cpu::layer::calculate_cost,
         cpu::neuralnetwork_cpu::{NNOutputs, NeuralNetworkCPU, NeuralNetworkPingPong},
         datapoint::{DataPoint, TrainingData},
-        gpu::neuralnetwork_gpu::NeuralNetworkGPU,
         is_correct::{ConfusionCategory, ConfusionEvaluator},
         thread::TrainingThreadPayload,
     },
 };
+
+#[cfg(feature = "gpu")]
+use crate::gpu::neuralnetwork_gpu::NeuralNetworkGPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Display, PartialEq)]
