@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::path::Path;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::Sender;
 
 use burn::tensor::TensorData;
 
@@ -51,11 +51,11 @@ pub struct LayerGPU<B: Backend> {
 impl<B: Backend> LayerGPU<B> {
     pub fn new(in_nodes: usize, out_nodes: usize, device: &B::Device) -> Self {
         let weights = Tensor::<B, 2>::random(
-            [out_nodes, in_nodes],
+            [in_nodes, out_nodes],
             Distribution::Normal(0.0, 1.0),
             device,
         );
-        let biases = Tensor::<B, 2>::zeros([out_nodes, 1], device);
+        let biases = Tensor::<B, 2>::zeros([1, out_nodes], device);
 
         Self {
             weights,
@@ -66,7 +66,7 @@ impl<B: Backend> LayerGPU<B> {
     }
 
     pub fn forward_manual(&self, input: &Tensor<B, 2>) -> Tensor<B, 2> {
-        self.weights.clone().matmul(input.clone()) + self.biases.clone()
+        input.clone().matmul(self.weights.clone()) + self.biases.clone()
     }
 
     pub fn backward_manual(
@@ -75,10 +75,10 @@ impl<B: Backend> LayerGPU<B> {
         d_z: &Tensor<B, 2>,
     ) -> (Tensor<B, 2>, Tensor<B, 2>, Tensor<B, 2>) {
         let input_t = input.clone().transpose();
-        let d_weights = d_z.clone().matmul(input_t);
-        let d_biases = d_z.clone().sum_dim(1);
+        let d_weights = input_t.matmul(d_z.clone());
+        let d_biases = d_z.clone().sum_dim(0);
         let weights_t = self.weights.clone().transpose();
-        let d_input = weights_t.matmul(d_z.clone());
+        let d_input = d_z.clone().matmul(weights_t);
 
         (d_weights, d_biases, d_input)
     }
@@ -138,12 +138,12 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             let weights = Tensor::<B, 2>::from_data(
                 TensorData::new(
                     layer_data.weights,
-                    Shape::new([layer_data.num_out_nodes, layer_data.num_in_nodes]),
+                    Shape::new([layer_data.num_in_nodes, layer_data.num_out_nodes]),
                 ),
                 device,
             );
             let biases = Tensor::<B, 2>::from_data(
-                TensorData::new(layer_data.biases, Shape::new([layer_data.num_out_nodes, 1])),
+                TensorData::new(layer_data.biases, Shape::new([1, layer_data.num_out_nodes])),
                 device,
             );
 
@@ -235,7 +235,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
     pub fn forward(&self, inputs: &[LayerTypeCPU]) -> Vec<f32> {
         let inputs_f32: Vec<f32> = inputs.iter().map(|&x| x as f32).collect();
         let mut current = Tensor::<B, 2>::from_data(
-            TensorData::new(inputs_f32, Shape::new([inputs.len(), 1])),
+            TensorData::new(inputs_f32, Shape::new([1, inputs.len()])),
             &self.device,
         );
         let last_idx = self.layers.len() - 1;
@@ -250,12 +250,11 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         current.into_data().to_vec::<f32>().unwrap()
     }
 
-    fn forward_cache(&self, inputs: &[LayerTypeCPU]) -> (Vec<f32>, Vec<LayerCacheGPU<B>>) {
-        let inputs_f32: Vec<f32> = inputs.iter().map(|&x| x as f32).collect();
-        let mut current = Tensor::<B, 2>::from_data(
-            TensorData::new(inputs_f32, Shape::new([inputs.len(), 1])),
-            &self.device,
-        );
+    fn forward_cache_batched(
+        &self,
+        inputs: &Tensor<B, 2>,
+    ) -> (Tensor<B, 2>, Vec<LayerCacheGPU<B>>) {
+        let mut current = inputs.clone();
         let mut cache = Vec::with_capacity(self.layers.len());
         let last_idx = self.layers.len() - 1;
 
@@ -276,7 +275,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             current = output;
         }
 
-        (current.into_data().to_vec::<f32>().unwrap(), cache)
+        (current, cache)
     }
 
     pub fn learn_batch(
@@ -288,71 +287,71 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         _pingpong: &mut crate::neuralnetwork_cpu::NeuralNetworkPingPong,
     ) -> Vec<Vec<LayerTypeCPU>> {
         assert!(!batch_data.is_empty());
+        let batch_size = batch_data.len();
+        let in_nodes = self.graph_structure.input_nodes;
+        let out_nodes = self.graph_structure.output_nodes;
 
+        let mut flat_inputs = Vec::with_capacity(batch_size * in_nodes);
+        let mut flat_expected = Vec::with_capacity(batch_size * out_nodes);
+
+        for dp in batch_data {
+            flat_inputs.extend(dp.inputs.iter().map(|&x| x as f32));
+            flat_expected.extend(dp.expected_outputs.iter().map(|&x| x as f32));
+        }
+
+        let input_tensor = Tensor::<B, 2>::from_data(
+            TensorData::new(flat_inputs, Shape::new([batch_size, in_nodes])),
+            &self.device,
+        );
+        let expected_tensor = Tensor::<B, 2>::from_data(
+            TensorData::new(flat_expected, Shape::new([batch_size, out_nodes])),
+            &self.device,
+        );
+
+        let (predicted_tensor, cache) = self.forward_cache_batched(&input_tensor);
+
+        let mut d_z = predicted_tensor.clone() - expected_tensor;
+
+        for layer_idx in (0..self.layers.len()).rev() {
+            let layer_cache = &cache[layer_idx];
+            let layer = &mut self.layers[layer_idx];
+
+            let (d_w, d_b, d_input) = layer.backward_manual(&layer_cache.input, &d_z);
+            let lr = learn_rate as f32 / batch_size as f32;
+
+            layer.weights = layer.weights.clone() - (d_w * lr);
+            layer.biases = layer.biases.clone() - (d_b * lr);
+
+            if layer_idx > 0 {
+                let prev_cache = &cache[layer_idx - 1];
+                let relu_grad = prev_cache.z.clone().greater_equal_elem(0.0).float();
+                d_z = d_input * relu_grad;
+            }
+        }
+
+        let predicted_vec = predicted_tensor.into_data().to_vec::<f32>().unwrap();
+
+        let mut batch_data_outputs = Vec::with_capacity(batch_size);
         let mut total_cost = 0.0;
         let mut last_loss = 0.0;
-        let mut batch_data_outputs = Vec::with_capacity(batch_data.len());
 
-        let mut accum_dw: Vec<Tensor<B, 2>> = Vec::with_capacity(self.layers.len());
-        let mut accum_db: Vec<Tensor<B, 2>> = Vec::with_capacity(self.layers.len());
-
-        for layer in &self.layers {
-            accum_dw.push(Tensor::<B, 2>::zeros(layer.weights.shape(), &self.device));
-            accum_db.push(Tensor::<B, 2>::zeros(layer.biases.shape(), &self.device));
-        }
-
-        for (i, datapoint) in batch_data.iter().enumerate() {
-            let (predicted_f32, cache) = self.forward_cache(&datapoint.inputs);
-            let predicted: Vec<LayerTypeCPU> =
-                predicted_f32.iter().map(|&x| x as LayerTypeCPU).collect();
-
-            let cost = self.cost_fn.call(&predicted, &datapoint.expected_outputs);
-            total_cost += cost;
-            if i == batch_data.len() - 1 {
-                last_loss = cost;
-            }
-            batch_data_outputs.push(predicted.clone());
-
-            let last = self.layers.len() - 1;
-
-            let d_z_vec: Vec<f32> = predicted
+        for (i, dp) in batch_data.iter().enumerate() {
+            let start = i * out_nodes;
+            let end = start + out_nodes;
+            let pred: Vec<LayerTypeCPU> = predicted_vec[start..end]
                 .iter()
-                .zip(datapoint.expected_outputs.iter())
-                .map(|(p, e)| (*p - *e) as f32)
+                .map(|&x| x as LayerTypeCPU)
                 .collect();
 
-            let mut d_z = Tensor::<B, 2>::from_data(
-                TensorData::new(d_z_vec.clone(), Shape::new([d_z_vec.len(), 1])),
-                &self.device,
-            );
-
-            for layer_idx in (0..=last).rev() {
-                let layer_cache = &cache[layer_idx];
-                let layer = &self.layers[layer_idx];
-
-                let (d_w, d_b, d_input) = layer.backward_manual(&layer_cache.input, &d_z);
-
-                accum_dw[layer_idx] = accum_dw[layer_idx].clone() + d_w;
-                accum_db[layer_idx] = accum_db[layer_idx].clone() + d_b;
-
-                if layer_idx > 0 {
-                    let prev_cache = &cache[layer_idx - 1];
-                    let relu_grad = prev_cache.z.clone().greater_equal_elem(0.0).float();
-                    d_z = d_input * relu_grad;
-                }
+            let cost = self.cost_fn.call(&pred, &dp.expected_outputs);
+            total_cost += cost;
+            if i == batch_size - 1 {
+                last_loss = cost;
             }
+            batch_data_outputs.push(pred);
         }
 
-        let batch_len_f32 = batch_data.len() as f32;
-        for (layer_idx, layer) in self.layers.iter_mut().enumerate() {
-            let mean_dw = accum_dw[layer_idx].clone() / batch_len_f32;
-            let mean_db = accum_db[layer_idx].clone() / batch_len_f32;
-
-            layer.weights = layer.weights.clone() - (mean_dw * (learn_rate as f32));
-            layer.biases = layer.biases.clone() - (mean_db * (learn_rate as f32));
-        }
-
-        *batch_data_cost = total_cost / (batch_len_f32);
+        *batch_data_cost = total_cost / batch_size as LayerTypeCPU;
         *batch_data_loss = last_loss;
 
         batch_data_outputs
@@ -555,6 +554,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             n.to_string()
         }
     }
+
     pub fn to_string(&self) -> String {
         let last_test_result: Option<&TestResults> = self.last_test_results.as_ref();
         let last_test_result_string = if let Some(res) = last_test_result {
