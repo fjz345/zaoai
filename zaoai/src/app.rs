@@ -507,6 +507,8 @@ impl ZaoaiApp {
             self.window_data.ai_activation_function,
             self.window_data.ai_cost_fn,
             Some(self.window_data.ai_dropout_prob),
+            self.window_data.ai_weight_init,
+            self.window_data.ai_bias_init,
             device.clone(),
         ));
         self.training_session.set_nn(self.ai.as_ref().unwrap());
