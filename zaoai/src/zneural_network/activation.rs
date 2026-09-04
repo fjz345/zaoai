@@ -1,10 +1,6 @@
 // ============================
 // Activation Functions
 // ============================
-#[cfg(feature = "simd")]
-use crate::zneural_network::cpu::simd::*;
-#[cfg(feature = "simd")]
-use wide::f32x8;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -20,42 +16,7 @@ pub enum ActivationFunctionType {
 }
 
 impl ActivationFunctionType {
-    #[cfg(feature = "simd")]
-    pub fn apply_softmax(layer_values: &mut [f32]) {
-        let max_val = layer_values
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, f32::max);
-
-        let mut sum = 0.0f64;
-        let chunks = layer_values.chunks_exact(8);
-        let remainder = chunks.remainder();
-
-        for chunk in chunks {
-            use wide::f32x8;
-
-            // TODO: as_mut_chunk
-            let v = f32x8::from(chunk);
-            let e = (v - f32x8::splat(max_val)).exp();
-            let temp = e.to_array();
-            for val in temp {
-                sum += val as f64;
-            }
-        }
-
-        for &val in remainder {
-            sum += (val - max_val).exp() as f64;
-        }
-
-        let sum_f32 = sum as f32;
-
-        // Normalize
-        for val in layer_values.iter_mut() {
-            *val = (*val - max_val).exp() / sum_f32;
-        }
-    }
-    #[cfg(not(feature = "simd"))]
-    pub fn apply_softmax(layer_values: &[LayerTypeCPU]) -> Vec<LayerTypeCPU> {
+    pub fn apply_softmax_scalar(layer_values: &[LayerTypeCPU]) -> Vec<LayerTypeCPU> {
         let max_val = layer_values
             .iter()
             .cloned()
@@ -70,7 +31,7 @@ impl ActivationFunctionType {
             .map(|&v| ((v - max_val).exp() as LayerTypeCPU / sum) as LayerTypeCPU)
             .collect()
     }
-    pub fn activate(&self, x: LayerTypeCPU) -> LayerTypeCPU {
+    pub fn activate_scalar(&self, x: LayerTypeCPU) -> LayerTypeCPU {
         match self {
             ActivationFunctionType::ReLU => relu(x),
             ActivationFunctionType::Sigmoid => sigmoid(x),
@@ -79,30 +40,10 @@ impl ActivationFunctionType {
             }
         }
     }
-    #[cfg(feature = "simd")]
-    pub fn activate_simd(&self, x: f32x8) -> f32x8 {
-        match self {
-            ActivationFunctionType::ReLU => relu_simd(x),
-            ActivationFunctionType::Sigmoid => sigmoid_simd(x),
-            ActivationFunctionType::Softmax => {
-                unreachable!("Softmax needs full vector context, use apply_softmax()")
-            }
-        }
-    }
-    pub fn activate_derivative(&self, x: LayerTypeCPU) -> LayerTypeCPU {
+    pub fn activate_derivative_scalar(&self, x: LayerTypeCPU) -> LayerTypeCPU {
         match self {
             ActivationFunctionType::ReLU => relu_d(x),
             ActivationFunctionType::Sigmoid => sigmoid_d(x),
-            ActivationFunctionType::Softmax => {
-                unreachable!("Softmax derivative needs vector context")
-            }
-        }
-    }
-    #[cfg(feature = "simd")]
-    pub fn activate_derivative_simd(&self, x: f32x8) -> f32x8 {
-        match self {
-            ActivationFunctionType::ReLU => relu_d_simd(x),
-            ActivationFunctionType::Sigmoid => sigmoid_d_simd(x),
             ActivationFunctionType::Softmax => {
                 unreachable!("Softmax derivative needs vector context")
             }

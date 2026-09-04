@@ -523,7 +523,7 @@ impl NeuralNetworkCPU {
             let output_layer = &mut learn_data[0];
             let learn_data_output = &mut self.layer_learn_data[last];
 
-            output_layer.calculate_output_layer_node_cost_values(
+            output_layer.calculate_output_layer_node_cost_values_simd(
                 learn_data_output,
                 &datapoint.expected_outputs,
                 self.cost_fn,

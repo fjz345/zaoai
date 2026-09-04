@@ -1,10 +1,6 @@
 use serde::{Deserialize, Serialize};
 use strum_macros::Display;
-#[cfg(feature = "simd")]
-use wide::f32x8;
 
-#[cfg(feature = "simd")]
-use crate::zneural_network::cpu::simd::*;
 use zaoai_types::ai_labels::LayerTypeCPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -31,28 +27,6 @@ impl CostFunction {
             CostFunction::CrossEntropyBinary => cross_entropy_loss_binary_d(predicted, expected),
             CostFunction::CrossEntropyMulticlass => {
                 cross_entropy_loss_multiclass_d(predicted, expected)
-            }
-        }
-    }
-    #[cfg(feature = "simd")]
-    pub fn call_simd(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
-        match self {
-            CostFunction::Mse => mse_simd(predicted, expected),
-            CostFunction::CrossEntropyBinary => cross_entropy_loss_binary_simd(predicted, expected),
-            CostFunction::CrossEntropyMulticlass => {
-                cross_entropy_loss_multiclass_simd(predicted, expected)
-            }
-        }
-    }
-    #[cfg(feature = "simd")]
-    pub fn call_simd_d(&self, predicted: f32x8, expected: f32x8) -> f32x8 {
-        match self {
-            CostFunction::Mse => mse_d_simd(predicted, expected),
-            CostFunction::CrossEntropyBinary => {
-                cross_entropy_loss_binary_d_simd(predicted, expected)
-            }
-            CostFunction::CrossEntropyMulticlass => {
-                cross_entropy_loss_multiclass_d_simd(predicted, expected)
             }
         }
     }
