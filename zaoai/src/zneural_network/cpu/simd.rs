@@ -263,17 +263,6 @@ impl Layer {
         outputs.copy_from_slice(&learn_data.activation_values);
     }
 
-    pub fn apply_cost_gradient(&mut self, learn_rate: LayerTypeCPU) {
-        for node_out in 0..self.num_out_nodes {
-            self.biases[node_out] -= self.biases_cost_grads[node_out] * learn_rate;
-
-            for node_in in 0..self.num_in_nodes {
-                self.weights[node_out][node_in] -=
-                    self.weights_cost_grads[node_out][node_in] * learn_rate;
-            }
-        }
-    }
-
     fn update_cost_gradient_for_node_simd(
         weight_grad_row: &mut [f32],
         bias_grad: &mut f32,
