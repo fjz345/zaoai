@@ -1,26 +1,52 @@
-use std::{ ops::RangeInclusive, path::PathBuf, sync::{Arc, Mutex, mpsc::{self, Receiver, Sender}}, thread::JoinHandle};
+use std::{
+    ops::RangeInclusive,
+    path::PathBuf,
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Arc, Mutex,
+    },
+    thread::JoinHandle,
+};
 
 use crate::{
-    app::{AppState, MenuWindowData, NeuralNetworkType}, egui_ext::{Interval, add_slider_sized}, mnist::get_mnist, zneural_network::{
-        activation::ActivationFunctionType, cost::CostFunction, datapoint::{
-            DataPoint, TrainingData, TrainingDataset, VirtualTrainingDataset, create_2x2_test_datapoints,
-        }, is_correct::ConfusionEvaluator, cpu::neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong}, thread::{TrainingThreadController, TrainingThreadPayload}, training::{FloatDecay, TestResults, TrainingSession, TrainingState} 
+    app::{AppState, MenuWindowData, NeuralNetworkType},
+    egui_ext::{add_slider_sized, Interval},
+    mnist::get_mnist,
+    weight_bias::{BiasInit, WeightInit},
+    zneural_network::{
+        activation::ActivationFunctionType,
+        cost::CostFunction,
+        cpu::neuralnetwork_cpu::{GraphStructure, NeuralNetworkCPU, NeuralNetworkPingPong},
+        datapoint::{
+            create_2x2_test_datapoints, DataPoint, TrainingData, TrainingDataset,
+            VirtualTrainingDataset,
+        },
+        is_correct::ConfusionEvaluator,
+        thread::{TrainingThreadController, TrainingThreadPayload},
+        training::{FloatDecay, TestResults, TrainingSession, TrainingState},
     },
 };
-use zaoai_types::ai_labels::LayerTypeCPU;
-use eframe::egui::{self, Align, Button, Color32, InnerResponse, Layout, Sense, Slider, SliderClamping};
-use egui_plot::{Corner, Legend, PlotResponse};
-use egui_plot::{GridInput, GridMark, Line, Plot, PlotPoint, PlotPoints};
-use crate::{weight_bias::{BiasInit, WeightInit}};
 
-#[cfg(feature = "gpu")]
-use crate::zneural_network::gpu::neuralnetwork_gpu::test_nn_gpu;
+use zaoai_types::ai_labels::LayerTypeCPU;
+
+use eframe::egui::{
+    self, Align, Button, Color32, InnerResponse, Layout, Sense, Slider, SliderClamping,
+};
+
+use egui_plot::{
+    Corner, GridInput, GridMark, Legend, Line, Plot, PlotPoint, PlotPoints, PlotResponse,
+};
 
 use zaoai_types::{
     ai_labels::{AnimeDataPoint, ZaoaiLabelsLoader},
     sound::get_spectrogram_dims,
-    spectrogram::{generate_spectrogram, SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH, S_SPECTROGRAM_NUM_BINS},
+    spectrogram::{
+        generate_spectrogram, SPECTROGRAM_HEIGHT, SPECTROGRAM_WIDTH, S_SPECTROGRAM_NUM_BINS,
+    },
 };
+
+#[cfg(feature = "gpu")]
+use crate::zneural_network::gpu::neuralnetwork_gpu::test_nn_gpu;
 
 pub trait DrawableWindow<'a> {
     type Ctx;
@@ -68,17 +94,14 @@ impl From<SerdePlotPoint> for PlotPoint {
 #[derive(Default)]
 pub struct WindowTrainingGraph {
     // Training
-    cached_plot_points_accuracy: Vec<SerdePlotPoint>, // cached since want to restore the graphs on app load
+    cached_plot_points_accuracy: Vec<SerdePlotPoint>,
     cached_plot_points_cost: Vec<SerdePlotPoint>,
     cached_plot_points_last_loss: Vec<SerdePlotPoint>,
     cached_plot_points_learn_rate: Vec<SerdePlotPoint>,
     cached_plot_points_f1_score: Vec<SerdePlotPoint>,
-    
     // Validation
-
     // Test
 }
-
 
 macro_rules! gen_line {
     (
@@ -91,29 +114,26 @@ macro_rules! gen_line {
     ) => {{
         use crate::app_windows::PlotPoints::Owned;
 
-        $self.$cache_field = $gen_fn($payload)
-            .into_iter()
-            .map(Into::into)
-            .collect();
+        $self.$cache_field = $gen_fn($payload).into_iter().map(Into::into).collect();
 
         let plot_points = Owned(
-            $self.$cache_field
+            $self
+                .$cache_field
                 .clone()
                 .into_iter()
                 .map(Into::into)
                 .collect(),
         );
 
-        Line::new($label, plot_points)
-            .color($color)
-            .id($label)
+        Line::new($label, plot_points).color($color).id($label)
     }};
 }
 
-impl WindowTrainingGraph
-{
-    fn generate_common_lines(&mut self, payload_buffer: &Vec<TrainingThreadPayload>) -> Vec<Line<'_>>
-    {
+impl WindowTrainingGraph {
+    fn generate_common_lines(
+        &mut self,
+        payload_buffer: &Vec<TrainingThreadPayload>,
+    ) -> Vec<Line<'_>> {
         let line_accuracy = gen_line! {
             self = self,
             payload = &payload_buffer,
@@ -159,9 +179,8 @@ impl WindowTrainingGraph
         extra_lines: impl IntoIterator<Item = Line<'static>>,
     ) -> PlotResponse<()> {
         let toggle_id = egui::Id::new(format!("{}_full_view_toggle", title));
-        let mut full_view_toggle_value = ui.memory_mut(|m| {
-            m.data.get_persisted(toggle_id).unwrap_or(false)
-        });
+        let mut full_view_toggle_value =
+            ui.memory_mut(|memory| memory.data.get_persisted(toggle_id).unwrap_or(false));
 
         ui.horizontal(|ui| {
             ui.label(title);
@@ -169,46 +188,67 @@ impl WindowTrainingGraph
                 if ui.button("Clear").clicked() {
                     payload_buffer.clear();
                 }
-                if ui.toggle_value(&mut full_view_toggle_value, "Full View").clicked() {
-                    ui.memory_mut(|m| {
-                        m.data.insert_persisted(toggle_id, full_view_toggle_value)
+
+                if ui
+                    .toggle_value(&mut full_view_toggle_value, "Full View")
+                    .changed()
+                {
+                    ui.memory_mut(|memory| {
+                        memory
+                            .data
+                            .insert_persisted(toggle_id, full_view_toggle_value);
                     });
                 }
             });
         });
 
         Self::create_plot_training(title)
-            .legend(Legend::default().position(Corner::LeftBottom).follow_insertion_order(true))
+            .legend(
+                Legend::default()
+                    .position(Corner::LeftBottom)
+                    .follow_insertion_order(true),
+            )
             .x_axis_label(x_label)
-            .include_x(0.0)
             .show(ui, |plot_ui| {
-            if !full_view_toggle_value {
-                // Egui for some reason does not support reading legend toggle state
-                // Would like to cull the metrics that are hidden
-                let payload_max = payload_buffer
-                    .last()
-                    .map(|p| p.payload_index as f64)
+                for line in common_lines {
+                    plot_ui.line(line);
+                }
+
+                for line in extra_lines {
+                    plot_ui.line(line);
+                }
+
+                if payload_buffer.is_empty() {
+                    return;
+                }
+
+                let payload_min = payload_buffer
+                    .first()
+                    .map(|payload| payload.payload_index as f64)
                     .unwrap_or(0.0);
 
-                const COUNT: f64 = 10.0;
-                let min_x = (payload_max - COUNT).max(0.0);
+                let payload_max = payload_buffer
+                    .last()
+                    .map(|payload| payload.payload_index as f64)
+                    .unwrap_or(payload_min);
 
-                plot_ui.set_plot_bounds(egui_plot::PlotBounds::from_min_max(
-                    [min_x, f64::NEG_INFINITY],
-                    [payload_max, f64::INFINITY],
-                ));
-                plot_ui.set_auto_bounds([false, true]); 
-            } else {
-                plot_ui.set_auto_bounds([true, true]);
-            }
+                const VISIBLE_X_VALUES: f64 = 10.0;
+                let min_x = if full_view_toggle_value {
+                    payload_min
+                } else {
+                    (payload_max - (VISIBLE_X_VALUES - 1.0)).max(payload_min)
+                };
 
-            for line in common_lines {
-                plot_ui.line(line);
-            }
-            for line in extra_lines {
-                plot_ui.line(line);
-            }
-        })
+                let label_space = 0.2;
+                let max_x = payload_max + label_space;
+                let x_size = max_x - min_x;
+                let mut bounds = plot_ui.plot_bounds();
+                bounds.set_x_center_width(min_x + x_size / 2.0, x_size);
+                plot_ui.set_plot_bounds(bounds);
+                plot_ui.set_auto_bounds([false, true]);
+
+                add_latest_text(plot_ui, payload_buffer, payload_max);
+            })
     }
 
     fn show_training_plot(
@@ -218,16 +258,23 @@ impl WindowTrainingGraph
     ) -> PlotResponse<()> {
         let buffer = &mut *state_ctx.payload_training_buffer;
         let learn_rate_line = gen_line! {
-                self = self,
-                payload = &buffer,
-                cache_field = cached_plot_points_learn_rate,
-                generator = generate_learn_rate_plotpoints_from_training_thread_payloads,
-                label = "Learn Rate",
-                color = Color32::LIGHT_GRAY,
-            };
+            self = self,
+            payload = &buffer,
+            cache_field = cached_plot_points_learn_rate,
+            generator = generate_learn_rate_plotpoints_from_training_thread_payloads,
+            label = "Learn Rate",
+            color = Color32::LIGHT_GRAY,
+        };
         let common_lines = self.generate_common_lines(buffer);
 
-        Self::render_plot(ui, "Training", "Epoch", buffer, common_lines, vec![learn_rate_line])
+        Self::render_plot(
+            ui,
+            "Training",
+            "Epoch",
+            buffer,
+            common_lines,
+            vec![learn_rate_line],
+        )
     }
 
     fn show_validation_plot(
@@ -263,11 +310,13 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        let window = egui::Window::new("Training Graph").default_pos(egui::Pos2::new(1000.0, 0.0)).show(ctx, |ui| {
-            let _training_plot = self.show_training_plot(ui, state_ctx);
-            let _validation_plot = self.show_validation_plot(ui, ctx, state_ctx);
-            let _test_plot = self.show_test_plot(ui, ctx, state_ctx);
-        });
+        let window = egui::Window::new("Training Graph")
+            .default_pos(egui::Pos2::new(1000.0, 0.0))
+            .show(ctx, |ui| {
+                let _training_plot = self.show_training_plot(ui, state_ctx);
+                let _validation_plot = self.show_validation_plot(ui, ctx, state_ctx);
+                let _test_plot = self.show_test_plot(ui, ctx, state_ctx);
+            });
 
         window
     }
@@ -275,7 +324,6 @@ impl<'a> DrawableWindow<'a> for WindowTrainingGraph {
 
 impl WindowTrainingGraph {
     fn create_plot_training<'a>(id_source: impl std::hash::Hash) -> Plot<'a> {
-        const INCLUDE_Y_PADDING: f64 = 0.06;
         Plot::new(id_source)
             .allow_drag(false)
             .allow_zoom(false)
@@ -283,11 +331,6 @@ impl WindowTrainingGraph {
             .allow_boxed_zoom(false)
             .allow_double_click_reset(false)
             .center_x_axis(false)
-            .include_y(0.0 - INCLUDE_Y_PADDING)
-            .include_y(1.0 + INCLUDE_Y_PADDING)
-            .default_y_bounds(0.0 - INCLUDE_Y_PADDING, 1.0 + INCLUDE_Y_PADDING)
-            .auto_bounds([true, true])
-            .include_x(0.0)
             .y_grid_spacer(
                 Self::create_plot_training_y_spacer_func as fn(GridInput) -> Vec<GridMark>,
             )
@@ -304,6 +347,9 @@ impl WindowTrainingGraph {
         }
 
         let raw_step = span / 8.0;
+        if raw_step <= 0.0 || !raw_step.is_finite() {
+            return Vec::new();
+        }
         let exponent = raw_step.log10().floor();
         let scale = 10.0_f64.powf(exponent);
 
@@ -319,6 +365,9 @@ impl WindowTrainingGraph {
         };
 
         let minor_step = major_step / 5.0;
+        if minor_step <= 0.0 || !minor_step.is_finite() {
+            return Vec::new();
+        }
         let mut marks = Vec::new();
 
         let start_minor = (min / minor_step).floor() as i64;
@@ -351,6 +400,59 @@ impl WindowTrainingGraph {
     }
 }
 
+fn add_latest_text(
+    plot_ui: &mut egui_plot::PlotUi,
+    payload_buffer: &[TrainingThreadPayload],
+    label_x: f64,
+) {
+    let Some(payload) = payload_buffer.last() else {
+        return;
+    };
+    let accuracy = payload.training_metadata.calc_accuracy();
+    let cost = payload.training_metadata.cost as f64;
+    let last_loss = payload.training_metadata.last_loss as f64;
+    let f1 = payload.training_metadata.calc_f1_score();
+
+    let y_offset = 0.03;
+
+    plot_ui.text(
+        egui_plot::Text::new(
+            "Latest Accuracy",
+            PlotPoint::new(label_x, accuracy + y_offset),
+            format!("Acc: {:.2}%", accuracy * 100.0),
+        )
+        .color(Color32::LIGHT_GREEN)
+        .anchor(egui::Align2::RIGHT_BOTTOM),
+    );
+    plot_ui.text(
+        egui_plot::Text::new(
+            "Latest Cost",
+            PlotPoint::new(label_x, cost + y_offset),
+            format!("Cost: {:.4}", cost),
+        )
+        .color(Color32::LIGHT_RED)
+        .anchor(egui::Align2::RIGHT_BOTTOM),
+    );
+    plot_ui.text(
+        egui_plot::Text::new(
+            "Latest Loss",
+            PlotPoint::new(label_x, last_loss + y_offset),
+            format!("Loss: {:.4}", last_loss),
+        )
+        .color(Color32::LIGHT_YELLOW)
+        .anchor(egui::Align2::RIGHT_BOTTOM),
+    );
+    plot_ui.text(
+        egui_plot::Text::new(
+            "Latest F1",
+            PlotPoint::new(label_x, f1 + y_offset),
+            format!("F1: {:.2}%", f1 * 100.0),
+        )
+        .color(Color32::LIGHT_BLUE)
+        .anchor(egui::Align2::RIGHT_BOTTOM),
+    );
+}
+
 pub struct WindowAiCtx<'a> {
     pub ai: &'a mut Option<NeuralNetworkType>,
     pub test_button_training_data: &'a Option<&'a TrainingData>,
@@ -380,259 +482,360 @@ impl<'a> DrawableWindow<'a> for WindowAi {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        egui::Window::new("ZaoAI").default_pos(egui::pos2(700.0, 0.0)).show(ctx, |ui| {
+        egui::Window::new("ZaoAI")
+            .default_pos(egui::pos2(700.0, 0.0))
+            .show(ctx, |ui| {
+                ui.with_layout(
+                    Layout::right_to_left(Align::Min),
+                    |ui| {
+                        let delete_button =
+                            Button::new("Delete")
+                                .sense(Sense::click());
 
-            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                let delete_button = Button::new("Delete").sense(Sense::click());
-                if ui.add(delete_button).clicked() {
-                    *state_ctx.ai = None;
-                }
-            });
-
-            ui.label(state_ctx.ai.as_ref().and_then(|f|Some(f.to_string())).unwrap_or_default());
-            if let Some(ai) = &mut state_ctx.ai {
-                enum TestButtonState {
-                    TestingDone,
-                    AbortTest,
-                    StartTest,
-                }
-                impl TestButtonState {
-                    fn from_handles(test_nn_handle: &Option<std::thread::JoinHandle<()>>, test_done_val: &Option<TestResults>) -> Self {
-                        match (test_nn_handle, test_done_val) {
-                            (Some(_), Some(_)) |
-                            (Some(_), None) => TestButtonState::AbortTest,
-                            (None, Some(_)) => TestButtonState::TestingDone,
-                            (None, None) => TestButtonState::StartTest,
+                        if ui.add(delete_button).clicked() {
+                            *state_ctx.ai = None;
                         }
-                    }
-
-                    fn label(&self) -> &'static str {
-                        match self {
-                            TestButtonState::TestingDone => "Testing done!",
-                            TestButtonState::AbortTest => "Abort Test",
-                            TestButtonState::StartTest => "Start Test",
-                        }
-                    }
-                }
-
-                let test_done_val = {
-                    let lock = self.test_nn_done.lock().unwrap();
-                    lock.clone()
-                };
-
-                let mut ai_clone = ai.clone();
-                ui.horizontal(|ui|{
-                let button_state = TestButtonState::from_handles(&self.test_nn_handle, &test_done_val);
-                let test_button = Button::new(button_state.label()).sense(Sense::click());
-                let test_button_response = ui.add(test_button);
-                let _test_graph_checkbox = ui.checkbox(&mut self.test_nn_graph, "Graph");
-                match button_state
-                {
-                    TestButtonState::TestingDone => {
                     },
-                    TestButtonState::AbortTest => {
-                        if test_button_response.clicked()
-                        {
-                            if let Some(abort) = &self.test_nn_abort_tx
-                            {
-                                if let Err(e) = abort.send(())
-                                {
-                                    log::error!("Failed to send abort test signal: {:?}", e);
+                );
+
+                ui.label(
+                    state_ctx
+                        .ai
+                        .as_ref()
+                        .map(|f| f.to_string())
+                        .unwrap_or_default(),
+                );
+
+                if let Some(ai) = &mut state_ctx.ai {
+                    enum TestButtonState {
+                        TestingDone,
+                        AbortTest,
+                        StartTest,
+                    }
+
+                    impl TestButtonState {
+                        fn from_handles(
+                            test_nn_handle: &Option<
+                                std::thread::JoinHandle<()>,
+                            >,
+                            test_done_val: &Option<TestResults>,
+                        ) -> Self {
+                            match (
+                                test_nn_handle,
+                                test_done_val,
+                            ) {
+                                (Some(_), Some(_))
+                                | (Some(_), None) => {
+                                    TestButtonState::AbortTest
+                                }
+                                (None, Some(_)) => {
+                                    TestButtonState::TestingDone
+                                }
+                                (None, None) => {
+                                    TestButtonState::StartTest
                                 }
                             }
                         }
-                    },
-                    TestButtonState::StartTest => {
-                        if test_button_response.clicked() {
-                            if let Some(training_data) = *state_ctx.test_button_training_data {
-                                if training_data.test_split_len() >= 1 {
-                                    let (tx,rx) = mpsc::channel();
-                                    let (tx_abort, rx_abort) = mpsc::channel();
-                                    // if graph disabled, turn off sending data
-                                    let maybe_tx = if self.test_nn_graph
+
+                        fn label(&self) -> &'static str {
+                            match self {
+                                TestButtonState::TestingDone => {
+                                    "Testing done!"
+                                }
+                                TestButtonState::AbortTest => {
+                                    "Abort Test"
+                                }
+                                TestButtonState::StartTest => {
+                                    "Start Test"
+                                }
+                            }
+                        }
+                    }
+
+                    let test_done_val = {
+                        let lock =
+                            self.test_nn_done.lock().unwrap();
+                        lock.clone()
+                    };
+
+                    let mut ai_clone = ai.clone();
+                    ui.horizontal(|ui| {
+                        let button_state =
+                            TestButtonState::from_handles(
+                                &self.test_nn_handle,
+                                &test_done_val,
+                            );
+                        let test_button =
+                            Button::new(button_state.label())
+                                .sense(Sense::click());
+                        let test_button_response =
+                            ui.add(test_button);
+                        let _test_graph_checkbox =
+                            ui.checkbox(
+                                &mut self.test_nn_graph,
+                                "Graph",
+                            );
+                        match button_state {
+                            TestButtonState::TestingDone => {}
+
+                            TestButtonState::AbortTest => {
+                                if test_button_response.clicked() {
+                                    if let Some(abort) =
+                                        &self.test_nn_abort_tx
                                     {
-                                        Some(tx)
-                                    }else{
-                                        None
-                                    };
-
-                                    state_ctx.payload_test_buffer.clear();
-                                    self.test_nn_abort_tx = Some(tx_abort);
-                                    self.test_nn_rx = Some(rx);
-                                    self.test_nn_done = Arc::new(Mutex::new(None));
-                                    let test_nn_done_clone = self.test_nn_done.clone();
-                                    let is_correct_fn = state_ctx.ai_is_corret_fn.clone();
-                                    let training_data_clone = training_data.clone();
-                                    self.test_nn_handle = Some(std::thread::spawn(move || {
-                                        log::trace!("Test Thread test_nn spawned!");
-                                        let pingpong = &mut NeuralNetworkPingPong::new(ai_clone.max_layer_nodes());
-                                        // CPU
-                                        #[cfg(feature = "cpu")]
-                                        #[cfg(not(feature = "gpu"))]
+                                        if let Err(e) =
+                                            abort.send(())
                                         {
-                                            use crate::zneural_network::cpu::neuralnetwork_cpu::test_nn_cpu;
-                                            match test_nn_cpu(&mut ai_clone, &training_data_clone.test_split(), is_correct_fn, maybe_tx, Some(rx_abort), pingpong)
-                                            {
-                                                Ok(r) => {
-                                                    log::trace!("Test Thread test_nn complete!");
-                                                    let save_path = "testresults.results";
-                                                    log::trace!("Saving results... {save_path}");
-                                                    if let Err(e) = r.save_results(save_path)
-                                                    {
-                                                        log::error!("Failed to save results to {save_path}: {e}");
-                                                    }
-                                                    *test_nn_done_clone.lock().unwrap() = Some(r.clone());
-                                                },
-                                                    Err(e) => {log::error!("{e}");
-                                                    *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(vec![], ConfusionEvaluator::LargestLabel, 0.0));
-                                                },
-                                            }
+                                            log::error!(
+                                                "Failed to send abort test signal: {:?}",
+                                                e
+                                            );
                                         }
-                                        // GPU - candle
-                                        // #[cfg(feature = "gpu")]
-                                        // {
-                                            // match test_nn_gpu_candle(
-                                            //     &ai_clone,
-                                            //     &training_data_clone.test_split(),
-                                            //     is_correct_fn,
-                                            //     maybe_tx,
-                                            //     Some(rx_abort),
-                                            // ) {
-                                            //     Ok(r) => {
-                                            //         log::trace!("Test Thread test_nn complete!");
-                                            //         let save_path = "testresults.results";
-                                            //         log::trace!("Saving results... {save_path}");
-                                            //         if let Err(e) = r.save_results(save_path) {
-                                            //             log::error!("Failed to save results to {save_path}: {e}");
-                                            //         }
-                                            //         *test_nn_done_clone.lock().unwrap() = Some(r.clone());
-                                            //     }
-                                            //     Err(e) => {
-                                            //         log::error!("{e}");
-                                            //         *test_nn_done_clone.lock().unwrap() = Some(TestResults::new(
-                                            //             vec![],
-                                            //             ConfusionEvaluator::LargestLabel,
-                                            //             0.0,
-                                            //         ));
-                                            //     }
-                                            // }
-                                        // }
-                                        // GPU - burn
-                                        #[cfg(feature = "gpu")]
-                                        {
-                                            match test_nn_gpu(
-                                                &ai_clone,
-                                                &training_data_clone.test_split(),
-                                                is_correct_fn,
-                                                maybe_tx,
-                                                Some(rx_abort),
-                                            ) {
-                                                Ok(r) => {
-                                                    log::trace!("Test Thread test_nn complete!");
-                                                    let save_path = "testresults.results";
-                                                    log::trace!("Saving results... {save_path}");
-                                                    if let Err(e) = r.save_results(save_path) {
-                                                        log::error!("Failed to save results to {save_path}: {e}");
-                                                    }
-                                                    *test_nn_done_clone.lock().unwrap() = Some(r.clone());
-                                                }
-                                                Err(e) => {
-                                                    log::error!("{e}");
-                                                    *test_nn_done_clone.lock().unwrap() = Some(TestResults {
-                                                        cost: 0.0,
-                                                        accuracy: None,
-                                                        results: vec![],
-                                                        num_correct: 0,
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }));
-                                    
-                                } else {
-                                    log::error!(
-                                        "Could not start test, training data training len was empty"
-                                    );
+                                    }
                                 }
-                            } else {
-                                log::error!("Training dataset not set, could not train");
                             }
-                        }
-                    }
-                };
-            });
-            } else {
-                ui.label("NN not set");
-            }
-        })
+
+                            TestButtonState::StartTest => {
+                                if test_button_response.clicked() {
+                                    if let Some(training_data) =
+                                        *state_ctx
+                                            .test_button_training_data
+                                    {
+                                        if training_data
+                                            .test_split_len()
+                                            >= 1
+                                        {
+                                            let (tx, rx) =
+                                                mpsc::channel();
+                                            let (
+                                                tx_abort,
+                                                rx_abort,
+                                            ) = mpsc::channel();
+                                            let maybe_tx =
+                                                if self.test_nn_graph {
+                                                    Some(tx)
+                                                } else {
+                                                    None
+                                                };
+
+                                            state_ctx
+                                                .payload_test_buffer
+                                                .clear();
+                                            self.test_nn_abort_tx =
+                                                Some(tx_abort);
+                                            self.test_nn_rx = Some(rx);
+                                            self.test_nn_done =
+                                                Arc::new(Mutex::new(
+                                                    None,
+                                                ));
+                                            let test_nn_done_clone =
+                                                self.test_nn_done
+                                                    .clone();
+                                            let is_correct_fn =
+                                                state_ctx
+                                                    .ai_is_corret_fn
+                                                    .clone();
+                                            let training_data_clone =
+                                                training_data.clone();
+                                            self.test_nn_handle =
+                                                Some(
+                                                    std::thread::spawn(
+                                                        move || {
+                                                            log::trace!(
+                                                                "Test Thread test_nn spawned!"
+                                                            );
+                                                            let pingpong =
+                                                                &mut NeuralNetworkPingPong::new(
+                                                                    ai_clone.max_layer_nodes(),
+                                                                );
+                                                            #[cfg(feature = "cpu")]
+                                                            #[cfg(not(feature = "gpu"))]
+                                                            {
+                                                                use crate::zneural_network::cpu::neuralnetwork_cpu::test_nn_cpu;
+                                                                match test_nn_cpu(
+                                                                    &mut ai_clone,
+                                                                    &training_data_clone.test_split(),
+                                                                    is_correct_fn,
+                                                                    maybe_tx,
+                                                                    Some(rx_abort),
+                                                                    pingpong,
+                                                                ) {
+                                                                    Ok(r) => {
+                                                                        log::trace!(
+                                                                            "Test Thread test_nn complete!"
+                                                                        );
+                                                                        let save_path =
+                                                                            "testresults.results";
+                                                                        log::trace!(
+                                                                            "Saving results... {save_path}"
+                                                                        );
+                                                                        if let Err(e) =
+                                                                            r.save_results(save_path)
+                                                                        {
+                                                                            log::error!(
+                                                                                "Failed to save results to {save_path}: {e}"
+                                                                            );
+                                                                        }
+
+                                                                        *test_nn_done_clone
+                                                                            .lock()
+                                                                            .unwrap() =
+                                                                            Some(r.clone());
+                                                                    }
+
+                                                                    Err(e) => {
+                                                                        log::error!(
+                                                                            "{e}"
+                                                                        );
+                                                                        *test_nn_done_clone
+                                                                            .lock()
+                                                                            .unwrap() =
+                                                                            Some(
+                                                                                TestResults::new(
+                                                                                    vec![],
+                                                                                    ConfusionEvaluator::LargestLabel,
+                                                                                    0.0,
+                                                                                ),
+                                                                            );
+                                                                    }
+                                                                }
+                                                            }
+
+
+                                                            #[cfg(feature = "gpu")]
+                                                            {
+                                                                match test_nn_gpu(
+                                                                    &ai_clone,
+                                                                    &training_data_clone.test_split(),
+                                                                    is_correct_fn,
+                                                                    maybe_tx,
+                                                                    Some(rx_abort),
+                                                                ) {
+                                                                    Ok(r) => {
+                                                                        log::trace!(
+                                                                            "Test Thread test_nn complete!"
+                                                                        );
+
+                                                                        let save_path =
+                                                                            "testresults.results";
+
+                                                                        log::trace!(
+                                                                            "Saving results... {save_path}"
+                                                                        );
+
+                                                                        if let Err(e) =
+                                                                            r.save_results(save_path)
+                                                                        {
+                                                                            log::error!(
+                                                                                "Failed to save results to {save_path}: {e}"
+                                                                            );
+                                                                        }
+
+                                                                        *test_nn_done_clone
+                                                                            .lock()
+                                                                            .unwrap() =
+                                                                            Some(r.clone());
+                                                                    }
+
+                                                                    Err(e) => {
+                                                                        log::error!(
+                                                                            "{e}"
+                                                                        );
+
+                                                                        *test_nn_done_clone
+                                                                            .lock()
+                                                                            .unwrap() =
+                                                                            Some(
+                                                                                TestResults {
+                                                                                    cost: 0.0,
+                                                                                    accuracy: None,
+                                                                                    results: vec![],
+                                                                                    num_correct: 0,
+                                                                                },
+                                                                            );
+                                                                    }
+                                                                }
+                                                            }
+                                                        },
+                                                    ),
+                                                );
+                                        } else {
+                                            log::error!(
+                                                "Could not start test, training data training len was empty"
+                                            );
+                                        }
+                                    } else {
+                                        log::error!(
+                                            "Training dataset not set, could not train"
+                                        );
+                                    }
+                                }
+                            }
+                        };
+                    });
+                } else {
+                    ui.label("NN not set");
+                }
+            })
     }
 }
 
 impl WindowAi {}
 
-
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(PartialEq, Clone)]
-pub struct AiSetupPreset{
-    graph: GraphStructure, 
-    dropout_prob: LayerTypeCPU, 
+pub struct AiSetupPreset {
+    graph: GraphStructure,
+    dropout_prob: LayerTypeCPU,
     softmax_output: bool,
     activation_func: ActivationFunctionType,
-    is_correct_fn: ConfusionEvaluator, 
-    cost_fn: CostFunction, 
-    weight_init: WeightInit, 
+    is_correct_fn: ConfusionEvaluator,
+    cost_fn: CostFunction,
+    weight_init: WeightInit,
     bias_init: BiasInit,
-    display: String, 
+    display: String,
 }
 
 impl std::fmt::Display for AiSetupPreset {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}", self.display
-        )
+        write!(f, "{}", self.display)
     }
 }
 
 use std::sync::LazyLock;
-pub static MNIST_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| {
-    AiSetupPreset {
-        graph: GraphStructure {
-            input_nodes: 784,
-            hidden_layers: vec![256, 128],
-            output_nodes: 10,
-        },
-        dropout_prob: 0.3,
-        softmax_output: true,
-        activation_func: ActivationFunctionType::ReLU,
-        is_correct_fn: ConfusionEvaluator::LargestLabel,
-        cost_fn: CostFunction::CrossEntropyMulticlass,
-        weight_init: WeightInit::HeUniform,
-        bias_init: BiasInit::ZeroPointZeroOne,
-        display: "MNIST_PRESET".to_string(),
-    }
+pub static MNIST_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| AiSetupPreset {
+    graph: GraphStructure {
+        input_nodes: 784,
+        hidden_layers: vec![256, 128],
+        output_nodes: 10,
+    },
+    dropout_prob: 0.3,
+    softmax_output: true,
+    activation_func: ActivationFunctionType::ReLU,
+    is_correct_fn: ConfusionEvaluator::LargestLabel,
+    cost_fn: CostFunction::CrossEntropyMulticlass,
+    weight_init: WeightInit::HeUniform,
+    bias_init: BiasInit::ZeroPointZeroOne,
+    display: "MNIST_PRESET".to_string(),
 });
-pub static ZLBL_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| {
-    AiSetupPreset {
-        graph: GraphStructure {
-            input_nodes: 4096,
-            hidden_layers: vec![1024, 512],
-            output_nodes: 2,
-        },
-        dropout_prob: 0.3,
-        softmax_output: false,
-        activation_func: ActivationFunctionType::Sigmoid,
-        is_correct_fn: ConfusionEvaluator::Zlbl,
-        cost_fn: CostFunction::CrossEntropyBinary,
-        weight_init: WeightInit::XavierUniform,
-        bias_init: BiasInit::ZeroPointZeroOne,
-        display: "ZLBL_PRESET".to_string(),
-    }
-});
-pub static ALL_PRESETS: LazyLock<[&'static AiSetupPreset; 2]> = LazyLock::new(|| {
-    [&*MNIST_PRESET, &*ZLBL_PRESET]
+pub static ZLBL_PRESET: LazyLock<AiSetupPreset> = LazyLock::new(|| AiSetupPreset {
+    graph: GraphStructure {
+        input_nodes: 4096,
+        hidden_layers: vec![1024, 512],
+        output_nodes: 2,
+    },
+    dropout_prob: 0.3,
+    softmax_output: false,
+    activation_func: ActivationFunctionType::Sigmoid,
+    is_correct_fn: ConfusionEvaluator::Zlbl,
+    cost_fn: CostFunction::CrossEntropyBinary,
+    weight_init: WeightInit::XavierUniform,
+    bias_init: BiasInit::ZeroPointZeroOne,
+    display: "ZLBL_PRESET".to_string(),
 });
 
+pub static ALL_PRESETS: LazyLock<[&'static AiSetupPreset; 2]> =
+    LazyLock::new(|| [&*MNIST_PRESET, &*ZLBL_PRESET]);
 pub struct WindowAiSetupPresetsCtx<'a> {
     pub window_data: &'a mut MenuWindowData,
     pub state: &'a mut AppState,
@@ -640,13 +843,14 @@ pub struct WindowAiSetupPresetsCtx<'a> {
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WindowAiSetupPresets {
-    pub cached_ai_preset: AiSetupPreset
+    pub cached_ai_preset: AiSetupPreset,
 }
 
-impl Default for WindowAiSetupPresets
-{
+impl Default for WindowAiSetupPresets {
     fn default() -> Self {
-        Self { cached_ai_preset: ALL_PRESETS[0].clone() }
+        Self {
+            cached_ai_preset: ALL_PRESETS[0].clone(),
+        }
     }
 }
 
@@ -658,44 +862,44 @@ impl<'a> DrawableWindow<'a> for WindowAiSetupPresets {
         ctx: &egui::Context,
         state_ctx: &mut Self::Ctx,
     ) -> Option<InnerResponse<Option<()>>> {
-        egui::Window::new("Setup Presets").default_pos(egui::pos2(0.0, 500.0)).show(ctx, |ui| {
-           
-            // TODO: use &AiSetupPreset instead of AiSetupPreset to avoid clones.
-            let _before = self.cached_ai_preset.clone();
-            let _combo_response = egui::ComboBox::from_label("AiSetup")
-                .selected_text(self.cached_ai_preset.to_string())
-                .show_ui(ui, |ui| {
-                    for variant in *ALL_PRESETS {
-                        ui.selectable_value(
-                            &mut self.cached_ai_preset,
-                            variant.clone(),
-                            variant.to_string(),
-                        );
-                    }
-                });
-            // let changed_preset = before != self.cached_ai_preset;
+        egui::Window::new("Setup Presets")
+            .default_pos(egui::pos2(0.0, 500.0))
+            .show(ctx, |ui| {
+                let _before = self.cached_ai_preset.clone();
+                let _combo_response = egui::ComboBox::from_label("AiSetup")
+                    .selected_text(self.cached_ai_preset.to_string())
+                    .show_ui(ui, |ui| {
+                        for variant in *ALL_PRESETS {
+                            ui.selectable_value(
+                                &mut self.cached_ai_preset,
+                                variant.clone(),
+                                variant.to_string(),
+                            );
+                        }
+                    });
+                if ui.button("Setup").clicked() {
+                    state_ctx.window_data.graph_structure_string =
+                        self.cached_ai_preset.graph.to_string();
+                    state_ctx.window_data.ai_use_softmax_output =
+                        self.cached_ai_preset.softmax_output;
+                    state_ctx.window_data.ai_activation_function =
+                        self.cached_ai_preset.activation_func;
+                    state_ctx.window_data.ai_cost_fn = self.cached_ai_preset.cost_fn;
+                    state_ctx.window_data.ai_dropout_prob = self.cached_ai_preset.dropout_prob;
+                    state_ctx.window_data.ai_is_correct_fn = self.cached_ai_preset.is_correct_fn;
+                    state_ctx.window_data.ai_weight_init = self.cached_ai_preset.weight_init;
+                    state_ctx.window_data.ai_bias_init = self.cached_ai_preset.bias_init;
 
-            if ui.button("Setup").clicked()
-            {
-                state_ctx.window_data.graph_structure_string = self.cached_ai_preset.graph.to_string();
-                state_ctx.window_data.ai_use_softmax_output = self.cached_ai_preset.softmax_output;
-                state_ctx.window_data.ai_activation_function = self.cached_ai_preset.activation_func;
-                state_ctx.window_data.ai_cost_fn= self.cached_ai_preset.cost_fn;
-                state_ctx.window_data.ai_dropout_prob = self.cached_ai_preset.dropout_prob;
-                state_ctx.window_data.ai_is_correct_fn = self.cached_ai_preset.is_correct_fn;
-                state_ctx.window_data.ai_weight_init = self.cached_ai_preset.weight_init;
-                state_ctx.window_data.ai_bias_init = self.cached_ai_preset.bias_init;
-
-                *state_ctx.state = AppState::SetupAi;
-            }
-        })
+                    *state_ctx.state = AppState::SetupAi;
+                }
+            })
     }
 }
 
 impl WindowAiSetupPresets {}
 
 pub struct WindowTrainingSetCtx<'a> {
-    pub training_data: &'a mut TrainingData, // Probably should store on heap to avoid copy, not an issue for now
+    pub training_data: &'a mut TrainingData,
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -732,132 +936,324 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSet {
         let response = egui::Window::new("Dataset")
             .default_pos([0.0, 600.0])
             .show(ctx, |ui| {
-                               ui.add(Interval::new(
+                ui.add(Interval::new(
                     &mut self.ui_training_dataset_split_thresholds_0,
                     &mut self.ui_training_dataset_split_thresholds_1,
                     RangeInclusive::new(0.0, 1.0),
                 ));
-                state_ctx.training_data.set_thresholds(self.ui_training_dataset_split_thresholds_0, self.ui_training_dataset_split_thresholds_1);
+                state_ctx.training_data.set_thresholds(
+                    self.ui_training_dataset_split_thresholds_0,
+                    self.ui_training_dataset_split_thresholds_1,
+                );
 
                 ui.heading("Current Dataset");
-                ui.label(format!("Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
-                state_ctx.training_data.training_split_len(),
-                100.0 * state_ctx.training_data.get_thresholds()[0],
-                state_ctx.training_data.validation_split_len(),
-                100.0 * (state_ctx.training_data.get_thresholds()[1] - state_ctx.training_data.get_thresholds()[0]),
-                state_ctx.training_data.test_split_len(),
-                100.0 * (1.0 - state_ctx.training_data.get_thresholds()[1]),
-                state_ctx.training_data.len(),
-                (state_ctx.training_data.training_split_len() + state_ctx.training_data.validation_split_len()
-                    + state_ctx.training_data.test_split_len()) as f64
-                    / state_ctx.training_data.len().max(1) as f64,
+                ui.label(format!(
+                    "Training: {} ({:.1}%)\nValidation: {} ({:.1}%)\nTest: {} ({:.1}%)\nTotal: {} ({:.1}%)",
+                    state_ctx.training_data.training_split_len(),
+                    100.0 * state_ctx.training_data.get_thresholds()[0],
+                    state_ctx.training_data.validation_split_len(),
+                    100.0
+                        * (state_ctx.training_data.get_thresholds()[1]
+                            - state_ctx.training_data.get_thresholds()[0]),
+                    state_ctx.training_data.test_split_len(),
+                    100.0
+                        * (1.0 - state_ctx.training_data.get_thresholds()[1]),
+                    state_ctx.training_data.len(),
+                    (state_ctx.training_data.training_split_len()
+                        + state_ctx.training_data.validation_split_len()
+                        + state_ctx.training_data.test_split_len())
+                        as f64
+                        / state_ctx.training_data.len().max(1)
+                            as f64,
                 ));
 
-                ui.label(format!("Dimensions: ({}, {})", state_ctx.training_data.get_in_out_dimensions().0, state_ctx.training_data.get_in_out_dimensions().1));
-                if ui.button("Load [2, 2] test dataset").clicked()
+                ui.label(format!(
+                    "Dimensions: ({}, {})",
+                    state_ctx
+                        .training_data
+                        .get_in_out_dimensions()
+                        .0,
+                    state_ctx
+                        .training_data
+                        .get_in_out_dimensions()
+                        .1
+                ));
+                if ui
+                    .button("Load [2, 2] test dataset")
+                    .clicked()
                 {
-                    let dataset = create_2x2_test_datapoints(0, 100000 as i32);
-                    *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
-                    self.ui_training_dataset_split_thresholds_0 = state_ctx.training_data.get_thresholds()[0];
-                    self.ui_training_dataset_split_thresholds_1 = state_ctx.training_data.get_thresholds()[1];
+                    let dataset =
+                        create_2x2_test_datapoints(
+                            0,
+                            100000 as i32,
+                        );
+                    *state_ctx.training_data =
+                        TrainingData::Physical(
+                            TrainingDataset::new(&dataset),
+                        );
+                    self.ui_training_dataset_split_thresholds_0 =
+                        state_ctx
+                            .training_data
+                            .get_thresholds()[0];
+                    self.ui_training_dataset_split_thresholds_1 =
+                        state_ctx
+                            .training_data
+                            .get_thresholds()[1];
                 }
-                if ui.button("Load [784, 10] MNIST dataset").clicked() {
-                let mnist = get_mnist();
-                
-                let map_mnist = |(image, &label): (&[u8; 784], &u8)| -> DataPoint {
-                    let inputs: Vec<LayerTypeCPU> = image.iter().map(|&p| p as LayerTypeCPU / 255.0).collect();
-                    let mut expected_outputs = vec![0.0; 10];
-                    if (label as usize) < 10 {
-                        expected_outputs[label as usize] = 1.0;
-                    }
-                    DataPoint { inputs, expected_outputs }
-                };
 
-                let dataset_train: Vec<DataPoint> = mnist.train_data.iter().zip(mnist.train_labels.iter()).map(map_mnist).collect();
-                let dataset_test: Vec<DataPoint> = mnist.train_data.iter().zip(mnist.train_labels.iter()).map(map_mnist).collect();
-                
-                *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new_from_splits(&dataset_train, &vec![], &dataset_test));
-                
-                let thresholds = state_ctx.training_data.get_thresholds();
-                self.ui_training_dataset_split_thresholds_0 = thresholds[0];
-                self.ui_training_dataset_split_thresholds_1 = thresholds[1];
-            }
-
-                let button_text = self.cached_zaoai_loader.as_ref()
-                    .and_then(|loader| loader.label_input_dim.map(|d| format!("Load [{}*{}, {}] spectrogram test", d[0], d[1], 2)))
-                    .unwrap_or_else(|| format!("Load [{}, {}] spectrogram test", SPECTROGRAM_WIDTH * SPECTROGRAM_HEIGHT, 2));
-                if ui.add(egui::Button::new(button_text).sense(Sense::empty())).clicked()
+                if ui
+                    .button("Load [784, 10] MNIST dataset")
+                    .clicked()
                 {
-                    log::error!("This does not work. Spectrogram crate sucks and can not work with it easily...");
+                    let mnist = get_mnist();
+
+                    let map_mnist =
+                        |(image, &label): (&[u8; 784], &u8)| -> DataPoint {
+                            let inputs: Vec<LayerTypeCPU> =
+                                image
+                                    .iter()
+                                    .map(|&p| {
+                                        p as LayerTypeCPU / 255.0
+                                    })
+                                    .collect();
+
+                            let mut expected_outputs =
+                                vec![0.0; 10];
+
+                            if (label as usize) < 10 {
+                                expected_outputs[label as usize] = 1.0;
+                            }
+                            DataPoint {
+                                inputs,
+                                expected_outputs,
+                            }
+                        };
+
+                    let dataset_train: Vec<DataPoint> =
+                        mnist
+                            .train_data
+                            .iter()
+                            .zip(mnist.train_labels.iter())
+                            .map(map_mnist)
+                            .collect();
+                    let dataset_test: Vec<DataPoint> =
+                        mnist
+                            .train_data
+                            .iter()
+                            .zip(mnist.train_labels.iter())
+                            .map(map_mnist)
+                            .collect();
+                    *state_ctx.training_data =
+                        TrainingData::Physical(
+                            TrainingDataset::new_from_splits(
+                                &dataset_train,
+                                &vec![],
+                                &dataset_test,
+                            ),
+                        );
+                    let thresholds =
+                        state_ctx.training_data.get_thresholds();
+                    self.ui_training_dataset_split_thresholds_0 =
+                        thresholds[0];
+                    self.ui_training_dataset_split_thresholds_1 =
+                        thresholds[1];
+                }
+
+                let button_text = self
+                    .cached_zaoai_loader
+                    .as_ref()
+                    .and_then(|loader| {
+                        loader.label_input_dim.map(|d| {
+                            format!(
+                                "Load [{}*{}, {}] spectrogram test",
+                                d[0],
+                                d[1],
+                                2
+                            )
+                        })
+                    })
+                    .unwrap_or_else(|| {
+                        format!(
+                            "Load [{}, {}] spectrogram test",
+                            SPECTROGRAM_WIDTH
+                                * SPECTROGRAM_HEIGHT,
+                            2
+                        )
+                    });
+                if ui
+                    .add(
+                        egui::Button::new(button_text)
+                            .sense(Sense::empty()),
+                    )
+                    .clicked()
+                {
+                    log::error!(
+                        "This does not work. Spectrogram crate sucks and can not work with it easily..."
+                    );
+
                     let path = "test_files/test0.mkv";
-                    let spectrogram = generate_spectrogram(&PathBuf::from(path), S_SPECTROGRAM_NUM_BINS);
-                    match spectrogram
-                    {
-                        Ok(o) => { let new_point = AnimeDataPoint {
-                        path: PathBuf::from(path),
-                        spectrogram: o,
-                        expected_outputs: vec![0.08936, 0.1510],
-                    };
 
-                    let dims = unsafe { get_spectrogram_dims(&new_point.spectrogram) };
-                    assert_eq!(SPECTROGRAM_WIDTH, dims.0);
-                    assert_eq!(SPECTROGRAM_HEIGHT, dims.1);
-                    let dataset: Vec<_> = vec![DataPoint::from_anime_data_point(new_point, dims.0, dims.1)];
-                    *state_ctx.training_data = TrainingData::Physical(TrainingDataset::new(&dataset));
-                    state_ctx.training_data.set_thresholds(1.0, 1.0);},
-                        Err(e) => log::error!("{:?}", e),
+                    let spectrogram =
+                        generate_spectrogram(
+                            &PathBuf::from(path),
+                            S_SPECTROGRAM_NUM_BINS,
+                        );
+                    match spectrogram {
+                        Ok(o) => {
+                            let new_point =
+                                AnimeDataPoint {
+                                    path: PathBuf::from(path),
+                                    spectrogram: o,
+                                    expected_outputs: vec![
+                                        0.08936,
+                                        0.1510,
+                                    ],
+                                };
+
+                            let dims = unsafe {
+                                get_spectrogram_dims(
+                                    &new_point.spectrogram,
+                                )
+                            };
+                            assert_eq!(
+                                SPECTROGRAM_WIDTH,
+                                dims.0
+                            );
+                            assert_eq!(
+                                SPECTROGRAM_HEIGHT,
+                                dims.1
+                            );
+                            let dataset: Vec<_> = vec![
+                                DataPoint::from_anime_data_point(
+                                    new_point,
+                                    dims.0,
+                                    dims.1,
+                                ),
+                            ];
+                            *state_ctx.training_data =
+                                TrainingData::Physical(
+                                    TrainingDataset::new(
+                                        &dataset,
+                                    ),
+                                );
+                            state_ctx
+                                .training_data
+                                .set_thresholds(1.0, 1.0);
+                        }
+
+                        Err(e) => {
+                            log::error!("{:?}", e);
+                        }
                     }
                 }
-
-                // let zaoai_label_path  = "training_data\\firstoutputlabels\\zaoai_labels";
-                let zaoai_label_path  = "training_data\\output\\zaoai_labels";
-                if self.cached_zaoai_loader.is_none()
-                {
-                    let new_label_loader = ZaoaiLabelsLoader::new(&zaoai_label_path);
-                    match new_label_loader
-                    {
+                let zaoai_label_path =
+                    "training_data\\output\\zaoai_labels";
+                if self.cached_zaoai_loader.is_none() {
+                    let new_label_loader =
+                        ZaoaiLabelsLoader::new(
+                            &zaoai_label_path,
+                        );
+                    match new_label_loader {
                         Ok(ok) => {
-                            let culled = ok
-                             .cull_by(|a| a.expected_outputs().is_some());
-                            self.cached_zaoai_loader = Some(culled);
-                            log::info!("Set self.cached_zaoai_loader!: {}", self.cached_zaoai_loader.as_mut().unwrap().len());
-                        }
-                        Err(e) => log::error!("Failed to load ZaoaiLabelsLoader: {:?}", e),
-                    }
-                }
-                if let  Some(zaoai_label_loader) = &self.cached_zaoai_loader 
-                {
-                    ui.horizontal(|ui|
-                    {
-                        if ui.button(format!("Load [{}, {}] {} ZaoaiLabels", SPECTROGRAM_WIDTH*SPECTROGRAM_HEIGHT, 2, zaoai_label_loader.len())).clicked()
-                        {
-                            let zaoai_labels = zaoai_label_loader.load_zaoai_labels().expect("failed to load zaoai_labels");
-                            *state_ctx.training_data = TrainingData::Virtual(VirtualTrainingDataset::new(PathBuf::from(zaoai_label_path), zaoai_labels, [SPECTROGRAM_WIDTH, SPECTROGRAM_HEIGHT]));
+                            let culled = ok.cull_by(|a| {
+                                a.expected_outputs().is_some()
+                            });
+                            self.cached_zaoai_loader =
+                                Some(culled);
+                            log::info!(
+                                "Set self.cached_zaoai_loader!: {}",
+                                self.cached_zaoai_loader
+                                    .as_mut()
+                                    .unwrap()
+                                    .len()
+                            );
                         }
 
-                        let name_label = ui.label("Resize");
-                        if ui.text_edit_singleline(&mut self.resize_text).labelled_by(name_label.id).lost_focus() {
-                            self.cached_resize_input_dim = self.resize_text
-                                .split(|c| c == ',' || c == ' ')
-                                .filter_map(|s| s.parse().ok())
-                                .collect();
+                        Err(e) => {
+                            log::error!(
+                                "Failed to load ZaoaiLabelsLoader: {:?}",
+                                e
+                            );
+                        }
+                    }
+                }
+
+                if let Some(zaoai_label_loader) =
+                    &self.cached_zaoai_loader
+                {
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(format!(
+                                "Load [{}, {}] {} ZaoaiLabels",
+                                SPECTROGRAM_WIDTH
+                                    * SPECTROGRAM_HEIGHT,
+                                2,
+                                zaoai_label_loader.len()
+                            ))
+                            .clicked()
+                        {
+                            let zaoai_labels =
+                                zaoai_label_loader
+                                    .load_zaoai_labels()
+                                    .expect(
+                                        "failed to load zaoai_labels",
+                                    );
+                            *state_ctx.training_data =
+                                TrainingData::Virtual(
+                                    VirtualTrainingDataset::new(
+                                        PathBuf::from(
+                                            zaoai_label_path,
+                                        ),
+                                        zaoai_labels,
+                                        [
+                                            SPECTROGRAM_WIDTH,
+                                            SPECTROGRAM_HEIGHT,
+                                        ],
+                                    ),
+                                );
+                        }
+
+                        let name_label =
+                            ui.label("Resize");
+                        if ui
+                            .text_edit_singleline(
+                                &mut self.resize_text,
+                            )
+                            .labelled_by(name_label.id)
+                            .lost_focus()
+                        {
+                            self.cached_resize_input_dim =
+                                self.resize_text
+                                    .split(|c| {
+                                        c == ',' || c == ' '
+                                    })
+                                    .filter_map(|s| {
+                                        s.parse().ok()
+                                    })
+                                    .collect();
                         }
                     });
                 }
-
             });
 
-        if self.cached_resize_input_dim.len() >= 2
-        {
-            if state_ctx.training_data.get_in_out_dimensions().0 != (self.cached_resize_input_dim[0] * self.cached_resize_input_dim[1])
+        if self.cached_resize_input_dim.len() >= 2 {
+            if state_ctx.training_data.get_in_out_dimensions().0
+                != (self.cached_resize_input_dim[0] * self.cached_resize_input_dim[1])
             {
-                match state_ctx.training_data
-                {
-                    TrainingData::Physical(_training_dataset) => {},
+                match state_ctx.training_data {
+                    TrainingData::Physical(_) => {}
+
                     TrainingData::Virtual(virtual_training_dataset) => {
-                        log::info!("Set virtual trainingdata desiered dim: [{},{}]", self.cached_resize_input_dim[0], self.cached_resize_input_dim[1]);
-                        virtual_training_dataset.set_desiered_input_dim([self.cached_resize_input_dim[0], self.cached_resize_input_dim[1]]);
-                    },
+                        log::info!(
+                            "Set virtual trainingdata desiered dim: [{},{}]",
+                            self.cached_resize_input_dim[0],
+                            self.cached_resize_input_dim[1]
+                        );
+                        virtual_training_dataset.set_desiered_input_dim([
+                            self.cached_resize_input_dim[0],
+                            self.cached_resize_input_dim[1],
+                        ]);
+                    }
                 }
             }
         }
@@ -873,8 +1269,7 @@ pub struct WindowTrainingSessionCtx<'a> {
 }
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct WindowTrainingSession {
-}
+pub struct WindowTrainingSession {}
 
 impl<'a> DrawableWindow<'a> for WindowTrainingSession {
     type Ctx = WindowTrainingSessionCtx<'a>;
@@ -929,40 +1324,54 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                     );
                     ui.label("Learn Rate");
                 });
-                
                 let before = state_ctx.training_session.learn_rate_decay.clone();
                 let text_none = "None";
                 let _combo_response = egui::ComboBox::from_label("Decay")
-                    .selected_text(state_ctx.training_session.learn_rate_decay.as_ref().and_then(|f|Some(f.to_string())).unwrap_or(text_none.to_string()))
+                    .selected_text(
+                        state_ctx
+                            .training_session
+                            .learn_rate_decay
+                            .as_ref()
+                            .map(|f| f.to_string())
+                            .unwrap_or(text_none.to_string()),
+                    )
                     .show_ui(ui, |ui| {
                         for variant in [
-                                None,
-                                Some(FloatDecay::Exponential { rate: 0.05 }),
-                                Some(FloatDecay::StepDecay {
-                                    step_size: 1,
-                                    decay_factor: 0.5,
-                                }),
-                                Some(FloatDecay::Linear {
-                                    max_steps: state_ctx.training_session.num_epochs,
-                                    end_rate: 0.001,
-                                }),
-                                Some(FloatDecay::Cosine {
-                                    max_steps: state_ctx.training_session.num_epochs,
-                                    min_val: 0.001,
-                                }),
+                            None,
+                            Some(FloatDecay::Exponential { rate: 0.05 }),
+                            Some(FloatDecay::StepDecay {
+                                step_size: 1,
+                                decay_factor: 0.5,
+                            }),
+                            Some(FloatDecay::Linear {
+                                max_steps: state_ctx.training_session.num_epochs,
+                                end_rate: 0.001,
+                            }),
+                            Some(FloatDecay::Cosine {
+                                max_steps: state_ctx.training_session.num_epochs,
+                                min_val: 0.001,
+                            }),
                         ] {
                             ui.selectable_value(
                                 &mut state_ctx.training_session.learn_rate_decay,
                                 variant.clone(),
-                                variant.and_then(|f|Some(f.to_string())).unwrap_or(text_none.to_string()),
+                                variant
+                                    .map(|f| f.to_string())
+                                    .unwrap_or(text_none.to_string()),
                             );
                         }
                     });
                 let _changed = before != state_ctx.training_session.learn_rate_decay;
 
-                state_ctx.training_session.learn_rate_decay.as_mut().and_then(|f|{f.set_max_steps(state_ctx.training_session.num_epochs); Some(f)});
+                state_ctx
+                    .training_session
+                    .learn_rate_decay
+                    .as_mut()
+                    .and_then(|f| {
+                        f.set_max_steps(state_ctx.training_session.num_epochs);
+                        Some(f)
+                    });
                 let decay = &state_ctx.training_session.learn_rate_decay;
-                
 
                 let slider_enabled = decay.as_ref().map_or(false, |d| d.uses_decay_rate());
 
@@ -991,30 +1400,28 @@ impl<'a> DrawableWindow<'a> for WindowTrainingSession {
                 });
 
                 ui.horizontal(|ui| {
-                    let _slider = ui.add(Slider::new(&mut state_ctx.training_session.validation_each_epoch,0..=5)
+                    let _slider = ui.add(
+                        Slider::new(&mut state_ctx.training_session.validation_each_epoch, 0..=5)
                             .clamping(egui::SliderClamping::Never)
-                            .integer());
+                            .integer(),
+                    );
 
                     ui.label("Validate each epoch");
                 });
 
-
                 if *state_ctx.app_state == AppState::Training {
                     if ui.button("Abort Training").clicked() {
                         log::info!("Interupting Training");
-                        if let Err(e) = state_ctx.training_thread.send_abort_training()
-                        {
+                        if let Err(e) = state_ctx.training_thread.send_abort_training() {
                             log::error!("Failed to send abort training signal: {:?}", e);
                         }
                         state_ctx.training_session.set_state(TrainingState::Finish);
                     }
-                } else {
-                    if ui.button("Begin Training").clicked() {
-                        *state_ctx.app_state = AppState::Training;
-                        state_ctx
-                            .training_session
-                            .set_state(TrainingState::StartTraining);
-                    }
+                } else if ui.button("Begin Training").clicked() {
+                    *state_ctx.app_state = AppState::Training;
+                    state_ctx
+                        .training_session
+                        .set_state(TrainingState::StartTraining);
                 }
             })
     }
@@ -1025,15 +1432,14 @@ impl WindowTrainingSession {}
 pub fn generate_accuracy_plotpoints_from_training_thread_payloads(
     payloads: &Vec<TrainingThreadPayload>,
 ) -> Vec<PlotPoint> {
-    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+    let mut result = Vec::with_capacity(payloads.len());
 
     for payload in payloads {
         let accuracy = payload.training_metadata.calc_accuracy();
-        let plotpoint = PlotPoint {
+        result.push(PlotPoint {
             x: payload.payload_index as f64,
             y: accuracy,
-        };
-        result.push(plotpoint);
+        });
     }
     result
 }
@@ -1041,30 +1447,28 @@ pub fn generate_accuracy_plotpoints_from_training_thread_payloads(
 pub fn generate_cost_plotpoints_from_training_thread_payloads(
     payloads: &Vec<TrainingThreadPayload>,
 ) -> Vec<PlotPoint> {
-    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+    let mut result = Vec::with_capacity(payloads.len());
 
     for payload in payloads {
         let cost = payload.training_metadata.cost;
-        let plotpoint = PlotPoint {
+        result.push(PlotPoint {
             x: payload.payload_index as f64,
             y: cost as f64,
-        };
-        result.push(plotpoint);
+        });
     }
     result
 }
 pub fn generate_last_loss_plotpoints_from_training_thread_payloads(
     payloads: &Vec<TrainingThreadPayload>,
 ) -> Vec<PlotPoint> {
-    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+    let mut result = Vec::with_capacity(payloads.len());
 
     for payload in payloads {
-        let learn_rate = payload.training_metadata.last_loss;
-        let plotpoint = PlotPoint {
+        let last_loss = payload.training_metadata.last_loss;
+        result.push(PlotPoint {
             x: payload.payload_index as f64,
-            y: learn_rate as f64, 
-        };
-        result.push(plotpoint);
+            y: last_loss as f64,
+        });
     }
     result
 }
@@ -1072,30 +1476,28 @@ pub fn generate_last_loss_plotpoints_from_training_thread_payloads(
 pub fn generate_learn_rate_plotpoints_from_training_thread_payloads(
     payloads: &Vec<TrainingThreadPayload>,
 ) -> Vec<PlotPoint> {
-    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+    let mut result = Vec::with_capacity(payloads.len());
 
     for payload in payloads {
         let learn_rate = payload.training_metadata.learn_rate;
-        let plotpoint = PlotPoint {
+        result.push(PlotPoint {
             x: payload.payload_index as f64,
-            y: learn_rate as f64, 
-        };
-        result.push(plotpoint);
+            y: learn_rate as f64,
+        });
     }
     result
 }
 pub fn generate_f1_score_plotpoints_from_training_thread_payloads(
     payloads: &Vec<TrainingThreadPayload>,
 ) -> Vec<PlotPoint> {
-    let mut result: Vec<PlotPoint> = Vec::with_capacity(payloads.len());
+    let mut result = Vec::with_capacity(payloads.len());
 
     for payload in payloads {
-        let learn_rate = payload.training_metadata.calc_f1_score();
-        let plotpoint = PlotPoint {
+        let f1 = payload.training_metadata.calc_f1_score();
+        result.push(PlotPoint {
             x: payload.payload_index as f64,
-            y: learn_rate as f64, 
-        };
-        result.push(plotpoint);
+            y: f1 as f64,
+        });
     }
     result
 }
