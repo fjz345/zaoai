@@ -296,8 +296,10 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         device: B::Device,
     ) -> Self {
         let mut layers = Vec::with_capacity(graph_structure.hidden_layers.len() + 1);
+
         let mut prev_out_size = graph_structure.input_nodes;
 
+        // Hidden layers
         for &nodes in &graph_structure.hidden_layers {
             layers.push(LayerGPU::new(
                 prev_out_size,
@@ -307,6 +309,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
                 bias_init,
                 &device,
             ));
+
             prev_out_size = nodes;
         }
 
@@ -316,6 +319,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             layer_activation.clone()
         };
 
+        // Output layer
         layers.push(LayerGPU::new(
             prev_out_size,
             graph_structure.output_nodes,
@@ -331,7 +335,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             graph_structure,
             layers,
             last_test_results: None,
-            is_softmax_output: false,
+            is_softmax_output,
             device,
             layer_activation_function: layer_activation,
             cost_fn,
@@ -485,26 +489,26 @@ impl<B: Backend> NeuralNetworkGPU<B> {
 
         let (predicted_tensor, cache) = self.forward_cache_batched(&input_tensor);
         let mut d_a = predicted_tensor.clone() - expected_tensor;
-        let lr = learn_rate as f32 / batch_size as f32;
+        let lr: f32 = learn_rate as f32 / batch_size as f32;
 
         for layer_idx in (0..self.layers.len()).rev() {
             let layer_cache = &cache[layer_idx];
-            let layer = &self.layers[layer_idx];
+            let weights = self.layers[layer_idx].weights.clone();
+            let activation_type = self.layers[layer_idx].activation_type.clone();
 
             let d_z = if layer_idx == self.layers.len() - 1 && self.is_softmax_output {
                 d_a.clone()
             } else {
-                d_a.clone()
-                    * LayerGPU::<B>::activation_derivative(&layer_cache.z, &layer.activation_type)
+                d_a.clone() * LayerGPU::<B>::activation_derivative(&layer_cache.z, &activation_type)
             };
 
-            let (d_weights, d_biases, d_input) = layer.backward_linear(&layer_cache.input, &d_z);
+            let input_t = layer_cache.input.clone().transpose();
+            let d_weights = input_t.matmul(d_z.clone());
+            let d_biases = d_z.clone().sum_dim(0);
+            let d_input = d_z.matmul(weights.clone().transpose());
 
-            let new_weights = layer.weights.clone() - (d_weights * lr);
-            let new_biases = layer.biases.clone() - (d_biases * lr);
-
-            self.layers[layer_idx].weights = new_weights;
-            self.layers[layer_idx].biases = new_biases;
+            self.layers[layer_idx].weights = weights - (d_weights * lr);
+            self.layers[layer_idx].biases = self.layers[layer_idx].biases.clone() - (d_biases * lr);
 
             d_a = d_input;
         }
@@ -765,8 +769,8 @@ Last Test Results: {}\n",
 
 fn softmax<B: Backend>(input: Tensor<B, 2>) -> Tensor<B, 2> {
     let max_values = input.clone().max_dim(1);
-    let shift = input - max_values;
-    let exp = shift.exp();
+    let shifted = input - max_values;
+    let exp = shifted.exp();
     let sum = exp.clone().sum_dim(1);
     exp / sum
 }
@@ -782,11 +786,13 @@ pub fn test_nn_gpu<B: Backend>(
         return Err("Test data is empty".into());
     }
 
-    let mut total_cost = 0.0;
-    let mut correct = 0;
+    let mut total_cost: LayerTypeCPU = 0.0;
+    let mut correct: usize = 0;
+
     let mut results = Vec::with_capacity(data.len());
 
     let batch_size = 256;
+
     let in_nodes = nn.graph_structure.input_nodes;
     let out_nodes = nn.graph_structure.output_nodes;
 
@@ -798,9 +804,18 @@ pub fn test_nn_gpu<B: Backend>(
         }
 
         let current_batch_size = chunk.len();
+
         let mut flat_inputs = Vec::with_capacity(current_batch_size * in_nodes);
 
         for dp in chunk {
+            if dp.inputs.len() != in_nodes {
+                return Err(format!(
+                    "Expected {} input nodes, got {}",
+                    in_nodes,
+                    dp.inputs.len()
+                ));
+            }
+
             flat_inputs.extend(dp.inputs.iter().map(|&x| x as f32));
         }
 
@@ -810,7 +825,6 @@ pub fn test_nn_gpu<B: Backend>(
         );
 
         let mut current = input_tensor;
-
         for layer in &nn.layers {
             current = layer.forward(&current);
         }
@@ -831,9 +845,11 @@ pub fn test_nn_gpu<B: Backend>(
                 .collect();
 
             let cost = nn.cost_fn.call(&pred, &dp.expected_outputs);
-            total_cost += cost as f32;
+
+            total_cost += cost;
 
             let eval = is_correct_fn.evaluate(&pred, &dp.expected_outputs);
+
             if matches!(
                 eval,
                 ConfusionCategory::TruePositive | ConfusionCategory::TrueNegative
@@ -845,13 +861,19 @@ pub fn test_nn_gpu<B: Backend>(
         }
     }
 
-    let accuracy = (correct as f32 / data.len() as f32) * 100.0;
-    let avg_cost = total_cost / data.len() as f32;
+    let total = data.len();
+    let accuracy = if total == 0 {
+        0.0
+    } else {
+        correct as LayerTypeCPU / total as LayerTypeCPU
+    };
+
+    let avg_cost = total_cost / total as LayerTypeCPU;
 
     Ok(TestResults {
         cost: avg_cost,
         accuracy: Some(accuracy),
-        num_correct: correct,
+        num_correct: correct as i32,
         results,
     })
 }

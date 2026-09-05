@@ -517,6 +517,24 @@ impl NeuralNetworkCPU {
             }
             std::mem::swap(&mut pingpong.current, &mut pingpong.next);
         }
+        if self.is_softmax_output {
+            let max_value = pingpong
+                .current
+                .iter()
+                .copied()
+                .fold(LayerTypeCPU::NEG_INFINITY, LayerTypeCPU::max);
+
+            let mut sum = 0.0;
+            for value in pingpong.current.iter_mut() {
+                *value = (*value - max_value).exp();
+                sum += *value;
+            }
+            if sum > 0.0 {
+                for value in pingpong.current.iter_mut() {
+                    *value /= sum;
+                }
+            }
+        }
         // For simplicity, keep input at current, output at next
         std::mem::swap(&mut pingpong.current, &mut pingpong.next);
     }
