@@ -166,8 +166,8 @@ impl AIResultMetadata {
         learn_rate: LayerTypeCPU,
     ) -> Self {
         Self {
-            cost: cost,
-            last_loss: last_loss,
+            cost,
+            last_loss,
             num_merged: 1,
             dataset_usage,
             learn_rate,
@@ -175,13 +175,13 @@ impl AIResultMetadata {
         }
     }
 
-    pub fn from_accuracy(accuracy: f64, total_preds: usize) -> Self {
-        let correct = (accuracy * total_preds as f64).round() as usize;
-        let incorrect = total_preds - correct;
+    pub fn from_correct(correct: usize, total: usize) -> Self {
+        let correct = correct.min(total);
+        let incorrect = total.saturating_sub(correct);
 
-        // We'll fake these with symmetry
         let true_positives = correct / 2;
         let true_negatives = correct - true_positives;
+
         let false_positives = incorrect / 2;
         let false_negatives = incorrect - false_positives;
 
@@ -196,6 +196,17 @@ impl AIResultMetadata {
         }
     }
 
+    pub fn from_accuracy(accuracy: f64, total_preds: usize) -> Self {
+        assert!(accuracy <= 1.0, "Accuracy must be in the range 0.0..=1.0");
+        assert!(accuracy >= 0.0, "Accuracy must be in the range 0.0..=1.0");
+        if total_preds == 0 {
+            return Self::from_correct(0, 0);
+        }
+        let accuracy = accuracy.clamp(0.0, 1.0);
+        let correct = (accuracy * total_preds as f64).round() as usize;
+        Self::from_correct(correct, total_preds)
+    }
+
     pub fn merge(&mut self, other: &AIResultMetadata) -> &mut Self {
         assert_eq!(
             self.dataset_usage, other.dataset_usage,
@@ -203,14 +214,18 @@ impl AIResultMetadata {
         );
 
         self.num_merged += 1;
+
         self.true_positives += other.true_positives;
         self.true_negatives += other.true_negatives;
         self.false_positives += other.false_positives;
         self.false_negatives += other.false_negatives;
+
         self.last_loss = other.last_loss;
         self.learn_rate = other.learn_rate;
+
         self.cost = (self.cost * (self.num_merged - 1) as LayerTypeCPU + other.cost)
             / self.num_merged as LayerTypeCPU;
+
         self
     }
 
@@ -223,37 +238,68 @@ impl AIResultMetadata {
     }
 
     pub fn calc_accuracy(&self) -> f64 {
-        (self.true_positives + self.true_negatives) as f64
-            / (self.positive_instances() + self.negative_instances()) as f64
+        let total = self.positive_instances() + self.negative_instances();
+        if total == 0 {
+            return 0.0;
+        }
+        let correct = self.true_positives + self.true_negatives;
+        (correct as f64 / total as f64).clamp(0.0, 1.0)
     }
 
     pub fn calc_error_rate(&self) -> f64 {
-        (self.false_positives + self.false_negatives) as f64
-            / (self.positive_instances() + self.negative_instances()) as f64
+        let total = self.positive_instances() + self.negative_instances();
+        if total == 0 {
+            return 0.0;
+        }
+        let incorrect = self.false_positives + self.false_negatives;
+        (incorrect as f64 / total as f64).clamp(0.0, 1.0)
     }
 
     pub fn calc_true_positive_rate(&self) -> f64 {
-        self.true_positives as f64 / (self.true_positives + self.false_positives) as f64
+        let denominator = self.true_positives + self.false_positives;
+        if denominator == 0 {
+            return 0.0;
+        }
+        self.true_positives as f64 / denominator as f64
     }
 
     pub fn calc_true_negative_rate(&self) -> f64 {
-        self.true_negatives as f64 / (self.false_positives + self.false_negatives) as f64
+        let denominator = self.false_positives + self.false_negatives;
+        if denominator == 0 {
+            return 0.0;
+        }
+        self.true_negatives as f64 / denominator as f64
     }
 
     pub fn calc_positive_liklihood(&self) -> f64 {
-        self.calc_true_positive_rate() as f64 / (1.0 - self.calc_true_negative_rate()) as f64
+        let false_positive_rate = 1.0 - self.calc_true_negative_rate();
+        if false_positive_rate == 0.0 {
+            return 0.0;
+        }
+        self.calc_true_positive_rate() / false_positive_rate
     }
 
     pub fn calc_negative_liklihood(&self) -> f64 {
-        self.calc_true_positive_rate() as f64 / self.calc_true_negative_rate() as f64
+        let true_negative_rate = self.calc_true_negative_rate();
+        if true_negative_rate == 0.0 {
+            return 0.0;
+        }
+        self.calc_true_positive_rate() / true_negative_rate
     }
 
     pub fn calc_f1_score(&self) -> f64 {
-        let precision =
-            self.true_positives as f64 / (self.true_positives + self.false_positives) as f64;
-        let recall =
-            self.true_positives as f64 / (self.true_positives + self.false_negatives) as f64;
-        2.0 * (precision * recall) / (precision + recall)
+        let precision_denominator = self.true_positives + self.false_positives;
+        let recall_denominator = self.true_positives + self.false_negatives;
+        if precision_denominator == 0 || recall_denominator == 0 {
+            return 0.0;
+        }
+        let precision = self.true_positives as f64 / precision_denominator as f64;
+        let recall = self.true_positives as f64 / recall_denominator as f64;
+        let denominator = precision + recall;
+        if denominator == 0.0 {
+            return 0.0;
+        }
+        2.0 * (precision * recall) / denominator
     }
 }
 

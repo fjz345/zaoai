@@ -144,6 +144,7 @@ impl ActivationFunctionType {
             Self::Softmax => {
                 unreachable!("Softmax needs full vector context, use apply_softmax()")
             }
+            Self::Linear => x,
         }
     }
 
@@ -154,6 +155,7 @@ impl ActivationFunctionType {
             Self::Softmax => {
                 unreachable!("Softmax derivative needs vector context")
             }
+            Self::Linear => f32x8::splat(1.0),
         }
     }
 }

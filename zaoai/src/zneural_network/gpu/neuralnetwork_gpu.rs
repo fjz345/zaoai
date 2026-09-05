@@ -292,6 +292,7 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         dropout_prob: Option<LayerTypeCPU>,
         weight_init: WeightInit,
         bias_init: BiasInit,
+        is_softmax_output: bool,
         device: B::Device,
     ) -> Self {
         let mut layers = Vec::with_capacity(graph_structure.hidden_layers.len() + 1);
@@ -309,10 +310,16 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             prev_out_size = nodes;
         }
 
+        let final_activation = if is_softmax_output {
+            ActivationFunctionType::Linear
+        } else {
+            layer_activation.clone()
+        };
+
         layers.push(LayerGPU::new(
             prev_out_size,
             graph_structure.output_nodes,
-            layer_activation.clone(),
+            final_activation,
             weight_init,
             bias_init,
             &device,
@@ -486,7 +493,6 @@ impl<B: Backend> NeuralNetworkGPU<B> {
 
             let d_z = if layer_idx == self.layers.len() - 1 && self.is_softmax_output {
                 d_a.clone()
-                    * LayerGPU::<B>::activation_derivative(&layer_cache.z, &layer.activation_type)
             } else {
                 d_a.clone()
                     * LayerGPU::<B>::activation_derivative(&layer_cache.z, &layer.activation_type)
@@ -646,11 +652,10 @@ impl<B: Backend> NeuralNetworkGPU<B> {
             let mut test_nn_and_send_payload =
                 |tx: &Sender<TrainingThreadPayload>, data: &[DataPoint], payload_index: usize| {
                     if let Ok(test_results) = test_nn_gpu(self, data, is_correct_fn, None, None) {
-                        let mut result_metadata = AIResultMetadata::from_accuracy(
-                            test_results.accuracy.unwrap_or_default() as f64,
+                        let mut result_metadata = AIResultMetadata::from_correct(
+                            test_results.num_correct.max(0) as usize,
                             test_results.results.len(),
                         );
-
                         result_metadata.cost = test_results.cost;
                         result_metadata.last_loss = test_results.cost;
                         result_metadata.learn_rate = learn_rate;

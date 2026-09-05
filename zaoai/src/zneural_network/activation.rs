@@ -13,6 +13,7 @@ pub enum ActivationFunctionType {
     ReLU,
     Sigmoid,
     Softmax,
+    Linear,
 }
 
 impl ActivationFunctionType {
@@ -24,6 +25,7 @@ impl ActivationFunctionType {
             ActivationFunctionType::Softmax => {
                 unreachable!("Softmax needs full vector context, use apply_softmax()")
             }
+            ActivationFunctionType::Linear => x,
         }
     }
     // Used by simd
@@ -34,6 +36,7 @@ impl ActivationFunctionType {
             ActivationFunctionType::Softmax => {
                 unreachable!("Softmax derivative needs vector context")
             }
+            ActivationFunctionType::Linear => 1.0,
         }
     }
 }
@@ -47,6 +50,7 @@ impl std::fmt::Display for ActivationFunctionType {
                 ActivationFunctionType::ReLU => "ReLU",
                 ActivationFunctionType::Sigmoid => "Sigmoid",
                 ActivationFunctionType::Softmax => "Softmax",
+                ActivationFunctionType::Linear => "Linear",
                 // ActivationFunctionType::Tanh => "Tanh",
                 // ActivationFunctionType::LeakyReLU => "Leaky ReLU",
                 // ActivationFunctionType::Softmax => "Softmax",

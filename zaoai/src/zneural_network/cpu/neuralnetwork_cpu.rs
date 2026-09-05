@@ -133,6 +133,7 @@ impl NeuralNetworkCPU {
         dropout_prob: Option<LayerTypeCPU>,
         weight_init: WeightInit,
         bias_init: BiasInit,
+        is_softmax_output: bool,
     ) -> Self {
         let mut layers: Vec<Layer> = Vec::new();
         let mut prev_out_size = graph_structure.input_nodes;
@@ -152,11 +153,17 @@ impl NeuralNetworkCPU {
             prev_out_size = *i;
         }
 
+        let output_activation = if is_softmax_output {
+            ActivationFunctionType::Linear
+        } else {
+            layer_activation
+        };
+
         // Create Output layer
         layers.push(Layer::new(
             prev_out_size,
             graph_structure.output_nodes,
-            layer_activation,
+            output_activation,
             None,
             weight_init,
             bias_init,
@@ -174,7 +181,7 @@ impl NeuralNetworkCPU {
             last_test_results: None,
             layer_learn_data,
             version: Self::VERSION,
-            is_softmax_output: false,
+            is_softmax_output: is_softmax_output,
             layer_activation_function: layer_activation,
             cost_fn: cost_fn,
         }

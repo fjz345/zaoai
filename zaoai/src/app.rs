@@ -491,6 +491,7 @@ impl ZaoaiApp {
                 Some(self.window_data.ai_dropout_prob),
                 self.window_data.ai_weight_init,
                 self.window_data.ai_bias_init,
+                self.window_data.ai_use_softmax_output,
             ));
         }
 
@@ -509,6 +510,7 @@ impl ZaoaiApp {
         //         self.window_data.ai_activation_function,
         //         self.window_data.ai_cost_fn,
         //         Some(self.window_data.ai_dropout_prob),
+        // self.window_data.ai_use_softmax_output,
         //         device.clone(),
         //     )
         //     .expect("Failed to create NeuralNetworkGPU"),
@@ -530,6 +532,7 @@ impl ZaoaiApp {
                 Some(self.window_data.ai_dropout_prob),
                 self.window_data.ai_weight_init,
                 self.window_data.ai_bias_init,
+                self.window_data.ai_use_softmax_output,
                 device.clone(),
             ));
             self.training_session.set_nn(self.ai.as_ref().unwrap());
