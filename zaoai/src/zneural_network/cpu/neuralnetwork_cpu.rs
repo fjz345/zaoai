@@ -663,6 +663,7 @@ impl NeuralNetworkCPU {
         let raw_bytes = self.get_parameters_num() * self.get_parameters_unit_size();
         let print_string: String = format!(
             "\
+        Type: CPU\n\
         Graph Structure: {}\n\
         Parameters: {}\n\
         Raw Bytes: {}\n\

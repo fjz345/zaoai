@@ -730,7 +730,6 @@ impl<B: Backend> NeuralNetworkGPU<B> {
 
     fn format_count(n: usize) -> String {
         let n = n as f64;
-
         if n >= 1e12 {
             format!("{:.1}T", n / 1e12).replace(".0", "")
         } else if n >= 1e9 {
@@ -744,26 +743,49 @@ impl<B: Backend> NeuralNetworkGPU<B> {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        let last_test_result: Option<&TestResults> = self.last_test_results.as_ref();
+    fn format_bytes(bytes: usize) -> String {
+        const KIB: f64 = 1024.0;
+        const MIB: f64 = KIB * 1024.0;
+        const GIB: f64 = MIB * 1024.0;
+        const TIB: f64 = GIB * 1024.0;
 
-        let last_test_result_string = if let Some(res) = last_test_result {
-            format!("{}", res)
+        let bytes = bytes as f64;
+
+        if bytes >= TIB {
+            format!("{:.1} TiB", bytes / TIB).replace(".0", "")
+        } else if bytes >= GIB {
+            format!("{:.1} GiB", bytes / GIB).replace(".0", "")
+        } else if bytes >= MIB {
+            format!("{:.1} MiB", bytes / MIB).replace(".0", "")
+        } else if bytes >= KIB {
+            format!("{:.1} KiB", bytes / KIB).replace(".0", "")
+        } else {
+            format!("{} B", bytes as usize)
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        let last_test_result_string = if let Some(last_test_results) = &self.last_test_results {
+            format!("{}", last_test_results)
         } else {
             "".to_string()
         };
 
-        format!(
+        let raw_bytes = self.get_parameters_num() * self.get_parameters_unit_size();
+        let print_string: String = format!(
             "\
-Graph Structure: {}\n\
-Parameters: {}\n\
-Raw Bytes: {}\n\
-Last Test Results: {}\n",
+        Type: GPU\n\
+        Graph Structure: {}\n\
+        Parameters: {}\n\
+        Raw Bytes: {}\n\
+        Last Test Results: {}\n",
             self.graph_structure.to_string(),
             Self::format_count(self.get_parameters_num()),
-            self.get_parameters_num() * self.get_parameters_unit_size(),
+            Self::format_bytes(raw_bytes),
             last_test_result_string
-        )
+        );
+
+        print_string
     }
 }
 

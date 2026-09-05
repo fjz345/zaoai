@@ -22,7 +22,6 @@ use crate::{
     },
 };
 
-#[cfg(feature = "gpu")]
 use crate::gpu::neuralnetwork_gpu::NeuralNetworkGPU;
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

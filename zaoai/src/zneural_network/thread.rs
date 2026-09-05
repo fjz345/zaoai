@@ -42,27 +42,38 @@ pub struct TrainingThreadController {
 
 impl TrainingThreadController {
     pub fn begin_training(&mut self, training_session: &TrainingSession) -> bool {
-        if let Some(nn) = training_session.nn.as_ref() {
-            let mut nn = nn.clone();
-            let training_data = training_session.training_data.clone();
-            let num_epochs = training_session.num_epochs;
-            let batch_size = training_session.batch_size;
-            let learn_rate = training_session.learn_rate;
-            let learn_rate_decay = training_session.learn_rate_decay.clone();
-            let learn_rate_decay_rate = training_session.learn_rate_decay_rate;
-            let is_correct_fn = training_session.is_correct_fn;
-            let validation_each_epoch = training_session.validation_each_epoch;
+        let nn = match training_session.nn.as_ref() {
+            Some(nn) => nn.clone(),
+            None => {
+                log::error!("begin_training failed, no NN");
+                return false;
+            }
+        };
 
-            let (tx_nn, rx_nn) = mpsc::channel();
-            let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
-            let (tx_validation_metadata, rx_validation_metadata) = mpsc::channel();
-            let (tx_abort, rx_abort) = mpsc::channel();
+        let training_data = training_session.training_data.clone();
+        let num_epochs = training_session.num_epochs;
+        let batch_size = training_session.batch_size;
+        let learn_rate = training_session.learn_rate;
+        let learn_rate_decay = training_session.learn_rate_decay.clone();
+        let learn_rate_decay_rate = training_session.learn_rate_decay_rate;
+        let is_correct_fn = training_session.is_correct_fn;
+        let validation_each_epoch = training_session.validation_each_epoch;
 
-            self.start_time = Some(Instant::now());
-            let training_thread = std::thread::spawn(move || {
+        let (tx_nn, rx_nn): (Sender<NeuralNetworkType>, Receiver<NeuralNetworkType>) =
+            mpsc::channel();
+
+        let (tx_training_metadata, rx_training_metadata) = mpsc::channel();
+        let (tx_validation_metadata, rx_validation_metadata) = mpsc::channel();
+        let (tx_abort, rx_abort) = mpsc::channel();
+
+        self.start_time = Some(Instant::now());
+
+        let training_thread = match nn {
+            NeuralNetworkType::CPU(mut neural_network_cpu) => std::thread::spawn(move || {
                 let training_data_vec = training_data.training_split();
                 let validation_data_vec = training_data.validation_split();
-                nn.learn(
+
+                neural_network_cpu.learn(
                     &training_data_vec[..],
                     &validation_data_vec[..],
                     num_epochs,
@@ -77,25 +88,47 @@ impl TrainingThreadController {
                     validation_each_epoch,
                 );
 
-                if let Err(e) = tx_nn.send(nn) {
-                    log::error!("Failed to send neural network through channel {}", e);
+                if let Err(e) = tx_nn.send(NeuralNetworkType::CPU(neural_network_cpu)) {
+                    log::error!("Failed to send neural network through channel: {}", e);
                 }
-            });
+            }),
 
-            self.rx_neuralnetwork = Some(rx_nn);
-            self.rx_training_payload = Some(rx_training_metadata);
-            self.rx_validation_payload = Some(rx_validation_metadata);
-            self.tx_abort = Some(tx_abort);
-            self.payload_training_buffer = Vec::with_capacity(num_epochs);
-            self.payload_validation_buffer = Vec::with_capacity(num_epochs);
-            self.handle = Some(training_thread);
+            NeuralNetworkType::GPU(mut neural_network_gpu) => std::thread::spawn(move || {
+                let training_data_vec = training_data.training_split();
+                let validation_data_vec = training_data.validation_split();
 
-            return true;
-        } else {
-            log::error!("begin_training failed, no NN");
-        }
+                neural_network_gpu.learn(
+                    &training_data_vec[..],
+                    &validation_data_vec[..],
+                    num_epochs,
+                    batch_size,
+                    learn_rate,
+                    learn_rate_decay,
+                    learn_rate_decay_rate,
+                    Some(&tx_training_metadata),
+                    Some(&tx_validation_metadata),
+                    is_correct_fn,
+                    Some(|| rx_abort.try_recv().is_ok()),
+                    validation_each_epoch,
+                );
 
-        false
+                if let Err(e) = tx_nn.send(NeuralNetworkType::GPU(neural_network_gpu)) {
+                    log::error!("Failed to send neural network through channel: {}", e);
+                }
+            }),
+        };
+
+        self.rx_neuralnetwork = Some(rx_nn);
+        self.rx_training_payload = Some(rx_training_metadata);
+        self.rx_validation_payload = Some(rx_validation_metadata);
+        self.tx_abort = Some(tx_abort);
+
+        self.payload_training_buffer = Vec::with_capacity(num_epochs + 1);
+        self.payload_validation_buffer = Vec::with_capacity(num_epochs + 1);
+
+        self.handle = Some(training_thread);
+
+        true
     }
 
     pub fn training_in_progress(&self) -> bool {

@@ -29,6 +29,8 @@
 ### Fix bugs
 - TrainingState::Training but could not get Training Payload Reciever on training finish
 - Don't invalidate NN when changing stuff, only do that when clicking delete
+- GPU softmax
+- remove Clone from NeuralNetwork
 ### Support Audio Formats
 - mkv
 - mp4?

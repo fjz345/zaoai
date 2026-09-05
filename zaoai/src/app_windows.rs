@@ -45,7 +45,6 @@ use zaoai_types::{
     },
 };
 
-#[cfg(feature = "gpu")]
 use crate::zneural_network::gpu::neuralnetwork_gpu::test_nn_gpu;
 
 pub trait DrawableWindow<'a> {
@@ -502,7 +501,10 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                     state_ctx
                         .ai
                         .as_ref()
-                        .map(|f| f.to_string())
+                        .map(|f| match f{
+                            NeuralNetworkType::CPU(neural_network_cpu) => neural_network_cpu.to_string(),
+                            NeuralNetworkType::GPU(neural_network_gpu) => neural_network_gpu.to_string(),
+                        })
                         .unwrap_or_default(),
                 );
 
@@ -558,7 +560,7 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                         lock.clone()
                     };
 
-                    let mut ai_clone = ai.clone();
+                    
                     ui.horizontal(|ui| {
                         let button_state =
                             TestButtonState::from_handles(
@@ -637,6 +639,10 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                                     .clone();
                                             let training_data_clone =
                                                 training_data.clone();
+                                            let mut ai_clone = match ai{
+                                                NeuralNetworkType::CPU(neural_network_cpu) => NeuralNetworkType::CPU(neural_network_cpu.clone()),
+                                                NeuralNetworkType::GPU(neural_network_gpu) => NeuralNetworkType::GPU(neural_network_gpu.clone()),
+                                            };
                                             self.test_nn_handle =
                                                 Some(
                                                     std::thread::spawn(
@@ -644,16 +650,18 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                                             log::trace!(
                                                                 "Test Thread test_nn spawned!"
                                                             );
+
+                                                             match ai_clone{
+                                                                NeuralNetworkType::CPU(mut neural_network_cpu) => {
+                                                                    let ai_max_nodes = neural_network_cpu.max_layer_nodes();
                                                             let pingpong =
                                                                 &mut NeuralNetworkPingPong::new(
-                                                                    ai_clone.max_layer_nodes(),
+                                                                   ai_max_nodes,
                                                                 );
-                                                            #[cfg(feature = "cpu")]
-                                                            #[cfg(not(feature = "gpu"))]
                                                             {
                                                                 use crate::zneural_network::cpu::neuralnetwork_cpu::test_nn_cpu;
                                                                 match test_nn_cpu(
-                                                                    &mut ai_clone,
+                                                                    &mut neural_network_cpu,
                                                                     &training_data_clone.test_split(),
                                                                     is_correct_fn,
                                                                     maybe_tx,
@@ -700,12 +708,11 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                                                     }
                                                                 }
                                                             }
-
-
-                                                            #[cfg(feature = "gpu")]
+                                                                },
+                                                                NeuralNetworkType::GPU(neural_network_gpu) => {
                                                             {
                                                                 match test_nn_gpu(
-                                                                    &ai_clone,
+                                                                    &neural_network_gpu,
                                                                     &training_data_clone.test_split(),
                                                                     is_correct_fn,
                                                                     maybe_tx,
@@ -755,7 +762,13 @@ impl<'a> DrawableWindow<'a> for WindowAi {
                                                                             );
                                                                     }
                                                                 }
-                                                            }
+                                                            }},
+                                                            };
+
+                                                            
+
+
+                                                            
                                                         },
                                                     ),
                                                 );

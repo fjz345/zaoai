@@ -13,7 +13,6 @@ use crate::{
     },
 };
 
-#[cfg(feature = "gpu")]
 use crate::gpu::neuralnetwork_gpu::NeuralNetworkGPU;
 
 // use candle_core::Device;
@@ -42,11 +41,31 @@ use crate::{
     },
 };
 
-#[cfg(feature = "gpu")]
-pub type NeuralNetworkType = NeuralNetworkGPU<burn::backend::Wgpu>;
-#[cfg(feature = "cpu")]
-#[cfg(not(feature = "gpu"))]
-pub type NeuralNetworkType = NeuralNetworkCPU;
+#[derive(Clone)]
+pub enum NeuralNetworkType {
+    CPU(NeuralNetworkCPU),
+    GPU(NeuralNetworkGPU<burn::backend::Wgpu>),
+}
+
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[derive(Debug, Default, Clone, Copy, bincode::Encode, bincode::Decode, PartialEq)]
+enum NeuralNetworkEnum {
+    #[default]
+    CPU,
+    GPU,
+}
+impl std::fmt::Display for NeuralNetworkEnum {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                NeuralNetworkEnum::CPU => "CPU",
+                NeuralNetworkEnum::GPU => "GPU",
+            }
+        )
+    }
+}
 
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct MenuWindowData {
@@ -65,6 +84,7 @@ pub struct MenuWindowData {
     pub training_dataset_split_thresholds_0: f64,
     pub training_dataset_split_thresholds_1: f64,
     // AI options
+    pub ai_neuralnetwork_type: NeuralNetworkEnum,
     pub ai_use_softmax_output: bool,
     pub ai_activation_function: ActivationFunctionType,
     pub ai_cost_fn: CostFunction,
@@ -204,6 +224,14 @@ impl eframe::App for ZaoaiApp {
                     }
                     TrainingState::StartTraining => {
                         if let Some(ai) = &self.ai {
+                            let graph_structure = match ai {
+                                NeuralNetworkType::CPU(neural_network_cpu) => {
+                                    neural_network_cpu.graph_structure.clone()
+                                }
+                                NeuralNetworkType::GPU(neural_network_gpu) => {
+                                    neural_network_gpu.graph_structure.clone()
+                                }
+                            };
                             if !self.training_thread.training_in_progress() {
                                 let training_dataset_dim =
                                     self.training_data.get_in_out_dimensions();
@@ -212,10 +240,8 @@ impl eframe::App for ZaoaiApp {
                                 self.training_session.nn = Some(ai.clone());
                                 self.training_session.is_correct_fn =
                                     self.window_data.ai_is_correct_fn;
-                                if (
-                                    ai.graph_structure.input_nodes,
-                                    ai.graph_structure.output_nodes,
-                                ) == training_dataset_dim
+                                if (graph_structure.input_nodes, graph_structure.output_nodes)
+                                    == training_dataset_dim
                                 {
                                     // Copy the session for TrainingThread to take care of
                                     if self.training_thread.begin_training(&self.training_session) {
@@ -224,7 +250,7 @@ impl eframe::App for ZaoaiApp {
                                         self.training_session.set_state(TrainingState::Idle);
                                     }
                                 } else {
-                                    log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", ai.graph_structure.input_nodes, ai.graph_structure.output_nodes, training_dataset_dim.0, training_dataset_dim.1);
+                                    log::error!("Cannot start training, dimension missmatch (NN: {}/{}) != (DP: {}/{})", graph_structure.input_nodes, graph_structure.output_nodes, training_dataset_dim.0, training_dataset_dim.1);
                                     self.training_session.set_state(TrainingState::Idle);
                                 }
                             } else {
@@ -357,12 +383,7 @@ impl Default for ZaoaiApp {
         let graph_structure = GraphStructure::new(&[2, 3, 2]);
         Self {
             state: AppState::Startup,
-            // ai: None,
-            #[cfg(feature = "gpu")]
-            ai: None::<NeuralNetworkGPU<burn::backend::Wgpu>>,
-            #[cfg(feature = "cpu")]
-            #[cfg(not(feature = "gpu"))]
-            ai: None::<NeuralNetworkCPU>,
+            ai: None,
             window_data: MenuWindowData {
                 graph_structure_string: graph_structure.to_string(),
                 show_training_graph: true,
@@ -382,6 +403,7 @@ impl Default for ZaoaiApp {
                 ai_weight_init: WeightInit::default(),
                 ai_bias_init: BiasInit::default(),
                 show_setup_presets: true,
+                ai_neuralnetwork_type: NeuralNetworkEnum::default(),
             },
             training_data: TrainingData::Physical(TrainingDataset::new(
                 &[DataPoint {
@@ -480,65 +502,66 @@ impl ZaoaiApp {
 
     fn setup_ai(&mut self, nn_structure: GraphStructure) {
         log::info!("setup_ai");
-        //CPU
-        #[cfg(feature = "cpu")]
-        #[cfg(not(feature = "gpu"))]
-        {
-            self.ai = Some(NeuralNetworkCPU::new(
-                nn_structure,
-                self.window_data.ai_activation_function,
-                self.window_data.ai_cost_fn,
-                Some(self.window_data.ai_dropout_prob),
-                self.window_data.ai_weight_init,
-                self.window_data.ai_bias_init,
-                self.window_data.ai_use_softmax_output,
-            ));
-        }
 
-        // //GPU - candle
-        // #[cfg(feature = "gpu")]
-        // {
-        // let device_result = Device::new_cuda(0);
-        // if let Err(e) = device_result {
-        //     log::error!("Failed to create CUDA device: {e}");
-        //     return;
-        // };
-        // let device = device_result.unwrap_or(Device::Cpu);
-        // self.ai = Some(
-        //     NeuralNetworkGPU::new(
-        //         nn_structure,
-        //         self.window_data.ai_activation_function,
-        //         self.window_data.ai_cost_fn,
-        //         Some(self.window_data.ai_dropout_prob),
-        // self.window_data.ai_use_softmax_output,
-        //         device.clone(),
-        //     )
-        //     .expect("Failed to create NeuralNetworkGPU"),
-        // );
-        // }
+        match self.window_data.ai_neuralnetwork_type {
+            NeuralNetworkEnum::CPU => {
+                self.ai = Some(NeuralNetworkType::CPU(NeuralNetworkCPU::new(
+                    nn_structure,
+                    self.window_data.ai_activation_function,
+                    self.window_data.ai_cost_fn,
+                    Some(self.window_data.ai_dropout_prob),
+                    self.window_data.ai_weight_init,
+                    self.window_data.ai_bias_init,
+                    self.window_data.ai_use_softmax_output,
+                )));
+            }
+            NeuralNetworkEnum::GPU => {
+                // //GPU - candle
+                // {
+                // let device_result = Device::new_cuda(0);
+                // if let Err(e) = device_result {
+                //     log::error!("Failed to create CUDA device: {e}");
+                //     return;
+                // };
+                // let device = device_result.unwrap_or(Device::Cpu);
+                // self.ai = Some(
+                //     NeuralNetworkGPU::new(
+                //         nn_structure,
+                //         self.window_data.ai_activation_function,
+                //         self.window_data.ai_cost_fn,
+                //         Some(self.window_data.ai_dropout_prob),
+                // self.window_data.ai_use_softmax_output,
+                //         device.clone(),
+                //     )
+                //     .expect("Failed to create NeuralNetworkGPU"),
+                // );
+                // }
 
-        // GPU - burn
-        #[cfg(feature = "gpu")]
-        {
-            use burn::backend::Wgpu;
-            use burn::prelude::Backend;
-            use burn_wgpu::WgpuDevice;
+                {
+                    use burn::backend::Wgpu;
+                    use burn::prelude::Backend;
+                    use burn_wgpu::WgpuDevice;
 
-            let device = WgpuDevice::default();
-            self.ai = Some(NeuralNetworkGPU::new(
-                nn_structure,
-                self.window_data.ai_activation_function,
-                self.window_data.ai_cost_fn,
-                Some(self.window_data.ai_dropout_prob),
-                self.window_data.ai_weight_init,
-                self.window_data.ai_bias_init,
-                self.window_data.ai_use_softmax_output,
-                device.clone(),
-            ));
-            self.training_session.set_nn(self.ai.as_ref().unwrap());
-            self.window_data.training_session_num_epochs = self.training_session.get_num_epochs();
-            self.window_data.training_session_batch_size = self.training_session.get_batch_size();
-            self.window_data.training_session_learn_rate = self.training_session.get_learn_rate();
+                    let device = WgpuDevice::default();
+                    self.ai = Some(NeuralNetworkType::GPU(NeuralNetworkGPU::new(
+                        nn_structure,
+                        self.window_data.ai_activation_function,
+                        self.window_data.ai_cost_fn,
+                        Some(self.window_data.ai_dropout_prob),
+                        self.window_data.ai_weight_init,
+                        self.window_data.ai_bias_init,
+                        self.window_data.ai_use_softmax_output,
+                        device.clone(),
+                    )));
+                    self.training_session.set_nn(self.ai.as_ref().unwrap());
+                    self.window_data.training_session_num_epochs =
+                        self.training_session.get_num_epochs();
+                    self.window_data.training_session_batch_size =
+                        self.training_session.get_batch_size();
+                    self.window_data.training_session_learn_rate =
+                        self.training_session.get_learn_rate();
+                }
+            }
         }
     }
 
@@ -552,6 +575,27 @@ impl ZaoaiApp {
             let mut change_state = false;
 
             ui.vertical(|ui| {
+                macro_rules! combo {
+                    ($label:expr, $field:expr, $variants:expr) => {{
+                        let before = $field;
+                        egui::ComboBox::from_label($label)
+                            .selected_text($field.to_string())
+                            .show_ui(ui, |ui| {
+                                for variant in $variants {
+                                    ui.selectable_value(&mut $field, variant, variant.to_string());
+                                }
+                            });
+                        before != $field
+                    }};
+                }
+
+                change_state |= combo!(
+                    "NeuralNetwork Type",
+                    self.window_data.ai_neuralnetwork_type,
+                    [NeuralNetworkEnum::CPU, NeuralNetworkEnum::GPU]
+                );
+
+                ui.checkbox(&mut self.window_data.show_ai, "Show AI");
                 ui.checkbox(&mut self.window_data.show_ai, "Show AI");
                 ui.checkbox(&mut self.window_data.show_traning_dataset, "Show Dataset");
                 ui.checkbox(&mut self.window_data.show_training_session, "Show Training");
@@ -585,20 +629,6 @@ impl ZaoaiApp {
                         "Use softmax output",
                     )
                     .changed();
-
-                macro_rules! combo {
-                    ($label:expr, $field:expr, $variants:expr) => {{
-                        let before = $field;
-                        egui::ComboBox::from_label($label)
-                            .selected_text($field.to_string())
-                            .show_ui(ui, |ui| {
-                                for variant in $variants {
-                                    ui.selectable_value(&mut $field, variant, variant.to_string());
-                                }
-                            });
-                        before != $field
-                    }};
-                }
 
                 change_state |= combo!(
                     "Activation Function",
@@ -701,7 +731,14 @@ impl ZaoaiApp {
                 if let Some(r) = nn_done.take() {
                     log::info!("test_nn results recieved!\n{r}");
                     if let Some(ai) = &mut self.ai {
-                        ai.last_test_results = Some(r);
+                        match ai {
+                            NeuralNetworkType::CPU(neural_network_cpu) => {
+                                neural_network_cpu.last_test_results = Some(r)
+                            }
+                            NeuralNetworkType::GPU(neural_network_gpu) => {
+                                neural_network_gpu.last_test_results = Some(r)
+                            }
+                        }
                     }
                     self.window_ai.test_nn_handle = None;
                 }
