@@ -241,9 +241,9 @@ impl WindowTrainingGraph {
 
                 let label_space = 0.2;
                 let max_x = payload_max + label_space;
-                let x_size = max_x - min_x;
-                let mut bounds = plot_ui.plot_bounds();
-                bounds.set_x_center_width(min_x + x_size / 2.0, x_size);
+
+                let bounds = egui_plot::PlotBounds::from_min_max([min_x, 0.0], [max_x, 0.0]);
+
                 plot_ui.set_plot_bounds(bounds);
                 plot_ui.set_auto_bounds([false, true]);
 
